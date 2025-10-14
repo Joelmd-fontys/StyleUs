@@ -1,3 +1,8 @@
-# StyleUs Monorepo
+# StyleUs – AI Fashion Companion
 
-This repository hosts the StyleUs platform, including the web experience, service APIs, AI/ML workloads, shared packages, infrastructure as code, and documentation to support collaborative development.
+Status: Pre-code setup
+
+StyleUs coordinates the future AI fashion companion across web, API, and ML services. This repository currently focuses on governance, documentation, and CI scaffolding ahead of initial implementation.
+
+- Product overview: [PRD](docs/prd/README.md)
+- Current iteration: [Iteration 1 Scope](docs/scope/iteration-1.md)

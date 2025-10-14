@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node.js
+node_modules/
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+.npm/
+.cache/
+dist/
+build/
+.next/
+.vite/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.mypy_cache/
+pytest_cache/
+.ipynb_checkpoints/
+
+# Tooling
+.idea/
+.vscode/
+coverage/
