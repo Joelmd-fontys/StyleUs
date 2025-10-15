@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#e5f3ff"/>
+  <path
+    d="M128 368h256a16 16 0 0 0 16-16v-56a16 16 0 0 0-16-16h-80l-32-48a20 20 0 0 0-33.6 0l-32 48h-80a16 16 0 0 0-16 16v56a16 16 0 0 0 16 16z"
+    fill="#4f46e5"
+  />
+  <circle cx="324" cy="204" r="44" fill="#94b7ff"/>
+  <text x="50%" y="470" text-anchor="middle" font-size="36" font-family="Arial, sans-serif" fill="#344155">
+    Mock Upload
+  </text>
+</svg>

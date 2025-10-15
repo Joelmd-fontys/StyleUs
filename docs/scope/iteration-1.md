@@ -1,7 +1,7 @@
 # Iteration 1 Scope
 
 ## Goal
-Establish repository hygiene and baseline CI signaling for the StyleUs AI fashion companion.
+Deliver a usable Iteration 1 web frontend powered by Vite, Tailwind, and MSW that demonstrates the StyleUs wardrobe experience end to end without relying on live backend services.
 
 ## Outcomes
 - Governance documents published and branch protection standards defined.
