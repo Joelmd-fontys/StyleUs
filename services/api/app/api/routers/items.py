@@ -27,6 +27,8 @@ def list_wardrobe_items(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[ItemDetail]:
+    """Return wardrobe items for the current user applying optional filters."""
+
     items: Sequence[WardrobeItem] = items_service.list_items(
         db,
         user_id,
@@ -45,6 +47,8 @@ def get_wardrobe_item(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
+    """Fetch a single wardrobe item or respond with 404 if it is missing."""
+
     item = items_service.get_item(db, user_id, item_id)
     if not item:
         response = error_response("not_found", "Wardrobe item not found", {"itemId": str(item_id)})
@@ -61,6 +65,8 @@ def update_wardrobe_item(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
+    """Update a wardrobe item and return the refreshed representation."""
+
     item = items_service.get_item(db, user_id, item_id)
     if not item:
         response = error_response("not_found", "Wardrobe item not found", {"itemId": str(item_id)})

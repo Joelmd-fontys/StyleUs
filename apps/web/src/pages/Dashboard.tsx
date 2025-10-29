@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
 import { useWardrobeStore } from '../store/wardrobe';
+import { resolveMediaUrl } from '../lib/media';
 
 const Dashboard = () => {
   const items = useWardrobeStore((state) => state.items);
@@ -70,27 +71,41 @@ const Dashboard = () => {
           <p className="text-sm text-neutral-500">Loading wardrobe...</p>
         ) : recent.length ? (
           <ul className="space-y-3">
-            {recent.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-4 text-sm text-neutral-700">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={item.imageUrl}
-                    alt=""
-                    className="h-12 w-12 rounded-lg border border-neutral-200 object-cover"
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <p className="font-medium text-neutral-900">{item.brand ?? 'Unbranded'}</p>
-                    <p className="text-xs text-neutral-500">
-                      {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </p>
+            {recent.map((item) => {
+              const imageSrc = resolveMediaUrl(item.thumbUrl, item.imageUrl);
+              return (
+                <li
+                  key={item.id}
+                  className="flex items-center justify-between gap-4 text-sm text-neutral-700"
+                >
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={imageSrc}
+                      alt=""
+                      className="h-12 w-12 rounded-lg border border-neutral-200 object-cover"
+                      aria-hidden="true"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <div>
+                      <p className="font-medium text-neutral-900">
+                        {item.brand ?? 'Unbranded'}
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        {new Date(item.createdAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <Link to={`/items/${item.id}`} className={buttonClasses('ghost', 'sm')}>
-                  View
-                </Link>
-              </li>
-            ))}
+                  <Link to={`/items/${item.id}`} className={buttonClasses('ghost', 'sm')}>
+                    View
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-sm text-neutral-500">No items yet. Upload your first piece to get started.</p>

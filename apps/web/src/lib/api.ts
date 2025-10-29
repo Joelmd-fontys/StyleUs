@@ -1,4 +1,5 @@
 import {
+  CompleteUploadRequest,
   GetItemResponse,
   GetItemsResponse,
   PatchItemRequest,
@@ -10,6 +11,8 @@ import { resolveApiUrl } from './config';
 export interface ItemFilters {
   category?: string;
   q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 const handleResponse = async <T>(response: Response): Promise<T> => {
@@ -34,6 +37,12 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
   if (filters.q) {
     params.set('q', filters.q);
   }
+  if (typeof filters.limit === 'number') {
+    params.set('limit', filters.limit.toString());
+  }
+  if (typeof filters.offset === 'number') {
+    params.set('offset', filters.offset.toString());
+  }
   const requestUrl = params.toString() ? `${url}?${params.toString()}` : url;
 
   const response = await fetch(requestUrl, {
@@ -50,23 +59,44 @@ export const getItem = async (id: string): Promise<GetItemResponse> => {
   return handleResponse<GetItemResponse>(response);
 };
 
-export const requestUpload = async (file: File): Promise<PresignItemResponse> => {
-  const response = await fetch(resolveApiUrl('/items'), {
+export const createPresign = async (body: {
+  contentType: string;
+  fileName: string;
+}): Promise<PresignItemResponse> => {
+  const response = await fetch(resolveApiUrl('/items/presign'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      filename: file.name,
-      size: file.size,
-      type: file.type
+      contentType: body.contentType,
+      fileName: body.fileName
     })
   });
 
   return handleResponse<PresignItemResponse>(response);
 };
 
-export const uploadFile = async (url: string, file: File) => {
-  const response = await fetch(url, {
+interface UploadOptions {
+  isLocal?: boolean;
+  fileName?: string;
+}
+
+/**
+ * Upload a file to either a presigned S3 URL or the local API sink.
+ */
+export const uploadFile = async (url: string, file: File, options: UploadOptions = {}): Promise<void> => {
+  const { isLocal = false, fileName } = options;
+  const targetUrl = isLocal ? resolveApiUrl(url) : url;
+  const headers: Record<string, string> = {
+    'Content-Type': file.type
+  };
+
+  if (isLocal) {
+    headers['X-File-Name'] = fileName ?? file.name;
+  }
+
+  const response = await fetch(targetUrl, {
     method: 'PUT',
+    headers,
     body: file
   });
 
@@ -86,4 +116,20 @@ export const patchItem = async (id: string, body: PatchItemRequest): Promise<Pat
   });
 
   return handleResponse<PatchItemResponse>(response);
+};
+
+export const completeUpload = async (
+  id: string,
+  body: CompleteUploadRequest
+): Promise<GetItemResponse> => {
+  const response = await fetch(resolveApiUrl(`/items/${id}/complete-upload`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  return handleResponse<GetItemResponse>(response);
 };

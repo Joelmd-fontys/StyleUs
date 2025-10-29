@@ -5,6 +5,7 @@ export type GetItemsResponse = WardrobeItem[];
 export interface PresignItemResponse {
   uploadUrl: string;
   itemId: string;
+  objectKey?: string;
 }
 
 export type GetItemResponse = WardrobeItem;
@@ -16,4 +17,10 @@ export interface PatchItemRequest {
   color: WardrobeItem['color'];
   brand?: WardrobeItem['brand'];
   tags?: WardrobeItem['tags'];
+}
+
+export interface CompleteUploadRequest {
+  imageUrl?: string;
+  objectKey?: string;
+  fileName?: string;
 }

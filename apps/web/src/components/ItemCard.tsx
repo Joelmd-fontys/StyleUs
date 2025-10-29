@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { WardrobeItem } from '../domain/types';
 import { cn } from '../lib/utils';
+import { resolveMediaUrl } from '../lib/media';
 
 interface ItemCardProps {
   item: WardrobeItem;
@@ -16,6 +17,8 @@ const formatDate = (value: string) =>
   });
 
 const ItemCardComponent = ({ item, isSelected = false, onSelect }: ItemCardProps) => {
+  const imageSrc = resolveMediaUrl(item.thumbUrl, item.imageUrl);
+
   return (
     <button
       type="button"
@@ -28,10 +31,11 @@ const ItemCardComponent = ({ item, isSelected = false, onSelect }: ItemCardProps
     >
       <div className="aspect-[4/5] w-full overflow-hidden bg-neutral-100">
         <img
-          src={item.imageUrl}
+          src={imageSrc}
           alt={`${item.brand ?? 'Wardrobe item'} in ${item.color}`}
           className="h-full w-full object-cover transition group-hover:scale-105"
           loading="lazy"
+          decoding="async"
         />
       </div>
       <div className="flex flex-1 flex-col gap-1 px-4 py-3">

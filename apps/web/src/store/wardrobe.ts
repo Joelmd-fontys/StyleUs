@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 import { getItem, getItems, patchItem } from '../lib/api';
+import { USE_LIVE_API_ITEMS } from '../lib/config';
 import { logger } from '../lib/logger';
 import { WardrobeItem, WardrobeCategory } from '../domain/types';
 import { PatchItemRequest } from '../domain/contracts';
+import {
+  findWardrobeItem as mockFindWardrobeItem,
+  getWardrobeItems as mockGetWardrobeItems,
+  saveWardrobeItem as mockSaveWardrobeItem
+} from '../mocks/fixtures';
 
 export interface WardrobeFilters {
   category?: WardrobeCategory;
@@ -35,7 +41,7 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
     const { filters } = get();
     set({ loading: true, error: undefined });
     try {
-      const data = await getItems(filters);
+      const data = USE_LIVE_API_ITEMS ? await getItems(filters) : mockGetWardrobeItems();
       set({ items: data, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load wardrobe';
@@ -70,7 +76,10 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
   },
   async refreshItem(id) {
     try {
-      const data = await getItem(id);
+      const data = USE_LIVE_API_ITEMS ? await getItem(id) : mockFindWardrobeItem(id);
+      if (!data) {
+        throw new Error('Item not found');
+      }
       get().replaceItem(id, data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to refresh item';
@@ -79,7 +88,23 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
   },
   async saveItem(id, payload) {
     try {
-      const updated = await patchItem(id, payload);
+      let updated: WardrobeItem;
+      if (USE_LIVE_API_ITEMS) {
+        updated = await patchItem(id, payload);
+      } else {
+        const existing = mockFindWardrobeItem(id);
+        if (!existing) {
+          throw new Error('Item not found');
+        }
+        updated = mockSaveWardrobeItem({
+          ...existing,
+          ...payload,
+          tags: payload.tags ?? existing.tags ?? [],
+          brand: payload.brand ?? existing.brand,
+          color: payload.color ?? existing.color,
+          category: payload.category ?? existing.category
+        });
+      }
       get().replaceItem(id, updated);
       logger.itemEdited({ id });
       return updated;

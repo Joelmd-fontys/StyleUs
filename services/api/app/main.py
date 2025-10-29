@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import asynccontextmanager
+
+import anyio
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api import get_api_router
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
+from app.db.migrations import ensure_schema
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="StyleUs API", version=settings.app_version)
+    settings = get_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await anyio.to_thread.run_sync(ensure_schema)
+        yield
+
+    app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -24,6 +36,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    media_root = settings.media_root_path
+    media_root.mkdir(parents=True, exist_ok=True)
+    app.mount(settings.media_url_path, StaticFiles(directory=media_root), name="media")
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):

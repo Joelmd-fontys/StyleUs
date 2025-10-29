@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import ItemDetail
+from app.schemas.items import ImageMetadata, ItemDetail
 from app.services.search import apply_search_filters
 
 
 def create_placeholder_item(db: Session, user_id: uuid.UUID) -> WardrobeItem:
+    """Create a placeholder item attached to the user to reserve an identifier."""
     _ensure_user(db, user_id)
     item = WardrobeItem(
         user_id=user_id,
@@ -39,6 +40,7 @@ def list_items(
     limit: int = 20,
     offset: int = 0,
 ) -> Sequence[WardrobeItem]:
+    """Retrieve items for a user applying filters and pagination."""
     stmt: Select[tuple[WardrobeItem]] = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id)
@@ -59,6 +61,7 @@ def list_items(
 
 
 def get_item(db: Session, user_id: uuid.UUID, item_id: uuid.UUID) -> WardrobeItem | None:
+    """Return a single wardrobe item for a user if it exists."""
     stmt = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id)
@@ -77,6 +80,7 @@ def update_item(
     brand: str | None = None,
     tags: list[str] | None = None,
 ) -> WardrobeItem:
+    """Persist field updates and normalized tag values for an item."""
     if category is not None:
         item.category = category
     if color is not None:
@@ -96,8 +100,27 @@ def update_item(
     return item
 
 
-def complete_upload(db: Session, item: WardrobeItem, image_url: str) -> WardrobeItem:
+def complete_upload(
+    db: Session,
+    item: WardrobeItem,
+    image_url: str | None,
+    *,
+    thumb_url: str | None = None,
+    medium_url: str | None = None,
+    metadata: ImageMetadata | None = None,
+) -> WardrobeItem:
+    """Store the image URL on an item once uploads finish."""
     item.image_url = image_url
+    item.image_thumb_url = thumb_url
+    item.image_medium_url = medium_url
+
+    if metadata is not None:
+        item.image_width = metadata.width
+        item.image_height = metadata.height
+        item.image_bytes = metadata.bytes
+        item.image_mime_type = metadata.mime_type
+        item.image_checksum = metadata.checksum
+
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -105,6 +128,26 @@ def complete_upload(db: Session, item: WardrobeItem, image_url: str) -> Wardrobe
 
 
 def to_item_detail(item: WardrobeItem) -> ItemDetail:
+    """Convert an ORM object into a Pydantic response model."""
+    metadata: ImageMetadata | None = None
+    if any(
+        value is not None
+        for value in (
+            item.image_width,
+            item.image_height,
+            item.image_bytes,
+            item.image_mime_type,
+            item.image_checksum,
+        )
+    ):
+        metadata = ImageMetadata(
+            width=item.image_width,
+            height=item.image_height,
+            bytes=item.image_bytes,
+            mime_type=item.image_mime_type,
+            checksum=item.image_checksum,
+        )
+
     return ItemDetail.model_validate(
         {
             "id": item.id,
@@ -112,13 +155,17 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "color": item.color,
             "brand": item.brand,
             "image_url": item.image_url,
+            "thumb_url": item.image_thumb_url,
+            "medium_url": item.image_medium_url,
             "created_at": item.created_at,
             "tags": [tag.tag for tag in item.tags],
+            "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
         }
     )
 
 
 def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
+    """Guarantee the backing user row exists before creating child objects."""
     user = db.get(User, user_id)
     if user is None:
         user = User(id=user_id, email=f"user-{user_id}@example.com")

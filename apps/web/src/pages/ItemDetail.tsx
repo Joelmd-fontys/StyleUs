@@ -6,8 +6,12 @@ import Field from '../components/Field';
 import { wardrobeItemEditSchema } from '../lib/validation';
 import { useWardrobeStore } from '../store/wardrobe';
 import { WardrobeCategory } from '../domain/types';
+import { resolveMediaUrl } from '../lib/media';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
+
+const formatSize = (value?: number | null) =>
+  typeof value === 'number' && !Number.isNaN(value) ? `${(value / 1024).toFixed(1)} kB` : '—';
 
 const ItemDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -134,6 +138,7 @@ const ItemDetail = () => {
     dateStyle: 'medium',
     timeStyle: 'short'
   });
+  const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -151,7 +156,13 @@ const ItemDetail = () => {
         <Card className="md:row-span-2">
           <div className="flex flex-col gap-4">
             <div className="overflow-hidden rounded-lg bg-neutral-100">
-              <img src={item.imageUrl} alt={item.brand ?? 'Wardrobe item'} className="w-full object-cover" />
+              <img
+                src={imageSrc}
+                alt={item.brand ?? 'Wardrobe item'}
+                className="w-full object-cover"
+                loading="lazy"
+                decoding="async"
+              />
             </div>
 
             <dl className="grid grid-cols-2 gap-3 text-sm text-neutral-600">
@@ -171,11 +182,20 @@ const ItemDetail = () => {
                 <dt className="font-medium text-neutral-900">Tags</dt>
                 <dd>{item.tags?.length ? item.tags.join(', ') : 'No tags yet'}</dd>
               </div>
+              {item.imageMetadata ? (
+                <div className="col-span-2">
+                  <dt className="font-medium text-neutral-900">Image details</dt>
+                  <dd>
+                    <span>{item.imageMetadata.width ?? '—'} × {item.imageMetadata.height ?? '—'} px</span>
+                    <span className="ml-2 text-neutral-500">{formatSize(item.imageMetadata.bytes)}</span>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </div>
         </Card>
 
-        <Card title="Edit details" description="Updates are saved locally through the mock API.">
+        <Card title="Edit details" description="Updates are saved through the wardrobe API.">
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <Field label="Category" htmlFor="category" required error={errors.category}>
               <select

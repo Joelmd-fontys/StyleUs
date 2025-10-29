@@ -1,16 +1,18 @@
 import { ChangeEvent, DragEvent, useRef, useState } from 'react';
 import Button from './Button';
 import { logger } from '../lib/logger';
-import { requestUpload, uploadFile } from '../lib/api';
+import { completeUpload, createPresign, uploadFile } from '../lib/api';
 import { useWardrobeStore } from '../store/wardrobe';
 import { cn } from '../lib/utils';
+import { USE_LIVE_API_UPLOAD } from '../lib/config';
+import { CompleteUploadRequest } from '../domain/contracts';
 
 interface UploadState {
   status: 'idle' | 'uploading' | 'success' | 'error';
   message?: string;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
 const UploadPanel = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -50,18 +52,42 @@ const UploadPanel = () => {
       return;
     }
 
-    setState({ status: 'uploading', message: `Uploading ${file.name}...` });
+    setState({ status: 'uploading', message: `Preparing ${file.name}...` });
     logger.uploadStarted({ name: file.name, size: file.size });
     const stopProgress = simulateProgress();
 
     try {
-      const { uploadUrl, itemId } = await requestUpload(file);
+      setState({ status: 'uploading', message: 'Requesting upload slot...' });
+      const { uploadUrl, itemId, objectKey } = await createPresign({
+        contentType: file.type,
+        fileName: file.name
+      });
+      const isLocalUpload = Boolean(!objectKey || uploadUrl.startsWith('/items/uploads/'));
+
+      const uuidPattern = /^[0-9a-fA-F-]{36}$/;
+      let resolvedItemId = itemId;
+      if (!uuidPattern.test(resolvedItemId)) {
+        const fromUrl = uploadUrl.split('/').pop() ?? '';
+        if (uuidPattern.test(fromUrl)) {
+          resolvedItemId = fromUrl;
+        }
+      }
+      if (!uuidPattern.test(resolvedItemId)) {
+        throw new Error('Upload failed to return a valid item identifier. Please retry.');
+      }
+      setState({ status: 'uploading', message: 'Uploading image...' });
       setProgress((prev) => Math.max(prev, 40));
-      await uploadFile(uploadUrl, file);
+      await uploadFile(uploadUrl, file, { isLocal: isLocalUpload, fileName: file.name });
+      setState({ status: 'uploading', message: 'Finalizing upload...' });
+      const completePayload: CompleteUploadRequest = { fileName: file.name };
+      if (!isLocalUpload && objectKey) {
+        completePayload.objectKey = objectKey;
+      }
+      await completeUpload(resolvedItemId, completePayload);
       stopProgress();
       setProgress(100);
       setState({ status: 'success', message: `${file.name} uploaded.` });
-      logger.uploadSucceeded({ itemId });
+      logger.uploadSucceeded({ itemId, mode: isLocalUpload ? 'local' : 's3' });
       await loadItems();
       resetMessage();
     } catch (error) {
@@ -170,7 +196,11 @@ const UploadPanel = () => {
           {state.message}
         </p>
       ) : (
-        <p className="mt-3 text-xs text-neutral-400">Uploads are mocked locally.</p>
+        <p className="mt-3 text-xs text-neutral-400">
+          {USE_LIVE_API_UPLOAD
+            ? 'Uploads are sent to the live API.'
+            : 'Uploads are mocked locally.'}
+        </p>
       )}
     </section>
   );
