@@ -7,6 +7,7 @@ import { wardrobeItemEditSchema } from '../lib/validation';
 import { useWardrobeStore } from '../store/wardrobe';
 import { WardrobeCategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
@@ -22,6 +23,7 @@ const ItemDetail = () => {
   const selectItem = useWardrobeStore((state) => state.selectItem);
   const saveItem = useWardrobeStore((state) => state.saveItem);
   const refreshItem = useWardrobeStore((state) => state.refreshItem);
+  const deleteItem = useWardrobeStore((state) => state.deleteItem);
 
   const item = useMemo(() => items.find((entry) => entry.id === id), [id, items]);
 
@@ -32,6 +34,8 @@ const ItemDetail = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState<string | undefined>();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     if (!items.length) {
@@ -113,6 +117,24 @@ const ItemDetail = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!id) {
+      return;
+    }
+    setDeleteBusy(true);
+    const success = await deleteItem(id);
+    setDeleteBusy(false);
+    setDeleteDialogOpen(false);
+
+    if (success) {
+      selectItem(undefined);
+      navigate('/wardrobe', { replace: true, state: { deleted: true } });
+    } else {
+      setStatus('error');
+      setMessage('Unable to delete item. Please try again.');
+    }
+  };
+
   if (!id) {
     return (
       <Card>
@@ -142,14 +164,26 @@ const ItemDetail = () => {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-neutral-900">{item.brand ?? 'Wardrobe item'}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
+            {item.brand ?? 'Wardrobe item'}
+          </h1>
           <p className="text-sm text-neutral-500">Added on {createdAt}</p>
         </div>
-        <Link to="/wardrobe" className={buttonClasses('ghost', 'sm')}>
-          Back to Wardrobe
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link to="/wardrobe" className={buttonClasses('ghost', 'sm')}>
+            Back to Wardrobe
+          </Link>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={deleteBusy}
+          >
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-[1.5fr,1fr]">
@@ -289,6 +323,23 @@ const ItemDetail = () => {
           </form>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete wardrobe item"
+        description="Delete this item? This can't be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        busy={deleteBusy}
+        onCancel={() => {
+          if (!deleteBusy) {
+            setDeleteDialogOpen(false);
+          }
+        }}
+        onConfirm={() => {
+          void handleDelete();
+        }}
+      />
     </div>
   );
 };

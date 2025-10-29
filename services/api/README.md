@@ -23,6 +23,9 @@ FastAPI backend for StyleUs wardrobe management. The service uses PostgreSQL, SQ
 | `MEDIA_ROOT` | Directory for locally stored uploads | `./media` |
 | `MEDIA_URL_PATH` | Public URL prefix for local media | `/media` |
 | `MEDIA_MAX_UPLOAD_SIZE` | Max upload size in bytes | `15728640` |
+| `SEED_ON_START` | Auto-run curated seed (defaults on in local env) | `true` (local) |
+| `SEED_LIMIT` | Max number of seed items applied per run | `25` |
+| `SEED_KEY` | Identifier stored in `seeds` table for idempotency | `local-seed-v1` |
 
 The application fails fast in staging/production if any required variable is missing.
 
@@ -72,6 +75,8 @@ The compose file exposes the API on `http://localhost:8000` and persists databas
 - `make lint` – run Ruff.
 - `make typecheck` – run mypy (targets `app/`).
 - `make test` – execute pytest suite (uses SQLite + mocked AWS).
+- `make seed` – populate the local wardrobe with curated starter data.
+- `make reset-seed` – clear seeded items and allow reseeding.
 
 ## Sample Requests
 
@@ -86,9 +91,13 @@ curl -X POST http://localhost:8000/items/presign \
 
 curl "http://localhost:8000/items?category=top&q=nike"
 
+curl "http://localhost:8000/items?include_deleted=true"  # include soft-deleted rows (admin tooling)
+
 curl -X PATCH http://localhost:8000/items/<item-id> \
   -H 'Content-Type: application/json' \
   -d '{"brand": "Uniqlo", "color": "navy", "tags": ["minimal"]}'
+
+curl -X DELETE http://localhost:8000/items/<item-id>
 
 # Sample wardrobe payload (truncated)
 {
@@ -106,6 +115,14 @@ curl -X PATCH http://localhost:8000/items/<item-id> \
   "tags": ["minimal"]
 }
 ```
+
+## Seeding the Local Wardrobe
+
+On first run the API seeds a curated dataset when `APP_ENV=local` and
+`SEED_ON_START=true`. The process is idempotent—the applied seed key is recorded
+in the `seeds` table so restarts do not duplicate rows. Use `make seed` to run
+the pipeline manually or `make reset-seed` to clear the marker and generated
+media before reseeding. Configuration lives in `app/seed/seed_sources.yaml`.
 
 ## Docker
 
@@ -134,6 +151,14 @@ When `APP_ENV=local`, the `/items/presign` endpoint returns an upload URL that t
 - **Local mode** (default when S3 variables are absent): uploads stream directly to the API, are written under `MEDIA_ROOT/<item_id>/{orig,medium,thumb}.jpg`, and are exposed via `MEDIA_URL_PATH`.
 
 Every completed upload extracts metadata (width, height, bytes, mime type, checksum) and publishes jpeg variants for thumbnail and medium sizes. These appear on the wardrobe item JSON as `imageUrl`, `mediumUrl`, `thumbUrl`, and `imageMetadata`.
+
+## Local Seeding
+
+The API can auto-populate a development database with 30 curated wardrobe
+entries bundled under `app/seed/`. By default this runs on the first startup in
+`APP_ENV=local`; disable by setting `SEED_ON_START=false`. Manual control is
+available via `make seed` / `make reset-seed`, and the dataset configuration is
+documented in `app/seed/README.md`.
 
 ### Local upload walkthrough
 

@@ -3,6 +3,7 @@ import {
   addWardrobeItem,
   findWardrobeItem,
   getWardrobeItems,
+  removeWardrobeItem,
   resetWardrobeItems,
   saveWardrobeItem
 } from './fixtures';
@@ -102,6 +103,20 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         saveWardrobeItem(updated);
 
         return HttpResponse.json(updated);
+      }),
+      http.delete('/items/:id', ({ params, request }) => {
+        if (shouldFail(request)) {
+          return HttpResponse.json({ message: 'Failed to delete item' }, { status: 500 });
+        }
+
+        const id = params.id as string;
+        const existing = findWardrobeItem(id);
+        if (!existing) {
+          return notFound(id);
+        }
+
+        removeWardrobeItem(id);
+        return HttpResponse.text('', { status: 204 });
       })
     ]
   : [];

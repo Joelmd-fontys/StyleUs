@@ -14,6 +14,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
 os.environ.setdefault("APP_VERSION", "0.1.0")
+os.environ.setdefault("SEED_ON_START", "false")
 
 from app.api.deps import get_db  # noqa: E402
 from app.core.config import get_settings  # noqa: E402

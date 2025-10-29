@@ -129,7 +129,8 @@ const UploadPanel = () => {
 
   return (
     <section
-      className="rounded-xl border border-dashed border-neutral-300 bg-white/80 p-6 text-center shadow-sm backdrop-blur"
+      id="upload-panel"
+      className="rounded-2xl border border-dashed border-neutral-300 bg-white/80 p-6 text-center shadow-sm backdrop-blur"
       aria-live="polite"
     >
       <div

@@ -19,12 +19,26 @@ from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
 
 
+def _maybe_run_seed(settings):
+    if settings.app_env != "local":
+        return
+    if not settings.seed_on_start:
+        return
+    try:
+        from app.seed.runner import run_seed
+
+        run_seed(settings=settings)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("seed.failed")
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await anyio.to_thread.run_sync(ensure_schema)
+        await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         yield
 
     app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)

@@ -1,4 +1,4 @@
-type EventName = 'upload_started' | 'upload_succeeded' | 'item_edited';
+type EventName = 'upload_started' | 'upload_succeeded' | 'item_edited' | 'item_deleted';
 
 type EventPayload = Record<string, unknown> | undefined;
 
@@ -17,5 +17,8 @@ export const logger = {
   },
   itemEdited(payload?: EventPayload) {
     log('item_edited', payload);
+  },
+  itemDeleted(payload?: EventPayload) {
+    log('item_deleted', payload);
   }
 };

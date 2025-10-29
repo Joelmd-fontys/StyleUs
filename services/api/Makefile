@@ -2,7 +2,7 @@ PYTHON ?= python3
 VENV ?= .venv
 MESSAGE ?= update
 
-.PHONY: setup run migrate upgrade lint typecheck test
+.PHONY: setup run migrate upgrade lint typecheck test seed reset-seed
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -25,3 +25,9 @@ typecheck:
 
 test:
 	pytest -q
+
+seed:
+	$(PYTHON) -m app.seed.runner
+
+reset-seed:
+	$(PYTHON) -m app.seed.runner --reset

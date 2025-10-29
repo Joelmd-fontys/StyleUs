@@ -100,6 +100,10 @@ export const saveWardrobeItem = (item: WardrobeItem) => {
   return item;
 };
 
+export const removeWardrobeItem = (id: string) => {
+  wardrobeItems = wardrobeItems.filter((item) => item.id !== id);
+};
+
 export const resetWardrobeItems = () => {
   wardrobeItems = [...seedItems];
 };

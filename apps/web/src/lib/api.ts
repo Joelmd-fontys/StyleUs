@@ -118,6 +118,15 @@ export const patchItem = async (id: string, body: PatchItemRequest): Promise<Pat
   return handleResponse<PatchItemResponse>(response);
 };
 
+export const deleteItem = async (id: string): Promise<void> => {
+  const response = await fetch(resolveApiUrl(`/items/${id}`), {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' }
+  });
+
+  await handleResponse<void>(response);
+};
+
 export const completeUpload = async (
   id: string,
   body: CompleteUploadRequest

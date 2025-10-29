@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import uuid
 from collections.abc import Sequence
 
@@ -39,6 +40,7 @@ def list_items(
     query: str | None = None,
     limit: int = 20,
     offset: int = 0,
+    include_deleted: bool = False,
 ) -> Sequence[WardrobeItem]:
     """Retrieve items for a user applying filters and pagination."""
     stmt: Select[tuple[WardrobeItem]] = (
@@ -46,6 +48,9 @@ def list_items(
         .where(WardrobeItem.user_id == user_id)
         .options(selectinload(WardrobeItem.tags))
     )
+
+    if not include_deleted:
+        stmt = stmt.where(WardrobeItem.deleted_at.is_(None))
 
     if category:
         stmt = stmt.where(WardrobeItem.category == category)
@@ -60,13 +65,21 @@ def list_items(
     return result.scalars().all()
 
 
-def get_item(db: Session, user_id: uuid.UUID, item_id: uuid.UUID) -> WardrobeItem | None:
+def get_item(
+    db: Session,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+    *,
+    include_deleted: bool = False,
+) -> WardrobeItem | None:
     """Return a single wardrobe item for a user if it exists."""
     stmt = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id)
         .options(selectinload(WardrobeItem.tags))
     )
+    if not include_deleted:
+        stmt = stmt.where(WardrobeItem.deleted_at.is_(None))
     result = db.execute(stmt)
     return result.scalars().first()
 
@@ -98,6 +111,15 @@ def update_item(
     db.commit()
     db.refresh(item)
     return item
+
+
+def delete_item(db: Session, item: WardrobeItem) -> None:
+    """Soft delete an item by marking its deletion timestamp."""
+
+    if item.deleted_at is None:
+        item.deleted_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        db.add(item)
+        db.commit()
 
 
 def complete_upload(

@@ -50,3 +50,4 @@
 - 2025-10-28: Persistent image storage implemented for both S3 and local modes, frontend upload panel aligned with new contracts, and README/pytest updated accordingly.
 - 2025-10-29: Refactor pass (no behavior change) – added docstrings, shared media URL helper, environment examples, and streamlined upload tests.
 - 2025-10-29: Upload metadata + variants added; API returns `imageMetadata`/`thumbUrl`/`mediumUrl` and UI now consumes thumbnails with detail metadata.
+- 2025-10-30: Delete flow added; light UI cleanup across wardrobe grid/detail with confirm dialogs and feedback banners.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id, get_db, verify_api_key
@@ -24,6 +24,7 @@ def list_wardrobe_items(
     q: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    include_deleted: bool = Query(default=False),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[ItemDetail]:
@@ -36,6 +37,7 @@ def list_wardrobe_items(
         query=q,
         limit=limit,
         offset=offset,
+        include_deleted=include_deleted,
     )
     return [items_service.to_item_detail(item) for item in items]
 
@@ -82,3 +84,22 @@ def update_wardrobe_item(
         tags=payload.tags,
     )
     return items_service.to_item_detail(updated)
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_wardrobe_item(
+    *,
+    item_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> Response:
+    """Soft delete a wardrobe item for the current user."""
+
+    item = items_service.get_item(db, user_id, item_id)
+    if not item:
+        response = error_response("not_found", "Wardrobe item not found", {"itemId": str(item_id)})
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return response
+
+    items_service.delete_item(db, item)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

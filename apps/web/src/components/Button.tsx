@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { cn } from '../lib/utils';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'md' | 'sm';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -11,11 +11,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-accent-600 text-white hover:bg-accent-700 focus-visible:outline-accent-600',
+    'bg-accent-600 text-white shadow-sm hover:bg-accent-700 focus-visible:outline-accent-600',
   secondary:
-    'bg-neutral-100 text-neutral-900 hover:bg-neutral-200 focus-visible:outline-neutral-400',
+    'bg-neutral-100 text-neutral-900 shadow-sm hover:bg-neutral-200 focus-visible:outline-neutral-400',
   ghost:
-    'text-neutral-700 hover:bg-neutral-100 focus-visible:outline-neutral-400'
+    'text-neutral-700 hover:bg-neutral-100 focus-visible:outline-neutral-400',
+  danger:
+    'bg-danger-500 text-white shadow-sm hover:bg-danger-600 focus-visible:outline-danger-500'
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -29,7 +31,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex items-center justify-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
         variantStyles[variant],
         sizeStyles[size],
         className
@@ -47,7 +49,7 @@ export const buttonClasses = (
   className?: string
 ) =>
   cn(
-    'inline-flex items-center justify-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+    'inline-flex items-center justify-center rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
     variantStyles[variant],
     sizeStyles[size],
     className

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     media_root: str = Field(default="./media", alias="MEDIA_ROOT")
     media_url_path: str = Field(default="/media", alias="MEDIA_URL_PATH")
     media_max_upload_size: int = Field(default=15 * 1024 * 1024, alias="MEDIA_MAX_UPLOAD_SIZE")
+    seed_on_start: bool | None = Field(default=None, alias="SEED_ON_START")
+    seed_limit: int = Field(default=25, alias="SEED_LIMIT")
+    seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
 
     @field_validator("cors_origins")
     @classmethod
@@ -63,6 +66,12 @@ class Settings(BaseSettings):
             if missing:
                 joined = ", ".join(missing)
                 raise ValueError(f"Missing required environment variables: {joined}")
+
+        if self.seed_on_start is None:
+            self.seed_on_start = self.app_env == "local"
+
+        if self.seed_limit <= 0:
+            raise ValueError("SEED_LIMIT must be greater than zero")
         return self
 
     @property

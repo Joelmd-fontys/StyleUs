@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getItem, getItems, patchItem } from '../lib/api';
+import { deleteItem as deleteItemRequest, getItem, getItems, patchItem } from '../lib/api';
 import { USE_LIVE_API_ITEMS } from '../lib/config';
 import { logger } from '../lib/logger';
 import { WardrobeItem, WardrobeCategory } from '../domain/types';
@@ -7,6 +7,7 @@ import { PatchItemRequest } from '../domain/contracts';
 import {
   findWardrobeItem as mockFindWardrobeItem,
   getWardrobeItems as mockGetWardrobeItems,
+  removeWardrobeItem as mockRemoveWardrobeItem,
   saveWardrobeItem as mockSaveWardrobeItem
 } from '../mocks/fixtures';
 
@@ -29,6 +30,8 @@ interface WardrobeState {
   replaceItem: (id: string, item: WardrobeItem) => void;
   refreshItem: (id: string) => Promise<void>;
   saveItem: (id: string, payload: PatchItemRequest) => Promise<WardrobeItem | undefined>;
+  removeItem: (id: string) => void;
+  deleteItem: (id: string) => Promise<boolean>;
 }
 
 export const useWardrobeStore = create<WardrobeState>((set, get) => ({
@@ -112,6 +115,38 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'Unable to save item';
       set({ error: message });
       return undefined;
+    }
+  },
+  removeItem(id) {
+    set((state) => ({
+      items: state.items.filter((item) => item.id !== id),
+      selectedItemId: state.selectedItemId === id ? undefined : state.selectedItemId
+    }));
+  },
+  async deleteItem(id) {
+    const previousItems = get().items;
+    const previousSelected = get().selectedItemId;
+    set({ error: undefined });
+    get().removeItem(id);
+
+    try {
+      if (USE_LIVE_API_ITEMS) {
+        await deleteItemRequest(id);
+      } else {
+        mockRemoveWardrobeItem(id);
+      }
+      logger.itemDeleted({ id });
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to delete item';
+      set({
+        items: previousItems,
+        selectedItemId: previousSelected,
+        error: message
+      });
+      logger.itemDeleted({ id, error: message });
+      return false;
     }
   }
 }));
