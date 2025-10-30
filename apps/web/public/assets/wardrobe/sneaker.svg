@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#f7f7fb"/>
+  <path
+    d="M96 320c48-32 88-92 120-92 40 0 72 72 136 72 16 0 56-8 72-16l8 80H96z"
+    fill="#edf0f5"
+  />
+  <path
+    d="M96 320c16 40 56 64 104 64h176c36 0 60-20 64-56z"
+    fill="#ffffff"
+  />
+  <path
+    d="M192 312l16 48h-24l-16-46zM248 312l16 48h-24l-16-46zM304 312l16 48h-24l-16-46z"
+    fill="#d1d8e0"
+  />
+  <rect x="144" y="360" width="248" height="20" rx="10" fill="#0f172a"/>
+</svg>

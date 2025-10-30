@@ -29,6 +29,7 @@ venv/
 .mypy_cache/
 pytest_cache/
 .ipynb_checkpoints/
+services/api/media/
 
 # Tooling
 .idea/

@@ -1,0 +1,61 @@
+items:
+  - title: Nike Sportswear Club T-Shirt
+    brand: Nike
+    category: top
+    color: Black
+    tags: [casual, athletic, basic]
+    image: sample_images/nike.png
+  - title: Adidas Adicolor Classics Tee
+    brand: Adidas
+    category: top
+    color: White
+    tags: [retro, athletic, heritage]
+    image: sample_images/adidas.png
+  - title: Levi's 501 Original Fit Jeans
+    brand: Levi's
+    category: bottom
+    color: Indigo
+    tags: [denim, classic, casual]
+    image: sample_images/levis.png
+  - title: Uniqlo Chino Slim Fit Pant
+    brand: Uniqlo
+    category: bottom
+    color: Khaki
+    tags: [smart-casual, versatile, spring]
+    image: sample_images/uniqlo.png
+  - title: The North Face Nuptse Jacket
+    brand: The North Face
+    category: outerwear
+    color: Black
+    tags: [insulated, outdoor, winter]
+    image: sample_images/thenorthface.png
+  - title: Patagonia Better Sweater Jacket
+    brand: Patagonia
+    category: outerwear
+    color: Navy
+    tags: [layering, outdoor, cozy]
+    image: sample_images/patagonia.png
+  - title: Converse Chuck 70 High Top
+    brand: Converse
+    category: shoes
+    color: White
+    tags: [heritage, streetwear, canvas]
+    image: sample_images/converse.png
+  - title: Dr. Martens 1460 Boot
+    brand: Dr. Martens
+    category: shoes
+    color: Black
+    tags: [leather, heritage, streetwear]
+    image: sample_images/drmartens.png
+  - title: H&M 6-Panel Cap
+    brand: H&M
+    category: accessory
+    color: Navy
+    tags: [casual, streetwear, adjustable]
+    image: sample_images/hm.png
+  - title: Zara Leather Belt
+    brand: Zara
+    category: accessory
+    color: Brown
+    tags: [leather, essential, smart]
+    image: sample_images/zara.png
