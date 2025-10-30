@@ -21,7 +21,6 @@ from app.core.config import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
 
-
 engine = create_engine(
     os.environ["DATABASE_URL"],
     connect_args={"check_same_thread": False},

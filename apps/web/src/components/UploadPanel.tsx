@@ -12,7 +12,8 @@ interface UploadState {
   message?: string;
 }
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILE_SIZE_MB = 15;
+const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const UploadPanel = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -48,7 +49,7 @@ const UploadPanel = () => {
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setState({ status: 'error', message: 'File must be smaller than 10MB.' });
+      setState({ status: 'error', message: `File must be smaller than ${MAX_FILE_SIZE_MB}MB.` });
       return;
     }
 
@@ -152,7 +153,8 @@ const UploadPanel = () => {
       >
         <p className="text-sm font-semibold text-neutral-900">Upload a new item</p>
         <p className="max-w-sm text-xs text-neutral-500">
-          Drag and drop an image or select a file. Supported formats: JPG, PNG, GIF. Maximum size: 10MB.
+          Drag and drop an image or select a file. Supported formats: JPG, PNG, WEBP. Maximum size: {MAX_FILE_SIZE_MB}
+          MB.
         </p>
         <Button
           type="button"

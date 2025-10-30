@@ -86,24 +86,25 @@ const seedItems: WardrobeItem[] = [
 
 let wardrobeItems = [...seedItems];
 
-export const getWardrobeItems = () => [...wardrobeItems];
+export const getWardrobeItems = (): WardrobeItem[] => [...wardrobeItems];
 
-export const findWardrobeItem = (id: string) => wardrobeItems.find((item) => item.id === id);
+export const findWardrobeItem = (id: string): WardrobeItem | undefined =>
+  wardrobeItems.find((item) => item.id === id);
 
-export const addWardrobeItem = (item: WardrobeItem) => {
+export const addWardrobeItem = (item: WardrobeItem): WardrobeItem => {
   wardrobeItems = [item, ...wardrobeItems];
   return item;
 };
 
-export const saveWardrobeItem = (item: WardrobeItem) => {
+export const saveWardrobeItem = (item: WardrobeItem): WardrobeItem => {
   wardrobeItems = wardrobeItems.map((existing) => (existing.id === item.id ? item : existing));
   return item;
 };
 
-export const removeWardrobeItem = (id: string) => {
+export const removeWardrobeItem = (id: string): void => {
   wardrobeItems = wardrobeItems.filter((item) => item.id !== id);
 };
 
-export const resetWardrobeItems = () => {
+export const resetWardrobeItems = (): void => {
   wardrobeItems = [...seedItems];
 };

@@ -17,7 +17,8 @@ const categoryOptions: Array<{ label: string; value?: WardrobeCategory }> = [
   { label: 'Bottoms', value: 'bottom' },
   { label: 'Outerwear', value: 'outerwear' },
   { label: 'Shoes', value: 'shoes' },
-  { label: 'Accessories', value: 'accessory' }
+  { label: 'Accessories', value: 'accessory' },
+  { label: 'Uncategorized', value: 'uncategorized' }
 ];
 
 const Filters = ({ category, q, onChange, onReset, className }: FiltersProps) => {

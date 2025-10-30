@@ -8,7 +8,10 @@ from sqlalchemy.sql import Select
 from app.models.wardrobe import ItemTag, WardrobeItem
 
 
-def apply_search_filters(stmt: Select[tuple[WardrobeItem]], query: str) -> Select[tuple[WardrobeItem]]:
+def apply_search_filters(
+    stmt: Select[tuple[WardrobeItem]],
+    query: str,
+) -> Select[tuple[WardrobeItem]]:
     """Apply case-insensitive search filters across brand and tags."""
 
     normalized = f"%{query.lower()}%"

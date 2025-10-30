@@ -7,9 +7,9 @@ import json
 import os
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,13 @@ from app.core.config import Settings
 from app.models.wardrobe import WardrobeItem
 from app.schemas.items import ImageMetadata
 from app.services.items import create_placeholder_item
-from app.utils.images import ProcessedImage, allowed_mime_types, process_image_bytes, save_image_bytes
 from app.utils import s3 as s3_utils
+from app.utils.images import (
+    ProcessedImage,
+    allowed_mime_types,
+    process_image_bytes,
+    save_image_bytes,
+)
 from app.utils.s3 import generate_presigned_put_url
 
 ALLOWED_CONTENT_TYPES: dict[str, str] = {

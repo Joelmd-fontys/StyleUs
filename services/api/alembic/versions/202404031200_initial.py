@@ -1,19 +1,18 @@
 """Initial schema.
 
 Revision ID: 202404031200
-Revises: 
+Revises:
 Create Date: 2024-04-03 12:00:00.000000
 """
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 from app.db.types import GUID
-
 
 revision: str = "202404031200"
 down_revision: str | None = None
@@ -26,13 +25,23 @@ def upgrade() -> None:
         "users",
         sa.Column("id", GUID(), primary_key=True, nullable=False),
         sa.Column("email", sa.Text(), nullable=False, unique=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
     )
 
     op.create_table(
         "wardrobe_items",
         sa.Column("id", GUID(), primary_key=True, nullable=False),
-        sa.Column("user_id", GUID(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            GUID(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("image_url", sa.Text(), nullable=True),
         sa.Column("category", sa.Text(), nullable=False),
         sa.Column("color", sa.Text(), nullable=False),
@@ -48,7 +57,12 @@ def upgrade() -> None:
     op.create_table(
         "item_tags",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("item_id", GUID(), sa.ForeignKey("wardrobe_items.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "item_id",
+            GUID(),
+            sa.ForeignKey("wardrobe_items.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("tag", sa.Text(), nullable=False),
     )
 
@@ -57,7 +71,8 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
         op.execute(
-            "CREATE INDEX ix_wardrobe_items_user_created_at ON wardrobe_items (user_id, created_at DESC)"
+            "CREATE INDEX ix_wardrobe_items_user_created_at "
+            "ON wardrobe_items (user_id, created_at DESC)"
         )
     else:
         op.create_index(

@@ -9,7 +9,6 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 UploadMode = Literal["s3", "local"]
 
 
@@ -47,7 +46,7 @@ class Settings(BaseSettings):
         return value if value.startswith("/") else f"/{value}"
 
     @model_validator(mode="after")
-    def finalize_upload_mode(self) -> "Settings":
+    def finalize_upload_mode(self) -> Settings:
         if self.upload_mode is None:
             self.upload_mode = "s3" if self.aws_region and self.s3_bucket_name else "local"
 

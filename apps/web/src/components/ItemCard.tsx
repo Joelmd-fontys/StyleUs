@@ -168,7 +168,7 @@ const ItemCardComponent = ({
         </div>
         <p className="text-sm font-semibold text-neutral-900">{item.brand ?? 'Unbranded'}</p>
         <p className="text-xs text-neutral-500">{item.color}</p>
-        {item.tags && item.tags.length > 0 ? (
+        {item.tags.length > 0 ? (
           <ul className="mt-auto flex flex-wrap gap-1 pt-2">
             {item.tags.slice(0, 3).map((tag) => (
               <li

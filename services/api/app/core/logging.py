@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import MutableMapping
 from contextvars import ContextVar
-from typing import Any, MutableMapping
+from typing import Any
 
 request_id_ctx_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 

@@ -47,7 +47,7 @@ export const buttonClasses = (
   variant: ButtonVariant = 'primary',
   size: ButtonSize = 'md',
   className?: string
-) =>
+): string =>
   cn(
     'inline-flex items-center justify-center rounded-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
     variantStyles[variant],

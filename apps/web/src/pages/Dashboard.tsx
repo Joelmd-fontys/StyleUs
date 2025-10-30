@@ -25,7 +25,7 @@ const Dashboard = () => {
 
     return {
       total,
-      favorites: items.filter((item) => item.tags?.includes('favorite')).length,
+      favorites: items.filter((item) => item.tags.includes('favorite')).length,
       tops: byCategory.top ?? 0,
       shoes: byCategory.shoes ?? 0
     };

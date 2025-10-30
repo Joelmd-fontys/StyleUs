@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from PIL import Image, ImageOps
 

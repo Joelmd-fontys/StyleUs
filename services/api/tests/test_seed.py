@@ -20,10 +20,20 @@ def test_seed_creates_items_and_is_idempotent(tmp_path, monkeypatch, db_session)
     get_settings.cache_clear()
     settings = get_settings()
 
-    session_factory = sessionmaker(bind=db_session.bind, autocommit=False, autoflush=False, expire_on_commit=False)
+    session_factory = sessionmaker(
+        bind=db_session.bind,
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+    )
     monkeypatch.setattr(seed_runner, "SessionLocal", session_factory)
 
-    summary = seed_runner.run_seed(settings=settings, force=True, limit=3, seed_key="test-local-seed")
+    summary = seed_runner.run_seed(
+        settings=settings,
+        force=True,
+        limit=3,
+        seed_key="test-local-seed",
+    )
     assert summary.inserted == 3
     assert summary.failed == 0
 
@@ -36,7 +46,11 @@ def test_seed_creates_items_and_is_idempotent(tmp_path, monkeypatch, db_session)
             assert (item_dir / "medium.jpg").exists()
             assert (item_dir / "thumb.jpg").exists()
 
-    repeat = seed_runner.run_seed(settings=settings, limit=3, seed_key="test-local-seed")
+    repeat = seed_runner.run_seed(
+        settings=settings,
+        limit=3,
+        seed_key="test-local-seed",
+    )
     assert repeat.inserted == 0
     assert repeat.skipped >= 1
 

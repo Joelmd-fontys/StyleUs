@@ -54,7 +54,7 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         if (query) {
           filtered = filtered.filter((item) => {
             const brand = item.brand?.toLowerCase() ?? '';
-            const tags = (item.tags ?? []).map((tag) => tag.toLowerCase());
+            const tags = item.tags.map((tag) => tag.toLowerCase());
             return brand.includes(query) || tags.some((tag) => tag.includes(query));
           });
         }
@@ -94,7 +94,7 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         const updated: WardrobeItem = {
           ...existing,
           ...body,
-          tags: body.tags ?? existing.tags ?? [],
+          tags: body.tags ?? existing.tags,
           brand: body.brand ?? existing.brand,
           color: body.color ?? existing.color,
           category: body.category ?? existing.category
@@ -203,7 +203,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
 
 export const handlers = [...itemHandlers, ...uploadHandlers];
 
-export const resetMockState = () => {
+export const resetMockState = (): void => {
   resetWardrobeItems();
   pendingUploads.clear();
 };

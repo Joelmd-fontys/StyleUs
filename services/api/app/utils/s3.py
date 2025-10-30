@@ -60,4 +60,10 @@ def upload_bytes(
 ) -> None:
     """Upload raw bytes to S3."""
     client = get_s3_client(region)
-    client.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type, CacheControl="public, max-age=31536000")
+    client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+        CacheControl="public, max-age=31536000",
+    )

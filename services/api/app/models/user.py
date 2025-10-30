@@ -25,7 +25,7 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    items: Mapped[list["WardrobeItem"]] = relationship(
+    items: Mapped[list[WardrobeItem]] = relationship(
         "WardrobeItem",
         back_populates="user",
         cascade="all, delete-orphan",

@@ -1,53 +1,36 @@
 # Recap
-## Current Status
-- Frontend:
-  - Tooling: Vite + React 18 + TypeScript with Tailwind, MSW, Zustand, and React Router orchestrating routing (`apps/web/package.json:2`, `apps/web/tailwind.config.js:1`, `apps/web/src/store/wardrobe.ts:1`, `apps/web/src/App.tsx:1`)
-  - Key pages/components: AppShell layout with responsive nav, Wardrobe grid + filters, Dashboard summary, and UploadPanel now handling presign → upload → completion with explicit progress states (`apps/web/src/components/AppShell.tsx:1`, `apps/web/src/pages/Wardrobe.tsx:1`, `apps/web/src/pages/Dashboard.tsx:1`, `apps/web/src/components/UploadPanel.tsx:1`)
-  - Media handling: thumbnails and medium variants rendered via helper resolver with metadata surfaced in item detail (`apps/web/src/lib/media.ts:5`, `apps/web/src/pages/ItemDetail.tsx:1`)
-  - Mocking status (MSW): Handlers only register when feature flags disable live endpoints, keeping the new upload paths untouched in live mode (`apps/web/src/mocks/handlers.ts:33`, `apps/web/src/lib/config.ts:24`)
-  - API client base URL: `API_BASE` exported from config with `.env.local` checked in for local dev; API helpers now emit `{ objectKey?, fileName }` payloads for completion (`apps/web/src/lib/config.ts:1`, `apps/web/.env.local:1`, `apps/web/src/lib/api.ts:1`)
-- Backend:
-  - Endpoints: FastAPI mounts `/health`, `/version`, `/items`, `/items/presign`, `/items/{id}/complete-upload`, plus a local-only `PUT /items/uploads/{id}` sink and static media mount (`services/api/app/api/__init__.py:7`, `services/api/app/api/routers/items.py:20`, `services/api/app/api/routers/uploads.py:25`, `services/api/app/main.py:20`)
-  - DB/Migrations: SQLAlchemy models for users/items/tags with initial Alembic revision committed (`services/api/app/models/wardrobe.py:1`, `services/api/alembic/versions/202404031200_initial.py:1`)
-  - Uploads/S3: Settings auto-select S3 mode when region/bucket are present, otherwise stream to local disk under `MEDIA_ROOT`; helpers now produce metadata and JPEG variants for both modes (`services/api/app/core/config.py:23`, `services/api/app/services/uploads.py:20`)
-  - Auth/CORS: API key enforced in secure envs; local `.env` whitelists localhost variants and seeds media path defaults (`services/api/app/api/deps.py:29`, `services/api/app/main.py:20`, `services/api/.env:1`)
-- CI/Tooling: Single GitHub workflow echoing pipeline status and Makefile targets for setup/lint/typecheck/test (`.github/workflows/ci.yml:13`, `services/api/Makefile:7`)
-- Tests: Pytest suite now covers S3 presign, public URL derivation, and full local upload flow with media reads; frontend still lacks automated tests (`services/api/tests/test_uploads.py:1`, `services/api/tests/test_items.py:42`, `apps/web/package.json:6`)
 
-## Connection Status
-- Status: Connected
-- Evidence:
-  - Frontend ships `.env.local` seeds and feature flags that steer live fetches (`apps/web/.env.local:1`, `apps/web/src/lib/config.ts:24`)
-  - Wardrobe store prefers real API for list/detail/edit when flags enabled (`apps/web/src/store/wardrobe.ts:34`)
-  - Upload flow consumes `/items/presign`, uploads via presigned target (S3 or API), and completes with `{ objectKey?, fileName }` payloads (`apps/web/src/lib/api.ts:61`, `apps/web/src/components/UploadPanel.tsx:58`)
-  - MSW skips intercepting live endpoints when flags are on (`apps/web/src/mocks/handlers.ts:33`, `apps/web/src/mocks/handlers.ts:109`)
-  - Backend exposes local upload sink, media serving, and S3 URL builder (`services/api/app/api/routers/uploads.py:25`, `services/api/app/services/uploads.py:26`, `services/api/app/main.py:20`)
+## What We Already Have
+- **Frontend**: Vite + React 18 + TypeScript app with Tailwind styling, React Router pages (dashboard, wardrobe grid, item detail, placeholders) and a Zustand wardrobe store coordinating API + mock flows (`apps/web/src/pages`, `apps/web/src/store/wardrobe.ts`). UploadPanel handles presign → PUT upload → completion with live/local support (`apps/web/src/components/UploadPanel.tsx`).
+- **Backend**: FastAPI service exposing `/health`, `/version`, `/items`, `/items/presign`, `/items/uploads/{id}`, and `/items/{id}/complete-upload` with SQLAlchemy models, Alembic migrations, and dual upload modes (S3 or local disk) plus API-key enforcement in secure envs (`services/api/app/api`, `services/api/app/models/wardrobe.py`, `services/api/app/services/uploads.py`).
+- **Tests & CI**: Pytest suite covering presign, upload finalization (S3 + local), and seeding; `make lint` runs Ruff with modern config; frontend `npm run typecheck` is clean. GitHub workflow scaffold exists but is still a placeholder (`services/api/tests`, `apps/web/package.json`, `.github/workflows`).
+- **Docs & Env**: Updated service READMEs document setup, scripts, and feature flags; new `.env.example` files guide local configuration for both web and API (`apps/web/README.md`, `services/api/README.md`, `apps/web/.env.example`, `services/api/.env.example`).
 
-## Issues and Gaps
-- Consider caching or CDN fronting for generated variants; current implementation always stores public objects (`services/api/app/services/uploads.py:171`)
-- CI workflow remains a no-op echo rather than running lint/tests (`.github/workflows/ci.yml:13`)
-- Frontend lacks automated integration coverage; only manual verification planned (`apps/web/package.json:6`)
-- Outfits/Settings pages remain static placeholders pending backend design (`apps/web/src/pages/Outfits.tsx:1`, `apps/web/src/pages/Settings.tsx:1`)
-- Error and retry UI is minimal—upload/store failures surface as single banner strings (`apps/web/src/components/UploadPanel.tsx:73`, `apps/web/src/store/wardrobe.ts:86`)
+## Known Gaps / Risks
+- CI workflow does not yet execute lint/typecheck/test targets, so regressions rely on manual runs.
+- Frontend lacks automated tests; only manual verification enforces UI behavior and upload flows.
+- Local media artefacts are still tracked in git history; future uploads are ignored but existing blobs remain until a cleanup decision is made.
+- Pagination, sorting, and richer filters are absent on both API and UI, limiting scalability of larger wardrobes.
+- Error and retry UX is basic—fetch/upload failures surface as single-line messages with no retry/backoff guidance.
+- Auth beyond API key and multi-user session handling are not implemented; privacy boundaries rely on seeded UUID alone.
 
-## Next Steps (Ordered)
-1. Replace remaining mocked features (e.g. outfits, settings summaries) with real endpoints or flag-guarded live calls (`apps/web/src/mocks/handlers.ts:33`).
-2. Harden UX by adding optimistic state, retries, and empty/error views driven by live API responses (`apps/web/src/store/wardrobe.ts:86`, `apps/web/src/components/UploadPanel.tsx:73`).
-3. Add CDN/signed GET support and lifecycle policies for generated variants (`services/api/app/services/uploads.py:171`).
-4. Add pagination + filtering params on the backend (`limit/offset`) and wire to UI controls (`apps/web/src/lib/api.ts:30`, `services/api/app/api/routers/items.py:20`).
-5. Expand CI to run frontend typecheck/tests and backend lint/test suites for every PR (`apps/web/package.json:6`, `services/api/Makefile:20`)
+## Next Options
 
-## Verification Checklist
-- [x] `curl :8000/items` returns wardrobe data when the API is running (ensures live connectivity).
-- [x] Wardrobe page loads via live `GET /items` (confirm in browser network tab).
-- [x] Upload flow: `POST /items/presign` → `PUT /items/uploads/<id>` (with `Content-Type` + `X-File-Name`) → `POST /items/<id>/complete-upload` produces a persisted `imageUrl`.
-- [x] Editing an item in the UI issues `PATCH /items/:id` and the response updates the detail view.
-- [ ] Basic logs show `request.complete` entries with `X-Request-ID` for manual spot checks.
+### Small (1–3 hours)
+- Add inline error banners & retry buttons for wardrobe list/detail requests — Purpose: improve recovery hints when fetches fail; Key files: `apps/web/src/store/wardrobe.ts`, `apps/web/src/components/ItemCard.tsx`; Acceptance: user can retry failed loads without refreshing and sees contextual messaging.
+- Document MSW/live flag workflows with quick troubleshooting in web README — Purpose: reduce setup confusion when switching between mocks and API; Key files: `apps/web/README.md`; Acceptance: README includes flag explanations, troubleshooting (service worker cache, restarting dev server), and expected outcomes.
+- Script media cleanup for tests — Purpose: ensure local uploads directory is purged between runs to avoid bloating the repo; Key files: `services/api/tests/conftest.py`, `services/api/Makefile`; Acceptance: running tests leaves `services/api/media` empty (or restored) and docs mention cleanup command.
 
-## Running Notes / Changelog
-- 2025-10-28: Initial recap created, documenting MSW-backed frontend prototype and FastAPI service awaiting integration.
-- 2025-10-28: Frontend wired to live API with feature flags; backend gained local upload sink, docs updated, and integration tests extended.
-- 2025-10-28: Persistent image storage implemented for both S3 and local modes, frontend upload panel aligned with new contracts, and README/pytest updated accordingly.
-- 2025-10-29: Refactor pass (no behavior change) – added docstrings, shared media URL helper, environment examples, and streamlined upload tests.
-- 2025-10-29: Upload metadata + variants added; API returns `imageMetadata`/`thumbUrl`/`mediumUrl` and UI now consumes thumbnails with detail metadata.
-- 2025-10-30: Delete flow added; light UI cleanup across wardrobe grid/detail with confirm dialogs and feedback banners.
+### Medium (0.5–2 days)
+- Implement pagination & sorting end-to-end — Purpose: allow scalable browsing of large wardrobes; Key files: `services/api/app/api/routers/items.py`, `services/api/app/services/items.py`, `apps/web/src/lib/api.ts`, `apps/web/src/pages/Wardrobe.tsx`; Acceptance: API accepts `limit/offset/sort`, UI shows pagination controls, typechecks/tests updated.
+- Add thumbnail + metadata display polish in grid — Purpose: leverage medium/thumb URLs and dimensions for better presentation; Key files: `apps/web/src/components/ItemCard.tsx`, `apps/web/src/lib/media.ts`; Acceptance: grid uses thumb variants with dimension badges, shimmering placeholders, and passes typecheck.
+- Expand backend logging & tracing — Purpose: correlate requests/uploads with structured logs; Key files: `services/api/app/core/logging.py`, middleware in `services/api/app/main.py`; Acceptance: request logs include latency, status, user ID, upload metrics with consistent keys.
+
+### Larger (multi-day)
+- Introduce wardrobe analytics dashboard — Purpose: give admins insight into item counts, categories, storage usage; Key files: new API routes (`services/api/app/api/routers`), aggregated queries (`services/api/app/services`), new React page (`apps/web/src/pages`); Acceptance: dashboard summarizes key metrics with real data and respects feature flags.
+- Build AI-assisted tagging pipeline — Purpose: auto-suggest tags/colors via inference; Key files: integrate `services/ai`, add async worker + API endpoints, frontend suggestion UI; Acceptance: uploading triggers background tag suggestions surfaced in detail view with user override.
+- External ingestion connectors (Shopify/Gmail receipts) — Purpose: ingest wardrobe items from external sources; Key files: new backend services & cron scripts (`services/api/app/services`), OAuth or webhook integration, UI import wizard; Acceptance: users can connect a source, import items, and see them in wardrobe without manual upload.
+
+## Deferred TODOs
+- Leave historical media assets checked into `services/api/media/` for now; removing them requires coordination to avoid breaking seeded demos.
+- CI workflow still placeholder; replacing it needs agreement on required checks and runtime environments.

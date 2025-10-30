@@ -7,7 +7,6 @@ from threading import Lock
 
 from alembic import command
 from alembic.config import Config
-
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.base import Base

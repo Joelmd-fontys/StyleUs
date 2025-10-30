@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { deleteItem as deleteItemRequest, getItem, getItems, patchItem } from '../lib/api';
 import { USE_LIVE_API_ITEMS } from '../lib/config';
 import { logger } from '../lib/logger';
@@ -34,7 +34,9 @@ interface WardrobeState {
   deleteItem: (id: string) => Promise<boolean>;
 }
 
-export const useWardrobeStore = create<WardrobeState>((set, get) => ({
+export type WardrobeStore = UseBoundStore<StoreApi<WardrobeState>>;
+
+export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) => ({
   items: [],
   loading: false,
   error: undefined,
@@ -102,7 +104,7 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
         updated = mockSaveWardrobeItem({
           ...existing,
           ...payload,
-          tags: payload.tags ?? existing.tags ?? [],
+          tags: payload.tags ?? existing.tags,
           brand: payload.brand ?? existing.brand,
           color: payload.color ?? existing.color,
           category: payload.category ?? existing.category

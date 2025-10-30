@@ -27,6 +27,8 @@ FastAPI backend for StyleUs wardrobe management. The service uses PostgreSQL, SQ
 | `SEED_LIMIT` | Max number of seed items applied per run | `25` |
 | `SEED_KEY` | Identifier stored in `seeds` table for idempotency | `local-seed-v1` |
 
+Copy `.env.example` to `.env` for a ready-to-run local configuration.
+
 The application fails fast in staging/production if any required variable is missing.
 
 ## Local Development
@@ -35,7 +37,7 @@ The application fails fast in staging/production if any required variable is mis
    ```bash
    docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=styleus postgres:16
    ```
-2. Configure a local `.env` (one is provided with development defaults) or tweak as needed. Example:
+2. Copy `.env.example` to `.env` (or another filename) and tweak as needed. Example:
    ```env
    APP_ENV=local
    DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/styleus

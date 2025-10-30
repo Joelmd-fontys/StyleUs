@@ -1,11 +1,11 @@
 const rawBase = (import.meta.env.VITE_API_BASE_URL ?? '').toString().trim() || 'http://127.0.0.1:8000';
-export const API_BASE = rawBase;
+export const API_BASE: string = rawBase;
 
-const normalize = (url: string) => url.replace(/\/+$/, '');
+const normalize = (url: string): string => url.replace(/\/+$/, '');
 
-const normalizedBase = rawBase ? normalize(rawBase) : '';
+const normalizedBase: string = rawBase ? normalize(rawBase) : '';
 
-const readFlag = (value: unknown, fallback: boolean) => {
+const readFlag = (value: unknown, fallback: boolean): boolean => {
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
     if (['true', '1', 'yes', 'y'].includes(normalized)) {
@@ -24,11 +24,11 @@ const readFlag = (value: unknown, fallback: boolean) => {
 export const USE_LIVE_API_ITEMS = readFlag(import.meta.env.VITE_USE_LIVE_API_ITEMS, true);
 export const USE_LIVE_API_UPLOAD = readFlag(import.meta.env.VITE_USE_LIVE_API_UPLOAD, true);
 
-export const config = {
+export const config: Readonly<{ apiBaseUrl: string }> = {
   apiBaseUrl: normalizedBase
 };
 
-export const resolveApiUrl = (path: string) => {
+export const resolveApiUrl = (path: string): string => {
   if (!config.apiBaseUrl) {
     return path;
   }

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import io
 import uuid
 from pathlib import Path
-import io
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from PIL import Image
 
 from app.api.deps import DEFAULT_USER_ID, get_db
 from app.core.config import get_settings
@@ -23,7 +22,13 @@ class DummyS3Client:
         self.expected_bucket = expected_bucket
         self.called_with: dict[str, str] | None = None
 
-    def generate_presigned_url(self, ClientMethod: str, Params: dict, ExpiresIn: int) -> str:
+    def generate_presigned_url(
+        self,
+        *,
+        ClientMethod: str,  # noqa: N803 - fixture emulates boto3 signature
+        Params: dict,  # noqa: N803 - fixture emulates boto3 signature
+        ExpiresIn: int,  # noqa: N803 - fixture emulates boto3 signature
+    ) -> str:  # noqa: N803
         assert ClientMethod == "put_object"
         assert Params["Bucket"] == self.expected_bucket
         self.called_with = {
@@ -110,7 +115,14 @@ def test_complete_upload_constructs_public_url(
         lambda **kwargs: sample_bytes,
     )
 
-    def _capture_upload(*, bucket: str, key: str, region: str, data: bytes, content_type: str) -> None:
+    def _capture_upload(
+        *,
+        bucket: str,
+        key: str,
+        region: str,
+        data: bytes,
+        content_type: str,
+    ) -> None:
         uploaded_objects[key] = data
 
     monkeypatch.setattr(s3_utils, "upload_bytes", _capture_upload)
@@ -133,7 +145,8 @@ def test_complete_upload_constructs_public_url(
     body = complete.json()
     base_prefix, _sep, _ = object_key.rpartition("/")
     prefix = f"{base_prefix}/" if base_prefix else ""
-    expected_url = f"https://test-bucket.s3.us-east-1.amazonaws.com/{prefix}orig.jpg"
+    bucket_host = "https://test-bucket.s3.us-east-1.amazonaws.com"
+    expected_url = f"{bucket_host}/{prefix}orig.jpg"
     assert body["imageUrl"] == expected_url
     assert body["thumbUrl"].endswith("thumb.jpg")
     assert body["mediumUrl"].endswith("medium.jpg")
@@ -152,7 +165,11 @@ def test_complete_upload_constructs_public_url(
     assert stored.image_url == expected_url
 
 
-def test_local_upload_flow(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, db_session: Session) -> None:
+def test_local_upload_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
     monkeypatch.delenv("AWS_REGION", raising=False)
     monkeypatch.delenv("S3_BUCKET_NAME", raising=False)
     monkeypatch.setenv("UPLOAD_MODE", "local")
@@ -183,7 +200,10 @@ def test_local_upload_flow(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, db_s
         upload = test_client.put(
             presign_payload["uploadUrl"],
             data=local_bytes,
-            headers={"Content-Type": "image/jpeg", "X-File-Name": "camera.jpg"},
+            headers={
+                "Content-Type": "image/jpeg",
+                "X-File-Name": "camera.jpg",
+            },
         )
         assert upload.status_code == 201
         saved_data = upload.json()

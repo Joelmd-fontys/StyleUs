@@ -81,7 +81,7 @@ def run_seed(
 
         succeeded = _seed_sources(session, settings, sources, summary)
         if succeeded and summary.failed == 0:
-            session.merge(SeedRun(key=seed_key, applied_at=datetime.datetime.now(datetime.timezone.utc)))
+            session.merge(SeedRun(key=seed_key, applied_at=datetime.datetime.now(datetime.UTC)))
             session.commit()
     logger.info("seed.summary", extra=summary.log_fields())
     return summary
@@ -126,7 +126,12 @@ def reset_seed(
     return summary
 
 
-def _seed_sources(session: Session, settings: Settings, sources: list[SeedSource], summary: SeedSummary) -> bool:
+def _seed_sources(
+    session: Session,
+    settings: Settings,
+    sources: list[SeedSource],
+    summary: SeedSummary,
+) -> bool:
     base_dir = Path(__file__).resolve().parent
     all_success = True
     for source in sources:
@@ -140,8 +145,19 @@ def _seed_sources(session: Session, settings: Settings, sources: list[SeedSource
                 continue
 
             file_name = f"{source.slug}.jpg"
-            item, object_key = _create_placeholder_with_upload(session, settings, file_name, processed)
-            uploads_result = _finalize_upload(settings, item.id, object_key, file_name, processed)
+            item, object_key = _create_placeholder_with_upload(
+                session,
+                settings,
+                file_name,
+                processed,
+            )
+            uploads_result = _finalize_upload(
+                settings,
+                item.id,
+                object_key,
+                file_name,
+                processed,
+            )
             items_service.complete_upload(
                 session,
                 item,
@@ -269,11 +285,31 @@ def _remove_media(settings: Settings, item: WardrobeItem) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed the local StyleUs wardrobe dataset.")
-    parser.add_argument("--force", action="store_true", help="Run the seed even if already applied.")
-    parser.add_argument("--limit", type=int, default=None, help="Override SEED_LIMIT for this run.")
-    parser.add_argument("--reset", action="store_true", help="Remove seeded data and clear the seed marker.")
-    parser.add_argument("--seed-key", type=str, default=None, help="Override the configured SEED_KEY value.")
+    parser = argparse.ArgumentParser(
+        description="Seed the local StyleUs wardrobe dataset.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Run the seed even if already applied.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Override SEED_LIMIT for this run.",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Remove seeded data and clear the seed marker.",
+    )
+    parser.add_argument(
+        "--seed-key",
+        type=str,
+        default=None,
+        help="Override the configured SEED_KEY value.",
+    )
     args = parser.parse_args()
 
     if args.reset:

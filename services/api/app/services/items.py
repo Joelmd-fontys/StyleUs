@@ -7,8 +7,8 @@ import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql import Select
 
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
@@ -102,7 +102,9 @@ def update_item(
         item.brand = brand
 
     if tags is not None:
-        normalized = sorted({tag.strip() for tag in tags if tag.strip()})
+        normalized = sorted(
+            {tag.strip() for tag in tags if tag.strip()},
+        )
         item.tags.clear()
         for tag in normalized:
             item.tags.append(ItemTag(tag=tag))
@@ -117,7 +119,7 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
     """Soft delete an item by marking its deletion timestamp."""
 
     if item.deleted_at is None:
-        item.deleted_at = datetime.datetime.now(tz=datetime.timezone.utc)
+        item.deleted_at = datetime.datetime.now(tz=datetime.UTC)
         db.add(item)
         db.commit()
 

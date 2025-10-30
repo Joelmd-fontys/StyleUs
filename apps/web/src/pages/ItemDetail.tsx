@@ -62,7 +62,7 @@ const ItemDetail = () => {
     setCategory(item.category);
     setColor(item.color);
     setBrand(item.brand ?? '');
-    setTagsInput((item.tags ?? []).join(', '));
+    setTagsInput(item.tags.join(', '));
   }, [item]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -214,7 +214,7 @@ const ItemDetail = () => {
               </div>
               <div>
                 <dt className="font-medium text-neutral-900">Tags</dt>
-                <dd>{item.tags?.length ? item.tags.join(', ') : 'No tags yet'}</dd>
+                <dd>{item.tags.length > 0 ? item.tags.join(', ') : 'No tags yet'}</dd>
               </div>
               {item.imageMetadata ? (
                 <div className="col-span-2">
@@ -245,6 +245,7 @@ const ItemDetail = () => {
                 <option value="shoes">Shoes</option>
                 <option value="accessory">Accessory</option>
                 <option value="unknown">Unknown</option>
+                <option value="uncategorized">Uncategorized</option>
               </select>
             </Field>
 
@@ -308,7 +309,7 @@ const ItemDetail = () => {
                   setCategory(item.category);
                   setColor(item.color);
                   setBrand(item.brand ?? '');
-                  setTagsInput((item.tags ?? []).join(', '));
+                  setTagsInput(item.tags.join(', '));
                   setErrors({});
                   setStatus('idle');
                   setMessage(undefined);

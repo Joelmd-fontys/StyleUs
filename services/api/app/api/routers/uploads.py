@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import uuid
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -126,7 +126,10 @@ async def upload_blob(
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
-        content={"fileName": saved_path.name, "path": str(saved_path.relative_to(settings.media_root_path))},
+        content={
+            "fileName": saved_path.name,
+            "path": str(saved_path.relative_to(settings.media_root_path)),
+        },
     )
 
 

@@ -5,12 +5,12 @@ from __future__ import annotations
 import io
 import re
 import urllib.request
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
-from PIL import Image
 import yaml
+from PIL import Image
 
 MAX_REMOTE_BYTES = 10 * 1024 * 1024  # 10MB ceiling for remote assets
 ALLOWED_CONTENT_TYPES: dict[str, str] = {
@@ -34,7 +34,12 @@ class SeedSource:
 
     @property
     def slug(self) -> str:
-        base = re.sub(r"[^a-z0-9]+", "-", f"{self.brand or 'styleus'}-{self.title}".lower()).strip("-")
+        brand_prefix = self.brand or "styleus"
+        base = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            f"{brand_prefix}-{self.title}".lower(),
+        ).strip("-")
         return base or "seed-item"
 
 
@@ -89,7 +94,7 @@ def _require_str(item: dict, key: str) -> str:
 def _parse_tags(value: object) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
         cleaned: list[str] = []
         for entry in value:
             if isinstance(entry, str) and entry.strip():
@@ -122,7 +127,9 @@ def _load_remote_image(url: str, slug: str) -> tuple[bytes, str, str]:
             raise SeedSourceError(f"Remote image too large for seed '{slug}'")
         data = response.read(MAX_REMOTE_BYTES + 1)
         if len(data) > MAX_REMOTE_BYTES:
-            raise SeedSourceError(f"Remote image exceeded {MAX_REMOTE_BYTES} bytes for seed '{slug}'")
+            raise SeedSourceError(
+                f"Remote image exceeded {MAX_REMOTE_BYTES} bytes for seed '{slug}'",
+            )
         content_type = response.getheader("Content-Type", "").split(";")[0].strip()
     if content_type not in ALLOWED_CONTENT_TYPES.values():
         raise SeedSourceError(f"Unsupported remote content type '{content_type}' for seed '{slug}'")

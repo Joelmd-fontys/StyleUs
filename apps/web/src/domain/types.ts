@@ -1,4 +1,11 @@
-export type WardrobeCategory = 'top' | 'bottom' | 'outerwear' | 'shoes' | 'accessory' | 'unknown';
+export type WardrobeCategory =
+  | 'top'
+  | 'bottom'
+  | 'outerwear'
+  | 'shoes'
+  | 'accessory'
+  | 'unknown'
+  | 'uncategorized';
 
 export interface ImageMetadata {
   width?: number | null;
@@ -17,6 +24,6 @@ export interface WardrobeItem {
   color: string;
   brand?: string;
   createdAt: string;
-  tags?: string[];
+  tags: string[];
   imageMetadata?: ImageMetadata | null;
 }

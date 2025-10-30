@@ -2,13 +2,20 @@ type EventName = 'upload_started' | 'upload_succeeded' | 'item_edited' | 'item_d
 
 type EventPayload = Record<string, unknown> | undefined;
 
-const log = (event: EventName, payload: EventPayload) => {
+const log = (event: EventName, payload: EventPayload): void => {
   const timestamp = new Date().toISOString();
   // eslint-disable-next-line no-console
   console.info(`[styleus:${event}]`, { timestamp, ...payload });
 };
 
-export const logger = {
+export type Logger = {
+  uploadStarted: (payload?: EventPayload) => void;
+  uploadSucceeded: (payload?: EventPayload) => void;
+  itemEdited: (payload?: EventPayload) => void;
+  itemDeleted: (payload?: EventPayload) => void;
+};
+
+export const logger: Logger = {
   uploadStarted(payload?: EventPayload) {
     log('upload_started', payload);
   },
