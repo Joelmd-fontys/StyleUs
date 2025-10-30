@@ -7,10 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("APP_ENV", "local")
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/postgres")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
 os.environ.setdefault("APP_VERSION", "0.1.0")
@@ -21,20 +20,16 @@ from app.core.config import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
 
-engine = create_engine(
-    os.environ["DATABASE_URL"],
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
+engine = create_engine(os.environ["DATABASE_URL"], future=True, pool_pre_ping=True)
 
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database() -> Generator[None, None, None]:
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
-    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture()

@@ -62,15 +62,17 @@ def create_app() -> FastAPI:
         response = None
         try:
             response = await call_next(request)
-        except Exception:  # pragma: no cover - defensive guard
+        except Exception as exc:  # pragma: no cover - defensive guard
             logger.exception(
                 "request.error",
                 extra={
                     "path": request.url.path,
                     "method": request.method,
+                    "error": str(exc),
                 },
             )
-            response = error_response("internal_error", "Internal server error", None)
+            details = {"error": str(exc)} if settings.app_env == "local" else None
+            response = error_response("internal_error", "Internal server error", details)
             response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         finally:
             latency_ms = round((time.perf_counter() - start) * 1000, 2)

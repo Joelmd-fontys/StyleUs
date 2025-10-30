@@ -92,6 +92,10 @@ def update_item(
     color: str | None = None,
     brand: str | None = None,
     tags: list[str] | None = None,
+    subcategory: str | None = None,
+    primary_color: str | None = None,
+    secondary_color: str | None = None,
+    ai_confidence: float | None = None,
 ) -> WardrobeItem:
     """Persist field updates and normalized tag values for an item."""
     if category is not None:
@@ -100,6 +104,14 @@ def update_item(
         item.color = color
     if brand is not None:
         item.brand = brand
+    if subcategory is not None:
+        item.subcategory = subcategory
+    if primary_color is not None:
+        item.primary_color = primary_color
+    if secondary_color is not None:
+        item.secondary_color = secondary_color
+    if ai_confidence is not None:
+        item.ai_confidence = ai_confidence
 
     if tags is not None:
         normalized = sorted(
@@ -178,12 +190,16 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "category": item.category,
             "color": item.color,
             "brand": item.brand,
+            "subcategory": item.subcategory,
+            "primary_color": item.primary_color,
+            "secondary_color": item.secondary_color,
             "image_url": item.image_url,
             "thumb_url": item.image_thumb_url,
             "medium_url": item.image_medium_url,
             "created_at": item.created_at,
             "tags": [tag.tag for tag in item.tags],
             "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
+            "ai_confidence": item.ai_confidence,
         }
     )
 

@@ -35,12 +35,12 @@ The application fails fast in staging/production if any required variable is mis
 
 1. Start PostgreSQL (example using Docker):
    ```bash
-   docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=styleus postgres:16
+   docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:16
    ```
 2. Copy `.env.example` to `.env` (or another filename) and tweak as needed. Example:
    ```env
    APP_ENV=local
-   DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/styleus
+   DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/postgres
    AWS_REGION=us-east-1
    S3_BUCKET_NAME=styleus-dev
    CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -69,6 +69,43 @@ docker compose up --build
 ```
 
 The compose file exposes the API on `http://localhost:8000` and persists database data in a named `pgdata` volume. Override configuration via environment variables passed to `docker compose`, e.g. `AWS_REGION=us-west-2 docker compose up`.
+
+## Database (PostgreSQL + Docker)
+
+1. Ensure Docker Desktop (or the Docker daemon) is running.
+2. Start the database service:
+   ```bash
+   make db-up
+   ```
+   This launches a Postgres 16 container named `styleus-db` on `localhost:5432`.
+3. Apply database migrations:
+   ```bash
+   alembic upgrade head
+   ```
+4. Start the API (in another terminal):
+   ```bash
+   make run
+   ```
+5. When you are done developing, stop the database:
+   ```bash
+   make db-down
+   ```
+
+You can inspect tables at any point with:
+
+```bash
+docker exec -it styleus-db psql -U postgres -d postgres -c "\\dt"
+```
+
+### Troubleshooting
+
+- **Port 5432 already in use** – Update the port mapping in `docker-compose.yml` (e.g. `"5433:5432"`) and change `DATABASE_URL` to `postgresql+psycopg://postgres:postgres@localhost:5433/postgres`.
+- **Container unhealthy** – Reset the database volume and container:
+  ```bash
+  docker rm -f styleus-db
+  docker volume rm styleus-pgdata
+  make db-up
+  ```
 
 ## Useful Commands
 
@@ -146,6 +183,16 @@ make test
 ### Uploads in local development
 
 When `APP_ENV=local`, the `/items/presign` endpoint returns an upload URL that targets the API itself (`PUT /items/uploads/{itemId}`) so the frontend can stream files without real S3 credentials. In staging/production the service falls back to presigned S3 URLs and requires valid AWS configuration.
+
+### Local AI v1 (color + CLIP multi-head)
+
+After a successful upload completion the API runs a background classifier that predicts the clothing category, optional subcategory, the dominant color (when the field was left `unspecified`), and a handful of descriptive tags. The pipeline prefers a local CLIP (ViT-B/32, `open-clip-torch`) model on CPU and gracefully falls back to a deterministic color/keyword heuristic if the model cannot be loaded. Embeddings are cached under `<MEDIA_ROOT>/.emb_cache/<sha256>.npy` so repeat inferences reuse work. Predictions only fill empty fields (and merge with existing tags) so user edits remain authoritative—brand stays user-controlled. Set `AI_ENABLE_CLASSIFIER=false` to disable the background job entirely. The first CLIP run may download weights and cache them locally; the heuristic fallback remains available even without the model.
+
+Key environment variables:
+
+- `AI_CONFIDENCE_THRESHOLD` (default `0.6`) – minimum probability required before auto-writing category/subcategory/colors/tags.
+- `AI_COLOR_TOPK` (default `2`) – number of dominant colors to store (`primary_color`, optional `secondary_color`).
+- `AI_ONNX` / `AI_ONNX_MODEL_PATH` – enable an ONNX-exported CLIP encoder (falls back to torch if unavailable).
 
 ## Upload Modes
 

@@ -17,6 +17,9 @@ export interface PatchItemRequest {
   color: WardrobeItem['color'];
   brand?: WardrobeItem['brand'];
   tags?: WardrobeItem['tags'];
+  subcategory?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
 }
 
 export interface CompleteUploadRequest {

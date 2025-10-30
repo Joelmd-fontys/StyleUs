@@ -34,11 +34,15 @@ class ItemBase(CamelModel):
     category: str
     color: str
     brand: str | None = None
+    subcategory: str | None = None
+    primary_color: str | None = Field(default=None, alias="primaryColor")
+    secondary_color: str | None = Field(default=None, alias="secondaryColor")
     image_url: str | None = Field(default=None, alias="imageUrl")
     thumb_url: str | None = Field(default=None, alias="thumbUrl")
     medium_url: str | None = Field(default=None, alias="mediumUrl")
     created_at: datetime.datetime = Field(alias="createdAt")
     image_metadata: ImageMetadata | None = Field(default=None, alias="imageMetadata")
+    ai_confidence: float | None = Field(default=None, alias="aiConfidence")
 
 
 class ItemDetail(ItemBase):
@@ -50,6 +54,9 @@ class ItemUpdate(CamelModel):
     color: str | None = None
     brand: str | None = None
     tags: list[str] | None = None
+    subcategory: str | None = None
+    primary_color: str | None = Field(default=None, alias="primaryColor")
+    secondary_color: str | None = Field(default=None, alias="secondaryColor")
 
 
 class CompleteUploadRequest(CamelModel):

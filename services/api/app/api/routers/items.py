@@ -82,6 +82,9 @@ def update_wardrobe_item(
         color=payload.color,
         brand=payload.brand,
         tags=payload.tags,
+        subcategory=payload.subcategory,
+        primary_color=payload.primary_color,
+        secondary_color=payload.secondary_color,
     )
     return items_service.to_item_detail(updated)
 

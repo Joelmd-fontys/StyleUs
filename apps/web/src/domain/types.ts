@@ -21,9 +21,13 @@ export interface WardrobeItem {
   thumbUrl?: string | null;
   mediumUrl?: string | null;
   category: WardrobeCategory;
+  subcategory?: string | null;
   color: string;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
   brand?: string;
   createdAt: string;
   tags: string[];
   imageMetadata?: ImageMetadata | null;
+  aiConfidence?: number | null;
 }

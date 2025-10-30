@@ -72,7 +72,7 @@ const Dashboard = () => {
         ) : recent.length ? (
           <ul className="space-y-3">
             {recent.map((item) => {
-              const imageSrc = resolveMediaUrl(item.thumbUrl, item.imageUrl);
+              const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl, item.thumbUrl);
               return (
                 <li
                   key={item.id}

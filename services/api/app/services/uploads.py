@@ -97,11 +97,10 @@ def save_local_upload(
     data: bytes,
 ) -> Path:
     """Persist an uploaded image to the local media directory."""
-    if content_type not in ALLOWED_CONTENT_TYPES:
+    extension = ALLOWED_CONTENT_TYPES.get(content_type)
+    if extension is None:
         allowed = ", ".join(sorted(_allowed_content_types()))
         raise ValueError(f"Unsupported content type: {content_type}. Allowed: {allowed}")
-
-    extension = ALLOWED_CONTENT_TYPES[content_type]
     safe_name = sanitize_file_name(file_name, default_extension=extension)
 
     media_dir = settings.media_root_path / str(item_id)

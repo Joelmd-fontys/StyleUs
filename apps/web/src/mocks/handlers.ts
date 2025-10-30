@@ -97,7 +97,10 @@ const itemHandlers = !USE_LIVE_API_ITEMS
           tags: body.tags ?? existing.tags,
           brand: body.brand ?? existing.brand,
           color: body.color ?? existing.color,
-          category: body.category ?? existing.category
+          category: body.category ?? existing.category,
+          subcategory: body.subcategory ?? existing.subcategory,
+          primaryColor: body.primaryColor ?? existing.primaryColor,
+          secondaryColor: body.secondaryColor ?? existing.secondaryColor
         };
 
         saveWardrobeItem(updated);
@@ -182,8 +185,11 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
           thumbUrl: body?.imageUrl ?? '/mock-uploads/default-upload.svg',
           category: 'unknown',
           color: 'unknown',
+          primaryColor: null,
+          secondaryColor: null,
           createdAt: now,
           tags: [],
+          subcategory: null,
           imageMetadata: {
             width: 1024,
             height: 768,

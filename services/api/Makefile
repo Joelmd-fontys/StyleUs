@@ -1,8 +1,9 @@
 PYTHON ?= python3
 VENV ?= .venv
 MESSAGE ?= update
+COMPOSE_FILE := $(CURDIR)/docker-compose.yml
 
-.PHONY: setup run migrate upgrade lint typecheck test seed reset-seed
+.PHONY: setup run migrate upgrade lint typecheck test seed reset-seed db-up db-down
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -31,3 +32,9 @@ seed:
 
 reset-seed:
 	$(PYTHON) -m app.seed.runner --reset
+
+db-up:
+	docker compose -f $(COMPOSE_FILE) up -d
+
+db-down:
+	docker compose -f $(COMPOSE_FILE) down
