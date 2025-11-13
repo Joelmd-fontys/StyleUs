@@ -42,6 +42,7 @@ def list_items(
     limit: int = 20,
     offset: int = 0,
     include_deleted: bool = False,
+    created_since: datetime.datetime | None = None,
 ) -> Sequence[WardrobeItem]:
     """Retrieve items for a user applying filters and pagination."""
     stmt: Select[tuple[WardrobeItem]] = (
@@ -59,6 +60,9 @@ def list_items(
     if query:
         stmt = apply_search_filters(stmt, query)
         stmt = stmt.distinct()
+
+    if created_since:
+        stmt = stmt.where(WardrobeItem.created_at > created_since)
 
     stmt = stmt.order_by(WardrobeItem.created_at.desc()).limit(limit).offset(offset)
 

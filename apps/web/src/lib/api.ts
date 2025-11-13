@@ -14,6 +14,7 @@ export interface ItemFilters {
   q?: string;
   limit?: number;
   offset?: number;
+  createdSince?: string;
 }
 
 const handleResponse = async <T>(response: Response): Promise<T> => {
@@ -43,6 +44,9 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
   }
   if (typeof filters.offset === 'number') {
     params.set('offset', filters.offset.toString());
+  }
+  if (filters.createdSince) {
+    params.set('createdSince', filters.createdSince);
   }
   const requestUrl = params.toString() ? `${url}?${params.toString()}` : url;
 

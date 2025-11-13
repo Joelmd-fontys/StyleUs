@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+import datetime
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
@@ -26,6 +27,7 @@ def list_wardrobe_items(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     include_deleted: bool = Query(default=False),
+    created_since: datetime.datetime | None = Query(default=None, alias="createdSince"),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[ItemDetail]:
@@ -39,6 +41,7 @@ def list_wardrobe_items(
         limit=limit,
         offset=offset,
         include_deleted=include_deleted,
+        created_since=created_since,
     )
     return [items_service.to_item_detail(item) for item in items]
 
