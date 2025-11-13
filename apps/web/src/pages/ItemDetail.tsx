@@ -172,6 +172,24 @@ const ItemDetail = () => {
   });
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl);
 
+  const renderColorDetail = (label: string, value?: string | null) => {
+    const normalized = value?.trim() ?? '';
+    const hasColor = normalized.length > 0;
+    return (
+      <div>
+        <dt className="font-medium text-neutral-900">{label}</dt>
+        <dd className="flex items-center gap-2 capitalize">
+          <span
+            className="h-5 w-5 rounded-full border border-neutral-200 shadow-sm"
+            style={{ backgroundColor: hasColor ? normalized : '#f5f5f5' }}
+            aria-label={hasColor ? normalized : 'Color not set'}
+          />
+          <span>{hasColor ? normalized : '—'}</span>
+        </dd>
+      </div>
+    );
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -214,10 +232,8 @@ const ItemDetail = () => {
                 <dt className="font-medium text-neutral-900">Category</dt>
                 <dd className="capitalize">{item.category}</dd>
               </div>
-              <div>
-                <dt className="font-medium text-neutral-900">Color</dt>
-                <dd className="capitalize">{item.color}</dd>
-              </div>
+              {renderColorDetail('Primary color', item.primaryColor)}
+              {renderColorDetail('Secondary color', item.secondaryColor)}
               <div>
                 <dt className="font-medium text-neutral-900">Brand</dt>
                 <dd>{item.brand ?? 'Unbranded'}</dd>

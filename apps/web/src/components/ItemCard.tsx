@@ -86,7 +86,6 @@ const ItemCardComponent = ({
             <span>{hasSecondaryColor ? secondaryColor : '—'}</span>
           </div>
         </div>
-        <p className="text-[11px] text-neutral-400">Base color: {item.color || '—'}</p>
         {item.tags.length > 0 ? (
           <ul className="mt-auto flex flex-wrap gap-1 pt-2">
             {item.tags.slice(0, 3).map((tag) => (
