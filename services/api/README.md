@@ -186,11 +186,11 @@ When `APP_ENV=local`, the `/items/presign` endpoint returns an upload URL that t
 
 ### Local AI v1 (color + CLIP multi-head)
 
-After a successful upload completion the API runs a background classifier that predicts the clothing category, optional subcategory, the dominant color (when the field was left `unspecified`), and a handful of descriptive tags. The pipeline prefers a local CLIP (ViT-B/32, `open-clip-torch`) model on CPU and gracefully falls back to a deterministic color/keyword heuristic if the model cannot be loaded. Embeddings are cached under `<MEDIA_ROOT>/.emb_cache/<sha256>.npy` so repeat inferences reuse work. Predictions only fill empty fields (and merge with existing tags) so user edits remain authoritative—brand stays user-controlled. Set `AI_ENABLE_CLASSIFIER=false` to disable the background job entirely. The first CLIP run may download weights and cache them locally; the heuristic fallback remains available even without the model.
+After a successful upload completion the API runs a background classifier that predicts the clothing category, the dominant color (when the field was left `unspecified`), and a handful of descriptive tags. The pipeline prefers a local CLIP (ViT-B/32, `open-clip-torch`) model on CPU and gracefully falls back to a deterministic color/keyword heuristic if the model cannot be loaded. Embeddings are cached under `<MEDIA_ROOT>/.emb_cache/<sha256>.npy` so repeat inferences reuse work. Predictions only fill empty fields (and merge with existing tags) so user edits remain authoritative—brand stays user-controlled. Set `AI_ENABLE_CLASSIFIER=false` to disable the background job entirely. The first CLIP run may download weights and cache them locally; the heuristic fallback remains available even without the model.
 
 Key environment variables:
 
-- `AI_CONFIDENCE_THRESHOLD` (default `0.6`) – minimum probability required before auto-writing category/subcategory/colors/tags.
+- `AI_CONFIDENCE_THRESHOLD` (default `0.6`) – minimum probability required before auto-writing category/colors/tags.
 - `AI_COLOR_TOPK` (default `2`) – number of dominant colors to store (`primary_color`, optional `secondary_color`).
 - `AI_ONNX` / `AI_ONNX_MODEL_PATH` – enable an ONNX-exported CLIP encoder (falls back to torch if unavailable).
 

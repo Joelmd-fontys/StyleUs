@@ -5,6 +5,7 @@ import ItemDetail from './pages/ItemDetail';
 import Outfits from './pages/Outfits';
 import Settings from './pages/Settings';
 import Wardrobe from './pages/Wardrobe';
+import UploadReviewPage from './pages/UploadReviewPage';
 
 const App = () => {
   return (
@@ -15,6 +16,7 @@ const App = () => {
         <Route path="items/:id" element={<ItemDetail />} />
         <Route path="outfits" element={<Outfits />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="upload/review/:id" element={<UploadReviewPage />} />
         <Route path="*" element={<Navigate to="/wardrobe" replace />} />
       </Route>
     </Routes>

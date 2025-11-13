@@ -1,16 +1,17 @@
 # Recap
 
 ## What We Already Have
-- **Frontend**: Vite + React 18 + TypeScript app with Tailwind styling, React Router pages (dashboard, wardrobe grid, item detail, placeholders) and a Zustand wardrobe store coordinating API + mock flows (`apps/web/src/pages`, `apps/web/src/store/wardrobe.ts`). UploadPanel handles presign → PUT upload → completion with live/local support (`apps/web/src/components/UploadPanel.tsx`).
+- **Frontend**: Vite + React 18 + TypeScript app with Tailwind styling, React Router pages (dashboard, wardrobe grid, item detail, placeholders) and a Zustand wardrobe store coordinating API + mock flows (`apps/web/src/pages`, `apps/web/src/store/wardrobe.ts`). UploadPanel handles presign → PUT upload → completion with live/local support (`apps/web/src/components/UploadPanel.tsx`), followed by a new Upload Review screen for AI-assisted confirmation (`apps/web/src/pages/UploadReviewPage.tsx`).
 - **Backend**: FastAPI service exposing `/health`, `/version`, `/items`, `/items/presign`, `/items/uploads/{id}`, and `/items/{id}/complete-upload` with SQLAlchemy models, Alembic migrations, and dual upload modes (S3 or local disk) plus API-key enforcement in secure envs (`services/api/app/api`, `services/api/app/models/wardrobe.py`, `services/api/app/services/uploads.py`).
 - **Database**: PostgreSQL 16 via Docker (`styleus-db`) on `postgresql+psycopg://postgres:postgres@localhost:5432/postgres`; migrations applied and `/health` verified; all SQLite fallbacks removed; next step is optional seeding + AI enrichment once desired.
-- **AI v1**: Local-first pipeline (multi-head CLIP + LAB/KMeans color detector) enriches uploads with category, subcategory, primary/secondary colors, and merged style/material tags using cached embeddings with heuristic fallback; controlled by `AI_ENABLE_CLASSIFIER` (`services/api/app/ai/`, `services/api/app/api/routers/uploads.py`).
+- **AI v1**: Local-first pipeline (multi-head CLIP + LAB/KMeans color detector) enriches uploads with category, primary/secondary colors, and merged style/material tags using cached embeddings with heuristic fallback; controlled by `AI_ENABLE_CLASSIFIER` (`services/api/app/ai/`, `services/api/app/api/routers/uploads.py`).
 - **Tests & CI**: Pytest suite covering presign, upload finalization (S3 + local), and seeding; `make lint` runs Ruff with modern config; frontend `npm run typecheck` is clean. GitHub workflow scaffold exists but is still a placeholder (`services/api/tests`, `apps/web/package.json`, `.github/workflows`).
 - **Docs & Env**: Updated service READMEs document setup, scripts, and feature flags; new `.env.example` files guide local configuration for both web and API (`apps/web/README.md`, `services/api/README.md`, `apps/web/.env.example`, `services/api/.env.example`).
 
 ## Known Gaps / Risks
 - CI workflow does not yet execute lint/typecheck/test targets, so regressions rely on manual runs.
-- Frontend lacks automated tests; only manual verification enforces UI behavior and upload flows.
+- Frontend test coverage is minimal (Vitest component checks cover upload review only); broader UI flows still rely on manual verification.
+
 - Local media artefacts are still tracked in git history; future uploads are ignored but existing blobs remain until a cleanup decision is made.
 - Pagination, sorting, and richer filters are absent on both API and UI, limiting scalability of larger wardrobes.
 - Error and retry UX is basic—fetch/upload failures surface as single-line messages with no retry/backoff guidance.
@@ -39,3 +40,7 @@
 ## Deferred TODOs
 - Leave historical media assets checked into `services/api/media/` for now; removing them requires coordination to avoid breaking seeded demos.
 - CI workflow still placeholder; replacing it needs agreement on required checks and runtime environments.
+
+## Latest Decisions
+- **Subcategory removed**: the field was stored in the database and UI but never populated by the AI pipeline nor editable after upload review, leading to stale placeholders in cards. Instead of inventing a second labeler, we dropped the column, schemas, and UI references to keep the data model lean until there is evidence we need finer granularity.
+- **Brand UX**: Upload review and item edit forms now keep the brand input visible, highlight it in red, and show “Please add a brand” whenever it is empty so the manual step is hard to miss after AI classification skips that field.

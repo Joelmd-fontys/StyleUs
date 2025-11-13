@@ -13,6 +13,7 @@ from app.ai import tasks as ai_tasks
 from app.ai.pipeline import PipelineResult
 from app.api.deps import DEFAULT_USER_ID
 from app.core.config import get_settings
+from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
 
 
@@ -30,6 +31,9 @@ def _prepare_settings(
     ai_tasks.settings = get_settings()
     if session is not None:
         monkeypatch.setattr(ai_tasks, "SessionLocal", lambda: nullcontext(session))
+        if session.get(User, DEFAULT_USER_ID) is None:
+            session.add(User(id=DEFAULT_USER_ID, email="test@example.com"))
+            session.commit()
 
 
 def _create_local_image(path: Path) -> None:
@@ -46,13 +50,10 @@ def _mock_pipeline_result(
     secondary_conf: float | None,
     category: str,
     category_conf: float,
-    subcategory: str | None,
-    sub_conf: float | None,
     materials: list[tuple[str, float]],
     styles: list[tuple[str, float]],
 ) -> PipelineResult:
     scores_category = {category: category_conf}
-    scores_sub = {subcategory: sub_conf} if subcategory and sub_conf is not None else {}
     score_materials = dict(materials)
     score_styles = dict(styles)
     return PipelineResult(
@@ -65,13 +66,10 @@ def _mock_pipeline_result(
         clip={
             "category": category,
             "category_confidence": category_conf,
-            "subcategory": subcategory,
-            "subcategory_confidence": sub_conf,
             "materials": materials,
             "styles": styles,
             "scores": {
                 "category": scores_category,
-                "subcategory": scores_sub,
                 "materials": score_materials,
                 "styles": score_styles,
             },
@@ -104,8 +102,6 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
         secondary_conf=0.74,
         category="outerwear",
         category_conf=0.92,
-        subcategory="coat",
-        sub_conf=0.84,
         materials=[("leather", 0.88)],
         styles=[("heritage", 0.81)],
     )
@@ -116,7 +112,6 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
     refreshed = db_session.get(WardrobeItem, item_id)
     assert refreshed is not None
     assert refreshed.category == "outerwear"
-    assert refreshed.subcategory == "coat"
     assert refreshed.primary_color == "Camel"
     assert refreshed.secondary_color == "Tan"
     assert refreshed.color == "Camel"
@@ -150,8 +145,6 @@ def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, m
         secondary_conf=0.65,
         category="outerwear",
         category_conf=0.75,
-        subcategory="coat",
-        sub_conf=0.7,
         materials=[("wool", 0.72)],
         styles=[("outdoor", 0.7)],
     )
@@ -163,8 +156,6 @@ def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, m
     assert refreshed is not None
     # Category already set; should remain unchanged.
     assert refreshed.category == "top"
-    # Subcategory should populate because it was missing.
-    assert refreshed.subcategory == "coat"
     merged_tags = [tag.tag for tag in refreshed.tags]
     assert merged_tags == ["casual", "outdoor", "wool"]
     assert refreshed.primary_color == "Brown"

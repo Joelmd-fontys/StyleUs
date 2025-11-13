@@ -175,15 +175,6 @@ def _apply_classification(
     ):
         update_kwargs["category"] = clip["category"]
 
-    sub_conf = clip.get("subcategory_confidence")
-    if (
-        clip.get("subcategory")
-        and sub_conf is not None
-        and sub_conf >= threshold
-        and (not item.subcategory or item.subcategory == "")
-    ):
-        update_kwargs["subcategory"] = clip["subcategory"]
-
     existing_tags = [tag.tag for tag in item.tags]
     suggested_tags: list[str] = []
     for name, score in clip.get("materials", []):
@@ -213,7 +204,6 @@ def _apply_classification(
             extra={
                 "item_id": str(item.id),
                 "category": update_kwargs.get("category", item.category),
-                "subcategory": update_kwargs.get("subcategory", item.subcategory),
                 "primary_color": update_kwargs.get("primary_color", item.primary_color),
                 "secondary_color": update_kwargs.get("secondary_color", item.secondary_color),
                 "tags": update_kwargs.get("tags", existing_tags),
@@ -229,3 +219,26 @@ def _apply_classification(
             "ai.tasks.no_update_needed",
             extra={"item_id": str(item.id)},
         )
+
+
+def get_pipeline_preview(item: WardrobeItem) -> PipelineResult | None:
+    """Run the AI pipeline for an item without persisting side effects."""
+
+    if not item.image_url:
+        return None
+
+    image_path, cleanup_required = _prepare_image(item.image_url)
+    if image_path is None:
+        return None
+
+    try:
+        return pipeline.run(image_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "ai.tasks.preview_failed",
+            extra={"item_id": str(item.id), "error": str(exc)},
+        )
+        return None
+    finally:
+        if cleanup_required:
+            _safe_unlink(image_path)

@@ -24,38 +24,38 @@ LOGGER = logging.getLogger("app.ai.pipeline")
 _EMB_CACHE_DIR = settings.media_root_path / ".emb_cache"
 _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-_HEURISTIC_KEYWORDS: tuple[tuple[str, str, str | None, tuple[str, ...]], ...] = (
-    ("sneaker", "shoes", "sneakers", ("streetwear", "sport")),
-    ("runner", "shoes", "sneakers", ("athletic", "sport")),
-    ("boot", "shoes", "boots", ("outdoor", "heritage")),
-    ("loafer", "shoes", "loafers", ("smart-casual", "minimal")),
-    ("heel", "shoes", "heels", ("luxury", "formal")),
-    ("sand", "shoes", "sandals", ("summer", "casual")),
-    ("jacket", "outerwear", "jacket", ("outdoor", "streetwear")),
-    ("coat", "outerwear", "coat", ("formal", "luxury")),
-    ("puffer", "outerwear", "puffer", ("outdoor", "warm")),
-    ("hoodie", "top", "hoodie", ("streetwear", "casual")),
-    ("sweater", "top", "sweater", ("minimal", "warm")),
-    ("crew", "top", "sweater", ("minimal", "casual")),
-    ("tshirt", "top", "t-shirt", ("casual", "minimal")),
-    ("tee", "top", "t-shirt", ("casual", "minimal")),
-    ("shirt", "top", "shirt", ("smart-casual", "formal")),
-    ("blouse", "top", "blouse", ("formal", "minimal")),
-    ("jean", "bottom", "jeans", ("denim", "casual")),
-    ("chino", "bottom", "chinos", ("smart-casual", "minimal")),
-    ("trouser", "bottom", "trousers", ("formal", "smart-casual")),
-    ("pant", "bottom", "trousers", ("formal", "minimal")),
-    ("short", "bottom", "shorts", ("summer", "casual")),
-    ("skirt", "bottom", "skirt", ("minimal", "formal")),
-    ("legging", "bottom", "leggings", ("athletic", "casual")),
-    ("bag", "accessory", "bag", ("streetwear", "minimal")),
-    ("belt", "accessory", "belt", ("heritage", "smart-casual")),
-    ("cap", "accessory", "cap", ("streetwear", "athletic")),
-    ("beanie", "accessory", "beanie", ("winter", "outdoor")),
-    ("scarf", "accessory", "scarf", ("winter", "heritage")),
-    ("watch", "accessory", "watch", ("luxury", "formal")),
-    ("sunglass", "accessory", "sunglasses", ("retro", "summer")),
-    ("glove", "accessory", "gloves", ("winter", "outdoor")),
+_HEURISTIC_KEYWORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("sneaker", "shoes", ("streetwear", "sport")),
+    ("runner", "shoes", ("athletic", "sport")),
+    ("boot", "shoes", ("outdoor", "heritage")),
+    ("loafer", "shoes", ("smart-casual", "minimal")),
+    ("heel", "shoes", ("luxury", "formal")),
+    ("sand", "shoes", ("summer", "casual")),
+    ("jacket", "outerwear", ("outdoor", "streetwear")),
+    ("coat", "outerwear", ("formal", "luxury")),
+    ("puffer", "outerwear", ("outdoor", "warm")),
+    ("hoodie", "top", ("streetwear", "casual")),
+    ("sweater", "top", ("minimal", "warm")),
+    ("crew", "top", ("minimal", "casual")),
+    ("tshirt", "top", ("casual", "minimal")),
+    ("tee", "top", ("casual", "minimal")),
+    ("shirt", "top", ("smart-casual", "formal")),
+    ("blouse", "top", ("formal", "minimal")),
+    ("jean", "bottom", ("denim", "casual")),
+    ("chino", "bottom", ("smart-casual", "minimal")),
+    ("trouser", "bottom", ("formal", "smart-casual")),
+    ("pant", "bottom", ("formal", "minimal")),
+    ("short", "bottom", ("summer", "casual")),
+    ("skirt", "bottom", ("minimal", "formal")),
+    ("legging", "bottom", ("athletic", "casual")),
+    ("bag", "accessory", ("streetwear", "minimal")),
+    ("belt", "accessory", ("heritage", "smart-casual")),
+    ("cap", "accessory", ("streetwear", "athletic")),
+    ("beanie", "accessory", ("winter", "outdoor")),
+    ("scarf", "accessory", ("winter", "heritage")),
+    ("watch", "accessory", ("luxury", "formal")),
+    ("sunglass", "accessory", ("retro", "summer")),
+    ("glove", "accessory", ("winter", "outdoor")),
 )
 
 
@@ -97,16 +97,12 @@ def _heuristic_prediction(image_path: Path, colors: color.ColorResult) -> ClipPr
     filename = image_path.name.lower()
     category = "accessory"
     category_conf = 0.45
-    subcategory: str | None = None
-    sub_conf: float | None = None
     tags: list[str] = []
 
-    for keyword, cat, sub, extra_tags in _HEURISTIC_KEYWORDS:
+    for keyword, cat, extra_tags in _HEURISTIC_KEYWORDS:
         if keyword in filename:
             category = cat
             category_conf = 0.72
-            subcategory = sub
-            sub_conf = 0.68 if sub else None
             tags.extend(extra_tags)
             break
 
@@ -134,13 +130,10 @@ def _heuristic_prediction(image_path: Path, colors: color.ColorResult) -> ClipPr
     return ClipPrediction(
         category=category,
         category_confidence=category_conf,
-        subcategory=subcategory,
-        subcategory_confidence=sub_conf,
         materials=materials_list,
         styles=styles_list,
         scores={
             "category": {category: category_conf},
-            "subcategory": {subcategory: sub_conf} if subcategory and sub_conf else {},
             "materials": dict(materials_list),
             "styles": dict(styles_list),
         },

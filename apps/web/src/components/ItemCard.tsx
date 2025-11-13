@@ -23,6 +23,10 @@ const ItemCardComponent = ({
   onSelect
 }: ItemCardProps) => {
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl, item.thumbUrl);
+  const primaryColor = item.primaryColor?.trim() || item.color?.trim() || '';
+  const secondaryColor = item.secondaryColor?.trim() || '';
+  const hasPrimaryColor = primaryColor.length > 0;
+  const hasSecondaryColor = secondaryColor.length > 0;
 
   const handleActivate = () => {
     onSelect?.(item.id);
@@ -64,7 +68,25 @@ const ItemCardComponent = ({
           <span>{formatDate(item.createdAt)}</span>
         </div>
         <p className="text-sm font-semibold text-neutral-900">{item.brand ?? 'Unbranded'}</p>
-        <p className="text-xs text-neutral-500">{item.color}</p>
+        <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-neutral-500">
+          <div className="flex items-center gap-2">
+            <span
+              className="h-5 w-5 rounded-full border border-neutral-200 shadow-sm"
+              style={{ backgroundColor: hasPrimaryColor ? primaryColor : '#f5f5f5' }}
+              aria-label={hasPrimaryColor ? `Primary color ${primaryColor}` : 'Primary color not set'}
+            />
+            <span>{hasPrimaryColor ? primaryColor : '—'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className="h-5 w-5 rounded-full border border-neutral-200 shadow-sm"
+              style={{ backgroundColor: hasSecondaryColor ? secondaryColor : '#f5f5f5' }}
+              aria-label={hasSecondaryColor ? `Secondary color ${secondaryColor}` : 'Secondary color not set'}
+            />
+            <span>{hasSecondaryColor ? secondaryColor : '—'}</span>
+          </div>
+        </div>
+        <p className="text-[11px] text-neutral-400">Base color: {item.color || '—'}</p>
         {item.tags.length > 0 ? (
           <ul className="mt-auto flex flex-wrap gap-1 pt-2">
             {item.tags.slice(0, 3).map((tag) => (

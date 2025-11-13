@@ -22,13 +22,10 @@ class _StubPredictor:
         return {
             "category": "shoes",
             "category_confidence": 0.9,
-            "subcategory": "sneakers",
-            "subcategory_confidence": 0.8,
             "materials": [("canvas", 0.85)],
             "styles": [("streetwear", 0.83)],
             "scores": {
                 "category": {"shoes": 0.9},
-                "subcategory": {"sneakers": 0.8},
                 "materials": {"canvas": 0.85},
                 "styles": {"streetwear": 0.83},
             },
@@ -89,5 +86,4 @@ def test_pipeline_fallback_on_predictor_error(tmp_path, monkeypatch):
 
     assert result.cached is False
     assert result.clip["category"] == "shoes"
-    assert result.clip["subcategory"] == "sneakers"
     assert result.clip["category_confidence"] >= 0.7

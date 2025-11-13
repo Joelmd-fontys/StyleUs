@@ -22,7 +22,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'North Loom',
     createdAt: '2024-03-02T10:15:00.000Z',
     tags: ['linen', 'casual', 'breathable'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.82
   },
   {
     id: 'wd-002',
@@ -36,7 +37,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'Line & Form',
     createdAt: '2024-02-21T08:00:00.000Z',
     tags: ['tailored', 'work', 'staple'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.74
   },
   {
     id: 'wd-003',
@@ -50,7 +52,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'Maison Forte',
     createdAt: '2024-01-17T14:40:00.000Z',
     tags: ['outerwear', 'winter'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.88
   },
   {
     id: 'wd-004',
@@ -64,7 +67,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'Stride Studio',
     createdAt: '2024-03-10T09:12:00.000Z',
     tags: ['sneaker', 'minimal'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.79
   },
   {
     id: 'wd-005',
@@ -78,7 +82,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'Atelier C',
     createdAt: '2024-02-05T18:20:00.000Z',
     tags: ['silk', 'accent'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.7
   },
   {
     id: 'wd-006',
@@ -92,7 +97,8 @@ const seedItems: WardrobeItem[] = [
     brand: 'Archive 72',
     createdAt: '2023-12-28T12:10:00.000Z',
     tags: ['vintage', 'statement'],
-    imageMetadata: mockMetadata()
+    imageMetadata: mockMetadata(),
+    aiConfidence: 0.9
   }
 ];
 

@@ -23,53 +23,6 @@ PROMPT_TEMPLATES: Sequence[str] = (
 
 CATEGORIES: Sequence[str] = ("top", "bottom", "outerwear", "shoes", "accessory")
 
-SUBCATEGORIES: dict[str, Sequence[str]] = {
-    "top": (
-        "t-shirt",
-        "shirt",
-        "blouse",
-        "sweater",
-        "hoodie",
-        "cardigan",
-        "tank",
-        "polo",
-    ),
-    "bottom": (
-        "jeans",
-        "chinos",
-        "trousers",
-        "shorts",
-        "skirt",
-        "leggings",
-    ),
-    "outerwear": (
-        "coat",
-        "puffer",
-        "jacket",
-        "parka",
-        "blazer",
-        "fleece",
-    ),
-    "shoes": (
-        "sneakers",
-        "boots",
-        "loafers",
-        "heels",
-        "sandals",
-        "derby",
-    ),
-    "accessory": (
-        "bag",
-        "belt",
-        "cap",
-        "beanie",
-        "scarf",
-        "watch",
-        "sunglasses",
-        "gloves",
-    ),
-}
-
 MATERIALS: Sequence[str] = (
     "denim",
     "cotton",
@@ -107,8 +60,6 @@ STYLES: Sequence[str] = (
 class ClipPrediction(TypedDict):
     category: str
     category_confidence: float
-    subcategory: str | None
-    subcategory_confidence: float | None
     materials: list[tuple[str, float]]
     styles: list[tuple[str, float]]
     scores: dict[str, dict[str, float]]
@@ -174,10 +125,6 @@ class ClipPredictor:
             self.category_text = self._build_text_embeddings(CATEGORIES)
             self.material_text = self._build_text_embeddings(MATERIALS)
             self.style_text = self._build_text_embeddings(STYLES)
-            self.subcategory_text = {
-                key: self._build_text_embeddings(labels)
-                for key, labels in SUBCATEGORIES.items()
-            }
 
     def _build_text_embeddings(self, labels: Sequence[str]) -> Any:
         torch = self._torch
@@ -248,23 +195,6 @@ class ClipPredictor:
             for i, label in enumerate(CATEGORIES)
         }
 
-        sub_labels = SUBCATEGORIES.get(category_label, ())
-        if sub_labels:
-            sub_embeddings = self.subcategory_text[category_label].to(self.device)
-            sub_logits = (embedding_tensor @ sub_embeddings.T) * 100
-            sub_probs = torch.softmax(sub_logits, dim=-1)[0]
-            sub_idx = int(torch.argmax(sub_probs).item())
-            sub_label = sub_labels[sub_idx]
-            sub_conf = float(sub_probs[sub_idx].item())
-            sub_scores = {
-                label: float(sub_probs[i].item())
-                for i, label in enumerate(sub_labels)
-            }
-        else:
-            sub_label = None
-            sub_conf = None
-            sub_scores = {}
-
         material_logits = (embedding_tensor @ self.material_text.T) * 100
         material_probs = torch.softmax(material_logits, dim=-1)[0]
         material_scores = {
@@ -286,13 +216,10 @@ class ClipPredictor:
         return ClipPrediction(
             category=category_label,
             category_confidence=category_conf,
-            subcategory=sub_label,
-            subcategory_confidence=sub_conf,
             materials=material_ranked,
             styles=style_ranked,
             scores={
                 "category": category_scores,
-                "subcategory": sub_scores,
                 "materials": material_scores,
                 "styles": style_scores,
             },

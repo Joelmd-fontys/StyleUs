@@ -10,9 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
+from app.ai import tasks as ai_tasks
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import ImageMetadata, ItemDetail
+from app.schemas.items import ImageMetadata, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
 
 
@@ -92,7 +93,6 @@ def update_item(
     color: str | None = None,
     brand: str | None = None,
     tags: list[str] | None = None,
-    subcategory: str | None = None,
     primary_color: str | None = None,
     secondary_color: str | None = None,
     ai_confidence: float | None = None,
@@ -104,8 +104,6 @@ def update_item(
         item.color = color
     if brand is not None:
         item.brand = brand
-    if subcategory is not None:
-        item.subcategory = subcategory
     if primary_color is not None:
         item.primary_color = primary_color
     if secondary_color is not None:
@@ -190,7 +188,6 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "category": item.category,
             "color": item.color,
             "brand": item.brand,
-            "subcategory": item.subcategory,
             "primary_color": item.primary_color,
             "secondary_color": item.secondary_color,
             "image_url": item.image_url,
@@ -202,6 +199,48 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "ai_confidence": item.ai_confidence,
         }
     )
+
+
+def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
+    """Build an AI preview payload using the latest item data."""
+    preview = ItemAIPreview(
+        category=item.category if item.category not in {"", "uncategorized"} else None,
+        category_confidence=item.ai_confidence,
+        primary_color=item.primary_color or None,
+        secondary_color=item.secondary_color or None,
+        tags=[tag.tag for tag in item.tags],
+        confidence=item.ai_confidence,
+    )
+
+    pipeline_result = ai_tasks.get_pipeline_preview(item)
+    if pipeline_result is None:
+        return preview
+
+    clip = pipeline_result.clip
+    preview.category = clip.get("category") or preview.category
+    preview.category_confidence = clip.get("category_confidence") or preview.category_confidence
+
+    color_result = pipeline_result.colors
+    if color_result.primary_color:
+        preview.primary_color = color_result.primary_color
+        preview.primary_color_confidence = color_result.confidence
+    if color_result.secondary_color:
+        preview.secondary_color = color_result.secondary_color
+        preview.secondary_color_confidence = color_result.secondary_confidence
+
+    suggested_tags: list[tuple[str, float]] = []
+    for name, score in clip.get("materials", [])[:3]:
+        suggested_tags.append((name, float(score)))
+    for name, score in clip.get("styles", [])[:3]:
+        if all(existing != name for existing, _ in suggested_tags):
+            suggested_tags.append((name, float(score)))
+
+    if suggested_tags:
+        ordered = sorted(suggested_tags, key=lambda entry: entry[1], reverse=True)
+        preview.tags = [name for name, _ in ordered]
+
+    preview.confidence = clip.get("category_confidence", preview.confidence)
+    return preview
 
 
 def _ensure_user(db: Session, user_id: uuid.UUID) -> User:

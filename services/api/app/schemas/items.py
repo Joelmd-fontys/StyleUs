@@ -34,7 +34,6 @@ class ItemBase(CamelModel):
     category: str
     color: str
     brand: str | None = None
-    subcategory: str | None = None
     primary_color: str | None = Field(default=None, alias="primaryColor")
     secondary_color: str | None = Field(default=None, alias="secondaryColor")
     image_url: str | None = Field(default=None, alias="imageUrl")
@@ -54,7 +53,6 @@ class ItemUpdate(CamelModel):
     color: str | None = None
     brand: str | None = None
     tags: list[str] | None = None
-    subcategory: str | None = None
     primary_color: str | None = Field(default=None, alias="primaryColor")
     secondary_color: str | None = Field(default=None, alias="secondaryColor")
 
@@ -63,3 +61,14 @@ class CompleteUploadRequest(CamelModel):
     image_url: str | None = Field(default=None, alias="imageUrl")
     object_key: str | None = Field(default=None, alias="objectKey")
     file_name: str | None = Field(default=None, alias="fileName")
+
+
+class ItemAIPreview(CamelModel):
+    category: str | None = None
+    category_confidence: float | None = Field(default=None, alias="categoryConfidence")
+    primary_color: str | None = Field(default=None, alias="primaryColor")
+    primary_color_confidence: float | None = Field(default=None, alias="primaryColorConfidence")
+    secondary_color: str | None = Field(default=None, alias="secondaryColor")
+    secondary_color_confidence: float | None = Field(default=None, alias="secondaryColorConfidence")
+    tags: list[str] = Field(default_factory=list)
+    confidence: float | None = Field(default=None, alias="confidence")

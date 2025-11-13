@@ -42,7 +42,6 @@ class WardrobeItem(Base):
     category: Mapped[str] = mapped_column(String(length=100), nullable=False)
     color: Mapped[str] = mapped_column(String(length=100), nullable=False)
     brand: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
-    subcategory: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
     primary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
     secondary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(

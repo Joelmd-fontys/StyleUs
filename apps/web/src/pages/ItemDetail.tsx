@@ -8,6 +8,7 @@ import { useWardrobeStore } from '../store/wardrobe';
 import { WardrobeCategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { cn } from '../lib/utils';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
@@ -64,6 +65,15 @@ const ItemDetail = () => {
     setBrand(item.brand ?? '');
     setTagsInput(item.tags.join(', '));
   }, [item]);
+
+  const brandNeedsAttention = brand.trim().length === 0;
+  const brandFieldError = errors.brand ?? (brandNeedsAttention ? 'Please add a brand' : undefined);
+  const brandInputClasses = cn(
+    'w-full rounded-md border bg-white px-3 py-2 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-accent-600/20',
+    brandFieldError
+      ? 'border-danger-300 focus:border-danger-500 focus:ring-danger-200/70'
+      : 'border-neutral-200 focus:border-accent-600'
+  );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -263,7 +273,7 @@ const ItemDetail = () => {
               label="Brand"
               htmlFor="brand"
               description="Optional, max 60 characters."
-              error={errors.brand}
+              error={brandFieldError}
             >
               <input
                 id="brand"
@@ -271,7 +281,8 @@ const ItemDetail = () => {
                 value={brand}
                 onChange={(event) => setBrand(event.target.value)}
                 maxLength={60}
-                className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-600/20"
+                className={brandInputClasses}
+                aria-invalid={Boolean(brandFieldError)}
               />
             </Field>
 

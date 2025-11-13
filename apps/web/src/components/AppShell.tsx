@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import Button from './Button';
 import { cn } from '../lib/utils';
+import { useWardrobeStore } from '../store/wardrobe';
 
 interface NavItem {
   label: string;
@@ -23,6 +24,18 @@ const navItems: NavItem[] = [
 const AppShell = () => {
   const location = useLocation();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const flashMessage = useWardrobeStore((state) => state.flashMessage);
+  const clearFlashMessage = useWardrobeStore((state) => state.clearFlashMessage);
+
+  useEffect(() => {
+    if (!flashMessage) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      clearFlashMessage();
+    }, 3200);
+    return () => window.clearTimeout(timer);
+  }, [flashMessage, clearFlashMessage]);
 
   const renderNavItems = (variant: 'desktop' | 'mobile' = 'desktop') => (
     <ul className={cn('flex gap-1', variant === 'mobile' ? 'flex-col p-4' : 'flex-col')}>
@@ -51,6 +64,21 @@ const AppShell = () => {
 
   return (
     <div className="flex min-h-screen bg-neutral-50">
+      {flashMessage ? (
+        <div className="fixed right-6 top-6 z-50">
+          <div
+            role="status"
+            className={cn(
+              'rounded-lg px-4 py-3 text-sm shadow-lg transition',
+              flashMessage.type === 'success'
+                ? 'bg-emerald-500 text-white'
+                : 'bg-red-500 text-white'
+            )}
+          >
+            {flashMessage.message}
+          </div>
+        </div>
+      ) : null}
       <aside className="hidden w-64 flex-shrink-0 border-r border-neutral-200 bg-white/90 p-6 backdrop-blur md:block">
         <Link to="/" className="block text-lg font-semibold text-neutral-900">
           StyleUs

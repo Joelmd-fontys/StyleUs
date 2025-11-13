@@ -1,4 +1,5 @@
 import {
+  AIPreviewResponse,
   CompleteUploadRequest,
   GetItemResponse,
   GetItemsResponse,
@@ -141,4 +142,12 @@ export const completeUpload = async (
   });
 
   return handleResponse<GetItemResponse>(response);
+};
+
+export const getItemAIPreview = async (id: string): Promise<AIPreviewResponse> => {
+  const response = await fetch(resolveApiUrl(`/items/${id}/ai-preview`), {
+    headers: { Accept: 'application/json' }
+  });
+
+  return handleResponse<AIPreviewResponse>(response);
 };
