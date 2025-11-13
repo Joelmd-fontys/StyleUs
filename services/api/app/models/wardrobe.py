@@ -42,6 +42,8 @@ class WardrobeItem(Base):
     category: Mapped[str] = mapped_column(String(length=100), nullable=False)
     color: Mapped[str] = mapped_column(String(length=100), nullable=False)
     brand: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
+    primary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
+    secondary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -49,6 +51,7 @@ class WardrobeItem(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    ai_confidence: Mapped[float | None] = mapped_column(nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="items")
     tags: Mapped[list[ItemTag]] = relationship(

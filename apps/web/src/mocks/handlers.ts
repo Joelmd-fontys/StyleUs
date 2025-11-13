@@ -43,6 +43,7 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         const query = url.searchParams.get('q')?.toLowerCase();
         const limit = Number.parseInt(url.searchParams.get('limit') ?? '', 10);
         const offset = Number.parseInt(url.searchParams.get('offset') ?? '', 10);
+        const createdSince = url.searchParams.get('createdSince');
 
         const items = getWardrobeItems();
         let filtered = [...items];
@@ -57,6 +58,13 @@ const itemHandlers = !USE_LIVE_API_ITEMS
             const tags = item.tags.map((tag) => tag.toLowerCase());
             return brand.includes(query) || tags.some((tag) => tag.includes(query));
           });
+        }
+
+        if (createdSince) {
+          const sinceTime = Date.parse(createdSince);
+          if (!Number.isNaN(sinceTime)) {
+            filtered = filtered.filter((item) => Date.parse(item.createdAt) > sinceTime);
+          }
         }
 
         const start = Number.isNaN(offset) ? 0 : offset;
@@ -97,7 +105,9 @@ const itemHandlers = !USE_LIVE_API_ITEMS
           tags: body.tags ?? existing.tags,
           brand: body.brand ?? existing.brand,
           color: body.color ?? existing.color,
-          category: body.category ?? existing.category
+          category: body.category ?? existing.category,
+          primaryColor: body.primaryColor ?? existing.primaryColor,
+          secondaryColor: body.secondaryColor ?? existing.secondaryColor
         };
 
         saveWardrobeItem(updated);
@@ -182,6 +192,8 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
           thumbUrl: body?.imageUrl ?? '/mock-uploads/default-upload.svg',
           category: 'unknown',
           color: 'unknown',
+          primaryColor: null,
+          secondaryColor: null,
           createdAt: now,
           tags: [],
           imageMetadata: {

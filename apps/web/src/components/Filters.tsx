@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, type ReactElement, useEffect, useState } from 'react';
 import Button from './Button';
 import { WardrobeCategory } from '../domain/types';
 import { cn } from '../lib/utils';
@@ -11,7 +11,7 @@ interface FiltersProps {
   className?: string;
 }
 
-const categoryOptions: Array<{ label: string; value?: WardrobeCategory }> = [
+const categoryOptions: ReadonlyArray<{ label: string; value?: WardrobeCategory }> = [
   { label: 'All', value: undefined },
   { label: 'Tops', value: 'top' },
   { label: 'Bottoms', value: 'bottom' },
@@ -21,7 +21,7 @@ const categoryOptions: Array<{ label: string; value?: WardrobeCategory }> = [
   { label: 'Uncategorized', value: 'uncategorized' }
 ];
 
-const Filters = ({ category, q, onChange, onReset, className }: FiltersProps) => {
+const Filters = ({ category, q, onChange, onReset, className }: FiltersProps): ReactElement => {
   const [searchValue, setSearchValue] = useState(q ?? '');
 
   useEffect(() => {

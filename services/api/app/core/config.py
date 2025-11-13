@@ -9,13 +9,24 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = BASE_DIR.parent.parent
+
+ENV_FILES = tuple(
+    str(path)
+    for path in (
+        BASE_DIR / ".env",
+        ROOT_DIR / ".env",
+    )
+)
+
 UploadMode = Literal["s3", "local"]
 
 
 class Settings(BaseSettings):
     """Central application settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=(".env",), env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
     app_env: Literal["local", "staging", "production"] = Field(default="local", alias="APP_ENV")
     api_key: str | None = Field(default=None, alias="API_KEY")
@@ -32,6 +43,12 @@ class Settings(BaseSettings):
     seed_on_start: bool | None = Field(default=None, alias="SEED_ON_START")
     seed_limit: int = Field(default=25, alias="SEED_LIMIT")
     seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
+    ai_enable_classifier: bool = Field(default=True, alias="AI_ENABLE_CLASSIFIER")
+    ai_device: str = Field(default="cpu", alias="AI_DEVICE")
+    ai_onnx: bool = Field(default=False, alias="AI_ONNX")
+    ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
+    ai_color_topk: int = Field(default=2, alias="AI_COLOR_TOPK")
+    ai_onnx_model_path: str | None = Field(default=None, alias="AI_ONNX_MODEL_PATH")
 
     @field_validator("cors_origins")
     @classmethod
@@ -71,6 +88,10 @@ class Settings(BaseSettings):
 
         if self.seed_limit <= 0:
             raise ValueError("SEED_LIMIT must be greater than zero")
+        if self.ai_color_topk <= 0:
+            self.ai_color_topk = 2
+        if self.ai_confidence_threshold <= 0 or self.ai_confidence_threshold > 1:
+            self.ai_confidence_threshold = 0.6
         return self
 
     @property

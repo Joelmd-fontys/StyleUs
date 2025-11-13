@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -13,15 +12,11 @@ from app.core.config import settings
 
 
 def _create_engine(database_url: str) -> Engine:
-    connect_args: dict[str, Any] = {}
-    if database_url.startswith("sqlite"):
-        connect_args["check_same_thread"] = False
     return create_engine(
         database_url,
         echo=False,
         future=True,
         pool_pre_ping=True,
-        connect_args=connect_args,
     )
 
 

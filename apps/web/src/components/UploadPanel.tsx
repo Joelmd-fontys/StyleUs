@@ -1,4 +1,5 @@
-import { ChangeEvent, DragEvent, useRef, useState } from 'react';
+import { type ChangeEvent, type DragEvent, useRef, useState, type ReactElement } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Button from './Button';
 import { logger } from '../lib/logger';
 import { completeUpload, createPresign, uploadFile } from '../lib/api';
@@ -15,12 +16,16 @@ interface UploadState {
 const MAX_FILE_SIZE_MB = 15;
 const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-const UploadPanel = () => {
+const UploadPanel = (): ReactElement => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [progress, setProgress] = useState(0);
   const [state, setState] = useState<UploadState>({ status: 'idle' });
-  const loadItems = useWardrobeStore((store) => store.loadItems);
+  const navigate = useNavigate();
+  const prepareUploadReview = useWardrobeStore((store) => store.prepareUploadReview);
+  const fetchUploadReviewAI = useWardrobeStore((store) => store.fetchUploadReviewAI);
+  const clearUploadReview = useWardrobeStore((store) => store.clearUploadReview);
+  const showFlashMessage = useWardrobeStore((store) => store.showFlashMessage);
 
   const resetMessage = () => {
     window.setTimeout(() => {
@@ -44,6 +49,7 @@ const UploadPanel = () => {
   };
 
   const handleFile = async (file: File) => {
+    clearUploadReview();
     if (!file.type.startsWith('image/')) {
       setState({ status: 'error', message: 'Only image files are supported.' });
       return;
@@ -84,17 +90,20 @@ const UploadPanel = () => {
       if (!isLocalUpload && objectKey) {
         completePayload.objectKey = objectKey;
       }
-      await completeUpload(resolvedItemId, completePayload);
+      const uploadedItem = await completeUpload(resolvedItemId, completePayload);
+      prepareUploadReview(uploadedItem);
       stopProgress();
       setProgress(100);
-      setState({ status: 'success', message: `${file.name} uploaded.` });
+      setState({ status: 'success', message: `${file.name} ready for review.` });
       logger.uploadSucceeded({ itemId, mode: isLocalUpload ? 'local' : 's3' });
-      await loadItems();
+      void fetchUploadReviewAI(resolvedItemId);
       resetMessage();
+      navigate(`/upload/review/${resolvedItemId}`);
     } catch (error) {
       stopProgress();
       const message = error instanceof Error ? error.message : 'Upload failed.';
       setState({ status: 'error', message });
+      showFlashMessage(message, 'error');
     }
   };
 

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button, { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
@@ -8,13 +8,17 @@ import { useWardrobeStore } from '../store/wardrobe';
 import { WardrobeCategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { cn } from '../lib/utils';
+import { formatUtcDate, formatUtcTime } from '../lib/datetime';
+import { useStatsPreference } from '../hooks/useStatsPreference';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
-const formatSize = (value?: number | null) =>
+const formatSize = (value?: number | null): string =>
   typeof value === 'number' && !Number.isNaN(value) ? `${(value / 1024).toFixed(1)} kB` : '—';
 
-const ItemDetail = () => {
+
+const ItemDetail = (): ReactElement => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -36,6 +40,7 @@ const ItemDetail = () => {
   const [message, setMessage] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [statsForNerds] = useStatsPreference();
 
   useEffect(() => {
     if (!items.length) {
@@ -64,6 +69,15 @@ const ItemDetail = () => {
     setBrand(item.brand ?? '');
     setTagsInput(item.tags.join(', '));
   }, [item]);
+
+  const brandNeedsAttention = brand.trim().length === 0;
+  const brandFieldError = errors.brand ?? (brandNeedsAttention ? 'Please add a brand' : undefined);
+  const brandInputClasses = cn(
+    'w-full rounded-md border bg-white px-3 py-2 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-accent-600/20',
+    brandFieldError
+      ? 'border-danger-300 focus:border-danger-500 focus:ring-danger-200/70'
+      : 'border-neutral-200 focus:border-accent-600'
+  );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -156,11 +170,27 @@ const ItemDetail = () => {
     );
   }
 
-  const createdAt = new Date(item.createdAt).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
+  const createdDate = formatUtcDate(item.createdAt);
+  const createdTime = formatUtcTime(item.createdAt);
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl);
+
+  const renderColorDetail = (label: string, value?: string | null) => {
+    const normalized = value?.trim() ?? '';
+    const hasColor = normalized.length > 0;
+    return (
+      <div>
+        <dt className="font-medium text-neutral-900">{label}</dt>
+        <dd className="flex items-center gap-2 capitalize">
+          <span
+            className="h-5 w-5 rounded-full border border-neutral-200 shadow-sm"
+            style={{ backgroundColor: hasColor ? normalized : '#f5f5f5' }}
+            aria-label={hasColor ? normalized : 'Color not set'}
+          />
+          <span>{hasColor ? normalized : '—'}</span>
+        </dd>
+      </div>
+    );
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -169,7 +199,12 @@ const ItemDetail = () => {
           <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
             {item.brand ?? 'Wardrobe item'}
           </h1>
-          <p className="text-sm text-neutral-500">Added on {createdAt}</p>
+          {statsForNerds ? (
+            <p className="text-sm text-neutral-500">
+              Added on {createdDate}
+              {createdTime ? `, ${createdTime}` : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Link to="/wardrobe" className={buttonClasses('ghost', 'sm')}>
@@ -204,10 +239,8 @@ const ItemDetail = () => {
                 <dt className="font-medium text-neutral-900">Category</dt>
                 <dd className="capitalize">{item.category}</dd>
               </div>
-              <div>
-                <dt className="font-medium text-neutral-900">Color</dt>
-                <dd className="capitalize">{item.color}</dd>
-              </div>
+              {renderColorDetail('Primary color', item.primaryColor)}
+              {renderColorDetail('Secondary color', item.secondaryColor)}
               <div>
                 <dt className="font-medium text-neutral-900">Brand</dt>
                 <dd>{item.brand ?? 'Unbranded'}</dd>
@@ -216,7 +249,7 @@ const ItemDetail = () => {
                 <dt className="font-medium text-neutral-900">Tags</dt>
                 <dd>{item.tags.length > 0 ? item.tags.join(', ') : 'No tags yet'}</dd>
               </div>
-              {item.imageMetadata ? (
+              {statsForNerds && item.imageMetadata ? (
                 <div className="col-span-2">
                   <dt className="font-medium text-neutral-900">Image details</dt>
                   <dd>
@@ -263,7 +296,7 @@ const ItemDetail = () => {
               label="Brand"
               htmlFor="brand"
               description="Optional, max 60 characters."
-              error={errors.brand}
+              error={brandFieldError}
             >
               <input
                 id="brand"
@@ -271,7 +304,8 @@ const ItemDetail = () => {
                 value={brand}
                 onChange={(event) => setBrand(event.target.value)}
                 maxLength={60}
-                className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-600/20"
+                className={brandInputClasses}
+                aria-invalid={Boolean(brandFieldError)}
               />
             </Field>
 

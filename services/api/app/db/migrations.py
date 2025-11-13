@@ -9,7 +9,6 @@ from alembic import command
 from alembic.config import Config
 from app.core.config import settings
 from app.core.logging import logger
-from app.db.base import Base
 from app.db.session import get_engine
 
 _migration_lock = Lock()
@@ -31,16 +30,12 @@ def ensure_schema() -> None:
         database_url = settings.database_url
 
         try:
-            if database_url.startswith("sqlite"):
-                Base.metadata.create_all(bind=engine)
-                logger.info("migrations.sqlite_sync")
-            else:
-                config = _build_alembic_config(database_url)
-                with engine.begin() as connection:
-                    config.attributes["connection"] = connection
-                    logger.info("migrations.upgrade.start")
-                    command.upgrade(config, "head")
-                    logger.info("migrations.upgrade.complete")
+            config = _build_alembic_config(database_url)
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                logger.info("migrations.upgrade.start")
+                command.upgrade(config, "head")
+                logger.info("migrations.upgrade.complete")
         except Exception:
             logger.exception("migrations.error")
             raise
@@ -55,4 +50,3 @@ def _build_alembic_config(database_url: str) -> Config:
     config.set_main_option("sqlalchemy.url", database_url)
     config.attributes["configure_logger"] = False
     return config
-

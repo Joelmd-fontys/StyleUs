@@ -22,8 +22,11 @@ export interface WardrobeItem {
   mediumUrl?: string | null;
   category: WardrobeCategory;
   color: string;
-  brand?: string;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  brand?: string | null;
   createdAt: string;
   tags: string[];
   imageMetadata?: ImageMetadata | null;
+  aiConfidence?: number | null;
 }

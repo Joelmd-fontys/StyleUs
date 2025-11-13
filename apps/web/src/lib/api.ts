@@ -1,4 +1,5 @@
 import {
+  AIPreviewResponse,
   CompleteUploadRequest,
   GetItemResponse,
   GetItemsResponse,
@@ -13,6 +14,7 @@ export interface ItemFilters {
   q?: string;
   limit?: number;
   offset?: number;
+  createdSince?: string;
 }
 
 const handleResponse = async <T>(response: Response): Promise<T> => {
@@ -42,6 +44,9 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
   }
   if (typeof filters.offset === 'number') {
     params.set('offset', filters.offset.toString());
+  }
+  if (filters.createdSince) {
+    params.set('createdSince', filters.createdSince);
   }
   const requestUrl = params.toString() ? `${url}?${params.toString()}` : url;
 
@@ -141,4 +146,12 @@ export const completeUpload = async (
   });
 
   return handleResponse<GetItemResponse>(response);
+};
+
+export const getItemAIPreview = async (id: string): Promise<AIPreviewResponse> => {
+  const response = await fetch(resolveApiUrl(`/items/${id}/ai-preview`), {
+    headers: { Accept: 'application/json' }
+  });
+
+  return handleResponse<AIPreviewResponse>(response);
 };

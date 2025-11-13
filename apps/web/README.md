@@ -35,6 +35,10 @@ Environment variables (see `.env.example`):
 
 When live flags are `true`, the MSW worker stays idle and built-in fetch helpers talk to the backend using the contracts in `src/domain/contracts.ts`.
 
+## Upload Review Flow
+
+After each upload completes the app routes to **Upload Review**, a focused screen that surfaces AI suggestions (category, colors, tags) alongside the preview image. Users can accept the predictions as-is or edit any field before confirming. Confirmation saves the item into the wardrobe and shows a toast; canceling discards the placeholder item and returns to the grid.
+
 ## Project Structure Highlights
 
 - `src/pages` – route-level screens (dashboard, wardrobe list, detail view).
@@ -45,4 +49,5 @@ When live flags are `true`, the MSW worker stays idle and built-in fetch helpers
 
 ## Testing & Quality
 
-Type safety is enforced via `npm run typecheck`. The project relies on the backend test suite; no frontend tests ship yet.
+- `npm run typecheck` – ensure TypeScript coverage.
+- `npm run test` – run Vitest component tests (including the upload review flow).

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -34,7 +34,7 @@ def create_presigned_upload(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings_dependency),
-) -> PresignResponse:
+) -> PresignResponse | JSONResponse:
     """Create an upload session for the client, returning either an S3 URL or local API sink."""
     try:
         item, upload_url, object_key = uploads_service.create_presigned_upload(
@@ -107,13 +107,46 @@ async def upload_blob(
         )
 
     requested_file_name = request.headers.get("X-File-Name", "image")
-    saved_path = uploads_service.save_local_upload(
-        settings=settings,
-        item_id=item_id,
-        file_name=requested_file_name,
-        content_type=normalized_content_type,
-        data=body,
-    )
+    try:
+        saved_path = uploads_service.save_local_upload(
+            settings=settings,
+            item_id=item_id,
+            file_name=requested_file_name,
+            content_type=normalized_content_type,
+            data=body,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "upload.validation_failed",
+            extra={
+                "item_id": str(item_id),
+                "reason": str(exc),
+            },
+        )
+        detail = {
+            "code": "invalid_upload",
+            "message": str(exc),
+        }
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception(
+            "upload.persist_failed",
+            extra={
+                "item_id": str(item_id),
+                "content_type": normalized_content_type,
+            },
+        )
+        detail = {
+            "code": "upload_error",
+            "message": "Unable to store uploaded file",
+        }
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+        ) from exc
 
     logger.info(
         "upload.saved",
@@ -141,7 +174,8 @@ def complete_upload(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings_dependency),
-) -> ItemDetail:
+    background_tasks: BackgroundTasks,
+) -> ItemDetail | JSONResponse:
     """Finalize an upload by persisting the public image URL for the wardrobe item."""
     item = items_service.get_item(db, user_id, item_id)
     if not item:
@@ -172,18 +206,53 @@ def complete_upload(
                 file_name=payload.file_name,
             )
     except ValueError as exc:
+        logger.warning(
+            "upload.complete_validation_failed",
+            extra={
+                "item_id": str(item_id),
+                "reason": str(exc),
+                "mode": "s3" if settings.is_s3_enabled else "local",
+            },
+        )
         response = error_response("invalid_upload", str(exc), None)
         response.status_code = status.HTTP_400_BAD_REQUEST
         return response
+    except Exception as exc:  # pragma: no cover - unexpected failure
+        logger.exception(
+            "upload.complete_failed",
+            extra={
+                "item_id": str(item_id),
+                "mode": "s3" if settings.is_s3_enabled else "local",
+                "error": str(exc),
+            },
+        )
+        details = {"error": str(exc)} if settings.app_env == "local" else None
+        response = error_response("upload_error", "Unable to finalize upload", details)
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return response
 
-    updated = items_service.complete_upload(
-        db,
-        item,
-        result.image_url,
-        thumb_url=result.thumb_url,
-        medium_url=result.medium_url,
-        metadata=result.metadata,
-    )
+    try:
+        updated = items_service.complete_upload(
+            db,
+            item,
+            result.image_url,
+            thumb_url=result.thumb_url,
+            medium_url=result.medium_url,
+            metadata=result.metadata,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception(
+            "upload.complete_persist_failed",
+            extra={"item_id": str(item_id), "error": str(exc)},
+        )
+        details = {"error": str(exc)} if settings.app_env == "local" else None
+        response = error_response("upload_error", "Unable to persist upload metadata", details)
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        return response
+    if settings.ai_enable_classifier:
+        from app.ai.tasks import classify_and_update_item
+
+        background_tasks.add_task(classify_and_update_item, item.id)
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     logger.info(
         "upload.completed",

@@ -1,9 +1,15 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
-import { deleteItem as deleteItemRequest, getItem, getItems, patchItem } from '../lib/api';
+import {
+  deleteItem as deleteItemRequest,
+  getItem,
+  getItems,
+  getItemAIPreview,
+  patchItem
+} from '../lib/api';
 import { USE_LIVE_API_ITEMS } from '../lib/config';
 import { logger } from '../lib/logger';
 import { WardrobeItem, WardrobeCategory } from '../domain/types';
-import { PatchItemRequest } from '../domain/contracts';
+import { PatchItemRequest, AIPreviewResponse } from '../domain/contracts';
 import {
   findWardrobeItem as mockFindWardrobeItem,
   getWardrobeItems as mockGetWardrobeItems,
@@ -16,12 +22,27 @@ export interface WardrobeFilters {
   q?: string;
 }
 
+interface FlashMessage {
+  type: 'success' | 'error';
+  message: string;
+}
+
+interface UploadReviewContext {
+  item?: WardrobeItem;
+  ai?: AIPreviewResponse | null;
+  loading: boolean;
+  error?: string;
+  isConfirming: boolean;
+}
+
 interface WardrobeState {
   items: WardrobeItem[];
   loading: boolean;
   error?: string;
   filters: WardrobeFilters;
   selectedItemId?: string;
+  uploadReview?: UploadReviewContext;
+  flashMessage?: FlashMessage;
   loadItems: () => Promise<void>;
   setFilters: (filters: Partial<WardrobeFilters>) => Promise<void>;
   selectItem: (id?: string) => void;
@@ -32,6 +53,16 @@ interface WardrobeState {
   saveItem: (id: string, payload: PatchItemRequest) => Promise<WardrobeItem | undefined>;
   removeItem: (id: string) => void;
   deleteItem: (id: string) => Promise<boolean>;
+  prepareUploadReview: (item: WardrobeItem) => void;
+  setUploadReviewAI: (ai: AIPreviewResponse | null) => void;
+  setUploadReviewLoading: (loading: boolean) => void;
+  setUploadReviewError: (message?: string) => void;
+  clearUploadReview: () => void;
+  fetchUploadReviewAI: (id: string) => Promise<void>;
+  setUploadReviewConfirming: (flag: boolean) => void;
+  showFlashMessage: (message: string, type?: FlashMessage['type']) => void;
+  clearFlashMessage: () => void;
+  hydrateUploadReview: (id: string) => Promise<void>;
 }
 
 export type WardrobeStore = UseBoundStore<StoreApi<WardrobeState>>;
@@ -42,6 +73,8 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
   error: undefined,
   filters: {},
   selectedItemId: undefined,
+  uploadReview: undefined,
+  flashMessage: undefined,
   async loadItems() {
     const { filters } = get();
     set({ loading: true, error: undefined });
@@ -92,6 +125,7 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
     }
   },
   async saveItem(id, payload) {
+    get().setUploadReviewConfirming(true);
     try {
       let updated: WardrobeItem;
       if (USE_LIVE_API_ITEMS) {
@@ -112,11 +146,35 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
       }
       get().replaceItem(id, updated);
       logger.itemEdited({ id });
+      const currentReview = get().uploadReview;
+      if (currentReview?.item && currentReview.item.id === id) {
+        set({
+          uploadReview: {
+            ...currentReview,
+            item: updated,
+            ai: {
+              category: updated.category,
+              primaryColor: updated.primaryColor ?? null,
+              secondaryColor: updated.secondaryColor ?? null,
+              tags: updated.tags,
+              confidence: updated.aiConfidence ?? null,
+              categoryConfidence: updated.aiConfidence ?? null,
+              primaryColorConfidence: null,
+              secondaryColorConfidence: null
+            },
+            loading: false,
+            isConfirming: false,
+            error: undefined
+          }
+        });
+      }
       return updated;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to save item';
       set({ error: message });
       return undefined;
+    } finally {
+      get().setUploadReviewConfirming(false);
     }
   },
   removeItem(id) {
@@ -149,6 +207,157 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
       });
       logger.itemDeleted({ id, error: message });
       return false;
+    }
+  },
+  prepareUploadReview(item) {
+    set({
+      uploadReview: {
+        item,
+        ai: undefined,
+        loading: true,
+        isConfirming: false,
+        error: undefined
+      }
+    });
+  },
+  setUploadReviewAI(ai) {
+    set((state) =>
+      state.uploadReview
+        ? {
+            uploadReview: {
+              ...state.uploadReview,
+              ai,
+              loading: false,
+              error: undefined
+            }
+          }
+        : state
+    );
+  },
+  setUploadReviewLoading(loading) {
+    set((state) =>
+      state.uploadReview
+        ? {
+            uploadReview: {
+              ...state.uploadReview,
+              loading
+            }
+          }
+        : state
+    );
+  },
+  setUploadReviewError(message) {
+    set((state) =>
+      state.uploadReview
+        ? {
+            uploadReview: {
+              ...state.uploadReview,
+              error: message,
+              loading: false
+            }
+          }
+        : state
+    );
+  },
+  clearUploadReview() {
+    set({ uploadReview: undefined });
+  },
+  async fetchUploadReviewAI(id: string) {
+    if (!USE_LIVE_API_ITEMS) {
+      const item = mockFindWardrobeItem(id);
+      if (item) {
+        set((state) =>
+          state.uploadReview
+            ? {
+                uploadReview: {
+                  ...state.uploadReview,
+              ai: {
+                category: item.category,
+                primaryColor: item.primaryColor ?? null,
+                secondaryColor: item.secondaryColor ?? null,
+                tags: item.tags,
+                confidence: item.aiConfidence ?? null,
+                categoryConfidence: item.aiConfidence ?? null,
+                primaryColorConfidence: null,
+                secondaryColorConfidence: null
+              },
+                  loading: false,
+                  error: undefined
+                }
+              }
+            : state
+        );
+      }
+      return;
+    }
+
+    set((state) =>
+      state.uploadReview
+        ? {
+            uploadReview: {
+              ...state.uploadReview,
+              loading: true,
+              error: undefined
+            }
+          }
+        : state
+    );
+    try {
+      const ai = await getItemAIPreview(id);
+      get().setUploadReviewAI(ai);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to fetch AI preview';
+      get().setUploadReviewError(message);
+    }
+  },
+  setUploadReviewConfirming(flag) {
+    set((state) =>
+      state.uploadReview
+        ? {
+            uploadReview: {
+              ...state.uploadReview,
+              isConfirming: flag
+            }
+          }
+        : state
+    );
+  },
+  showFlashMessage(message, type = 'success') {
+    set({ flashMessage: { message, type } });
+  },
+  clearFlashMessage() {
+    set({ flashMessage: undefined });
+  },
+  async hydrateUploadReview(id: string) {
+    try {
+      const existing = get().items.find((item) => item.id === id);
+      let item = existing;
+      if (!item) {
+        item = USE_LIVE_API_ITEMS ? await getItem(id) : mockFindWardrobeItem(id);
+      }
+      if (!item) {
+        throw new Error('Item not found');
+      }
+      set({
+        uploadReview: {
+          item,
+          ai: get().uploadReview?.ai,
+          loading: false,
+          error: undefined,
+          isConfirming: false
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load upload review';
+      set({
+        uploadReview: {
+          item: get().uploadReview?.item as WardrobeItem,
+          ai: get().uploadReview?.ai,
+          loading: false,
+          error: message,
+          isConfirming: false
+        }
+      });
     }
   }
 }));

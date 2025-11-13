@@ -96,3 +96,25 @@ def test_delete_marks_item_and_hides_from_listing(client, db_session):
     full_data = include_deleted.json()
     assert len(full_data) == 2
     assert any(entry["id"] == str(item.id) for entry in full_data)
+
+
+def test_ai_preview_endpoint_returns_predictions(client, db_session):
+    item, _ = seed_items(db_session)
+    item.primary_color = "Camel"
+    item.secondary_color = "Tan"
+    item.ai_confidence = 0.82
+    db_session.add(item)
+    db_session.commit()
+
+    response = client.get(f"/items/{item.id}/ai-preview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["category"] == "top"
+    assert "subcategory" not in payload
+    assert payload["primaryColor"] == "Camel"
+    assert payload["secondaryColor"] == "Tan"
+    assert payload["confidence"] == 0.82
+    assert payload["categoryConfidence"] == 0.82
+    assert payload["primaryColorConfidence"] is None or isinstance(
+        payload["primaryColorConfidence"], float
+    )

@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Filters from '../components/Filters';
 import ItemCard from '../components/ItemCard';
-import ConfirmDialog from '../components/ConfirmDialog';
 import UploadPanel from '../components/UploadPanel';
 import { useWardrobeStore } from '../store/wardrobe';
 
-const Wardrobe = () => {
+const Wardrobe = (): ReactElement => {
   const items = useWardrobeStore((state) => state.items);
   const loading = useWardrobeStore((state) => state.loading);
   const error = useWardrobeStore((state) => state.error);
@@ -17,12 +16,9 @@ const Wardrobe = () => {
   const setFilters = useWardrobeStore((state) => state.setFilters);
   const selectItem = useWardrobeStore((state) => state.selectItem);
   const selectedItemId = useWardrobeStore((state) => state.selectedItemId);
-  const deleteItem = useWardrobeStore((state) => state.deleteItem);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [feedback, setFeedback] = useState<
     { message: string; tone: 'success' | 'danger' } | null
   >(null);
@@ -51,31 +47,6 @@ const Wardrobe = () => {
   const onSelectItem = (id: string) => {
     selectItem(id);
     navigate(`/items/${id}`);
-  };
-
-  const openDeleteConfirm = (id: string) => {
-    setPendingDeleteId(id);
-  };
-
-  const pendingItem = useMemo(
-    () => items.find((entry) => entry.id === pendingDeleteId),
-    [items, pendingDeleteId]
-  );
-
-  const confirmDelete = async () => {
-    if (!pendingDeleteId) {
-      return;
-    }
-    setIsDeleting(true);
-    const success = await deleteItem(pendingDeleteId);
-    setIsDeleting(false);
-    setPendingDeleteId(null);
-
-    if (success) {
-      setFeedback({ message: 'Wardrobe item deleted.', tone: 'success' });
-    } else {
-      setFeedback({ message: 'Unable to delete item. Please try again.', tone: 'danger' });
-    }
   };
 
   const scrollToUploads = () => {
@@ -135,8 +106,6 @@ const Wardrobe = () => {
                   key={item.id}
                   item={item}
                   onSelect={onSelectItem}
-                  onEdit={onSelectItem}
-                  onDelete={openDeleteConfirm}
                   isSelected={item.id === selectedItemId}
                 />
               ))}
@@ -156,28 +125,6 @@ const Wardrobe = () => {
 
         <UploadPanel />
       </div>
-
-      <ConfirmDialog
-        open={Boolean(pendingDeleteId)}
-        title="Delete wardrobe item"
-        description={
-          pendingItem?.brand
-            ? `Delete "${pendingItem.brand}"? This can't be undone.`
-            : "Delete this item? This can't be undone."
-        }
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        tone="danger"
-        busy={isDeleting}
-        onCancel={() => {
-          if (!isDeleting) {
-            setPendingDeleteId(null);
-          }
-        }}
-        onConfirm={() => {
-          void confirmDelete();
-        }}
-      />
     </div>
   );
 };
