@@ -4,11 +4,13 @@ import { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
 import { useWardrobeStore } from '../store/wardrobe';
 import { resolveMediaUrl } from '../lib/media';
+import { useStatsPreference } from '../hooks/useStatsPreference';
 
 const Dashboard = () => {
   const items = useWardrobeStore((state) => state.items);
   const loading = useWardrobeStore((state) => state.loading);
   const loadItems = useWardrobeStore((state) => state.loadItems);
+  const [statsForNerds] = useStatsPreference();
 
   useEffect(() => {
     if (!items.length && !loading) {
@@ -91,13 +93,15 @@ const Dashboard = () => {
                       <p className="font-medium text-neutral-900">
                         {item.brand ?? 'Unbranded'}
                       </p>
-                      <p className="text-xs text-neutral-500">
-                        {new Date(item.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </p>
+                      {statsForNerds ? (
+                        <p className="text-xs text-neutral-500">
+                          {new Date(item.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <Link to={`/items/${item.id}`} className={buttonClasses('ghost', 'sm')}>

@@ -9,11 +9,38 @@ import { WardrobeCategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { cn } from '../lib/utils';
+import { useStatsPreference } from '../hooks/useStatsPreference';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
 const formatSize = (value?: number | null) =>
   typeof value === 'number' && !Number.isNaN(value) ? `${(value / 1024).toFixed(1)} kB` : '—';
+
+const formatCreatedDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+};
+
+const formatCreatedTime = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+};
+
 
 const ItemDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +64,7 @@ const ItemDetail = () => {
   const [message, setMessage] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [statsForNerds] = useStatsPreference();
 
   useEffect(() => {
     if (!items.length) {
@@ -166,10 +194,8 @@ const ItemDetail = () => {
     );
   }
 
-  const createdAt = new Date(item.createdAt).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
+  const createdDate = formatCreatedDate(item.createdAt);
+  const createdTime = formatCreatedTime(item.createdAt);
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl);
 
   const renderColorDetail = (label: string, value?: string | null) => {
@@ -197,7 +223,12 @@ const ItemDetail = () => {
           <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
             {item.brand ?? 'Wardrobe item'}
           </h1>
-          <p className="text-sm text-neutral-500">Added on {createdAt}</p>
+          {statsForNerds ? (
+            <p className="text-sm text-neutral-500">
+              Added on {createdDate}
+              {createdTime ? `, ${createdTime}` : ''}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Link to="/wardrobe" className={buttonClasses('ghost', 'sm')}>
@@ -242,7 +273,7 @@ const ItemDetail = () => {
                 <dt className="font-medium text-neutral-900">Tags</dt>
                 <dd>{item.tags.length > 0 ? item.tags.join(', ') : 'No tags yet'}</dd>
               </div>
-              {item.imageMetadata ? (
+              {statsForNerds && item.imageMetadata ? (
                 <div className="col-span-2">
                   <dt className="font-medium text-neutral-900">Image details</dt>
                   <dd>

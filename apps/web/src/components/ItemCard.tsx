@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { WardrobeItem } from '../domain/types';
 import { cn } from '../lib/utils';
 import { resolveMediaUrl } from '../lib/media';
+import { useStatsPreference } from '../hooks/useStatsPreference';
 
 interface ItemCardProps {
   item: WardrobeItem;
@@ -10,18 +11,25 @@ interface ItemCardProps {
   onSelect?: (id: string) => void;
 }
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
+const formatDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+  return new Intl.DateTimeFormat(undefined, {
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
-  });
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+};
 
 const ItemCardComponent = ({
   item,
   isSelected = false,
   onSelect
 }: ItemCardProps) => {
+  const [statsForNerds] = useStatsPreference();
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl, item.thumbUrl);
   const primaryColor = item.primaryColor?.trim() || item.color?.trim() || '';
   const secondaryColor = item.secondaryColor?.trim() || '';
@@ -65,7 +73,7 @@ const ItemCardComponent = ({
       <div className="flex flex-1 flex-col gap-1 px-4 py-3">
         <div className="flex items-center justify-between text-xs uppercase tracking-wide text-neutral-500">
           <span>{item.category}</span>
-          <span>{formatDate(item.createdAt)}</span>
+          {statsForNerds ? <span>{formatDate(item.createdAt)}</span> : null}
         </div>
         <p className="text-sm font-semibold text-neutral-900">{item.brand ?? 'Unbranded'}</p>
         <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-neutral-500">
