@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -7,7 +7,7 @@ import ItemCard from '../components/ItemCard';
 import UploadPanel from '../components/UploadPanel';
 import { useWardrobeStore } from '../store/wardrobe';
 
-const Wardrobe = () => {
+const Wardrobe = (): ReactElement => {
   const items = useWardrobeStore((state) => state.items);
   const loading = useWardrobeStore((state) => state.loading);
   const error = useWardrobeStore((state) => state.error);

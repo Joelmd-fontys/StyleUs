@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../components/Button';
 import { useWardrobeStore } from '../store/wardrobe';
@@ -22,7 +22,7 @@ const toDisplayTags = (input: string): string[] =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const UploadReviewPage = () => {
+const UploadReviewPage = (): ReactElement | null => {
   const { id: itemId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const uploadReview = useWardrobeStore((state) => state.uploadReview);

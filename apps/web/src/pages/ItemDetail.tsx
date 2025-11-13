@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button, { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
@@ -9,40 +9,16 @@ import { WardrobeCategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { cn } from '../lib/utils';
+import { formatUtcDate, formatUtcTime } from '../lib/datetime';
 import { useStatsPreference } from '../hooks/useStatsPreference';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
-const formatSize = (value?: number | null) =>
+const formatSize = (value?: number | null): string =>
   typeof value === 'number' && !Number.isNaN(value) ? `${(value / 1024).toFixed(1)} kB` : '—';
 
-const formatCreatedDate = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC'
-  }).format(date);
-};
 
-const formatCreatedTime = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: 'numeric',
-    timeZone: 'UTC'
-  }).format(date);
-};
-
-
-const ItemDetail = () => {
+const ItemDetail = (): ReactElement => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -194,8 +170,8 @@ const ItemDetail = () => {
     );
   }
 
-  const createdDate = formatCreatedDate(item.createdAt);
-  const createdTime = formatCreatedTime(item.createdAt);
+  const createdDate = formatUtcDate(item.createdAt);
+  const createdTime = formatUtcTime(item.createdAt);
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl);
 
   const renderColorDetail = (label: string, value?: string | null) => {

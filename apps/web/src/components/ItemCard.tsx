@@ -4,25 +4,13 @@ import { WardrobeItem } from '../domain/types';
 import { cn } from '../lib/utils';
 import { resolveMediaUrl } from '../lib/media';
 import { useStatsPreference } from '../hooks/useStatsPreference';
+import { formatUtcDate } from '../lib/datetime';
 
 interface ItemCardProps {
   item: WardrobeItem;
   isSelected?: boolean;
   onSelect?: (id: string) => void;
 }
-
-const formatDate = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC'
-  }).format(date);
-};
 
 const ItemCardComponent = ({
   item,
@@ -73,7 +61,7 @@ const ItemCardComponent = ({
       <div className="flex flex-1 flex-col gap-1 px-4 py-3">
         <div className="flex items-center justify-between text-xs uppercase tracking-wide text-neutral-500">
           <span>{item.category}</span>
-          {statsForNerds ? <span>{formatDate(item.createdAt)}</span> : null}
+          {statsForNerds ? <span>{formatUtcDate(item.createdAt)}</span> : null}
         </div>
         <p className="text-sm font-semibold text-neutral-900">{item.brand ?? 'Unbranded'}</p>
         <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-neutral-500">

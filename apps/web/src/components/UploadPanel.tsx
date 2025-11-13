@@ -1,4 +1,4 @@
-import { ChangeEvent, DragEvent, useRef, useState } from 'react';
+import { type ChangeEvent, type DragEvent, useRef, useState, type ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from './Button';
 import { logger } from '../lib/logger';
@@ -16,7 +16,7 @@ interface UploadState {
 const MAX_FILE_SIZE_MB = 15;
 const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-const UploadPanel = () => {
+const UploadPanel = (): ReactElement => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [progress, setProgress] = useState(0);

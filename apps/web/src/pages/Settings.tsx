@@ -1,8 +1,9 @@
+import type { ReactElement } from 'react';
 import Card from '../components/Card';
 import { useStatsPreference } from '../hooks/useStatsPreference';
 import { cn } from '../lib/utils';
 
-const Settings = () => {
+const Settings = (): ReactElement => {
   const [statsForNerds, setStatsForNerds] = useStatsPreference();
 
   return (

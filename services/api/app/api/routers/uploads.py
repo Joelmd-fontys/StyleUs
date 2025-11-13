@@ -34,7 +34,7 @@ def create_presigned_upload(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings_dependency),
-) -> PresignResponse:
+) -> PresignResponse | JSONResponse:
     """Create an upload session for the client, returning either an S3 URL or local API sink."""
     try:
         item, upload_url, object_key = uploads_service.create_presigned_upload(
@@ -175,7 +175,7 @@ def complete_upload(
     user_id: uuid.UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings_dependency),
     background_tasks: BackgroundTasks,
-) -> ItemDetail:
+) -> ItemDetail | JSONResponse:
     """Finalize an upload by persisting the public image URL for the wardrobe item."""
     item = items_service.get_item(db, user_id, item_id)
     if not item:

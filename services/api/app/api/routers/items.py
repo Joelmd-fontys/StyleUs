@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id, get_db, verify_api_key
@@ -48,7 +49,7 @@ def get_wardrobe_item(
     item_id: uuid.UUID,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
-):
+) -> ItemDetail | JSONResponse:
     """Fetch a single wardrobe item or respond with 404 if it is missing."""
 
     item = items_service.get_item(db, user_id, item_id)
@@ -65,7 +66,7 @@ def get_item_ai_preview(
     item_id: uuid.UUID,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
-) -> ItemAIPreview:
+) -> ItemAIPreview | JSONResponse:
     """Return the latest AI predictions for an item."""
 
     item = items_service.get_item(db, user_id, item_id)
@@ -83,7 +84,7 @@ def update_wardrobe_item(
     payload: ItemUpdate,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
-):
+) -> ItemDetail | JSONResponse:
     """Update a wardrobe item and return the refreshed representation."""
 
     item = items_service.get_item(db, user_id, item_id)

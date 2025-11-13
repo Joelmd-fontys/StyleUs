@@ -1,17 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
 const STORAGE_KEY = 'styleus:stats-for-nerds';
 
-const readPreference = () => {
+const readPreference = (): boolean => {
   if (typeof window === 'undefined') {
     return false;
   }
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === 'true';
+  return window.localStorage.getItem(STORAGE_KEY) === 'true';
 };
 
-export const useStatsPreference = () => {
-  const [enabled, setEnabled] = useState(readPreference);
+export const useStatsPreference = (): readonly [boolean, Dispatch<SetStateAction<boolean>>] => {
+  const [enabled, setEnabled] = useState<boolean>(readPreference);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -22,5 +21,3 @@ export const useStatsPreference = () => {
 
   return [enabled, setEnabled] as const;
 };
-
-export const STATS_FOR_NERDS_KEY = STORAGE_KEY;

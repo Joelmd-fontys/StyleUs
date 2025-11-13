@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     seed_limit: int = Field(default=25, alias="SEED_LIMIT")
     seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
     ai_enable_classifier: bool = Field(default=True, alias="AI_ENABLE_CLASSIFIER")
-    ai_tags_topk: int = Field(default=5, alias="AI_TAGS_TOPK")
     ai_device: str = Field(default="cpu", alias="AI_DEVICE")
     ai_onnx: bool = Field(default=False, alias="AI_ONNX")
     ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
@@ -89,8 +88,6 @@ class Settings(BaseSettings):
 
         if self.seed_limit <= 0:
             raise ValueError("SEED_LIMIT must be greater than zero")
-        if self.ai_tags_topk <= 0:
-            self.ai_tags_topk = 5
         if self.ai_color_topk <= 0:
             self.ai_color_topk = 2
         if self.ai_confidence_threshold <= 0 or self.ai_confidence_threshold > 1:

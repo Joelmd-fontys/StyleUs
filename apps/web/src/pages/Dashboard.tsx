@@ -1,12 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { type ReactElement, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
 import { useWardrobeStore } from '../store/wardrobe';
 import { resolveMediaUrl } from '../lib/media';
 import { useStatsPreference } from '../hooks/useStatsPreference';
+import { formatUtcDate } from '../lib/datetime';
 
-const Dashboard = () => {
+const Dashboard = (): ReactElement => {
   const items = useWardrobeStore((state) => state.items);
   const loading = useWardrobeStore((state) => state.loading);
   const loadItems = useWardrobeStore((state) => state.loadItems);
@@ -94,13 +95,7 @@ const Dashboard = () => {
                         {item.brand ?? 'Unbranded'}
                       </p>
                       {statsForNerds ? (
-                        <p className="text-xs text-neutral-500">
-                          {new Date(item.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
-                        </p>
+                        <p className="text-xs text-neutral-500">{formatUtcDate(item.createdAt)}</p>
                       ) : null}
                     </div>
                   </div>

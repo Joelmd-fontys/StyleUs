@@ -44,3 +44,9 @@
 ## Latest Decisions
 - **Subcategory removed**: the field was stored in the database and UI but never populated by the AI pipeline nor editable after upload review, leading to stale placeholders in cards. Instead of inventing a second labeler, we dropped the column, schemas, and UI references to keep the data model lean until there is evidence we need finer granularity.
 - **Brand UX**: Upload review and item edit forms now keep the brand input visible, highlight it in red, and show “Please add a brand” whenever it is empty so the manual step is hard to miss after AI classification skips that field.
+
+## Cleanup – Best Practices Refresh
+- **Frontend**: Typed every exported component/hook, centralized UTC date/time formatting helpers, and aligned stats-for-nerds presentation (all timestamps hide when disabled). Imports and Tailwind blocks were normalized, Settings toggle now uses an accessible switch, and root README documents the dev workflow.
+- **Backend**: Tightened FastAPI router return types, removed unused configuration (e.g., `AI_TAGS_TOPK`), and annotated seed helpers to keep configuration centralized. Error responses continue to flow through the shared `error_response` helper.
+- **Tests & Tooling**: `npm run typecheck` and `npx vitest run` pass locally (React Router still emits its existing future-flag warnings). `pytest` currently fails because PostgreSQL is not running on `localhost:5432`; once the DB is up the suite should run as before.
+- No functional behavior changed—API contracts, database schema, and feature flags all behave exactly as they did prior to the cleanup.
