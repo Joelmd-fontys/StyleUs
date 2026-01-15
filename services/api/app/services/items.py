@@ -212,7 +212,7 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
                 "category": item.category if item.category not in {"", "uncategorized"} else None,
                 "subcategory": item.subcategory,
                 "materials": item.ai_materials or [],
-                "style_tags": item.ai_style_tags or [],
+                "style_tags": (item.ai_style_tags or [])[:3],
                 "confidence": item.ai_confidence,
             }
         )
@@ -249,7 +249,7 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
             "primary_color": item.primary_color or None,
             "secondary_color": item.secondary_color or None,
             "materials": list(item.ai_materials or []),
-            "style_tags": list(item.ai_style_tags or []),
+            "style_tags": list(item.ai_style_tags or [])[:3],
             "tags": [tag.tag for tag in item.tags],
             "confidence": item.ai_confidence,
         }
@@ -275,19 +275,25 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
         preview.secondary_color = color_result.secondary_color
         preview.secondary_color_confidence = color_result.secondary_confidence
 
-    preview.materials = [name for name, _ in clip.get("materials", [])[:5]]
-    preview.style_tags = [name for name, _ in clip.get("style_tags", [])[:5]]
+    threshold = ai_tasks.settings.ai_confidence_threshold
+    preview.materials = [
+        name
+        for name, score in sorted(
+            clip.get("materials", []), key=lambda entry: entry[1], reverse=True
+        )
+        if score >= threshold
+    ][:5]
+    preview.style_tags = [
+        name
+        for name, score in sorted(
+            clip.get("style_tags", []), key=lambda entry: entry[1], reverse=True
+        )
+        if score >= threshold
+    ][:3]
 
-    suggested_tags: list[tuple[str, float]] = []
-    for name, score in clip.get("materials", [])[:3]:
-        suggested_tags.append((name, float(score)))
-    for name, score in clip.get("style_tags", [])[:3]:
-        if all(existing != name for existing, _ in suggested_tags):
-            suggested_tags.append((name, float(score)))
-
+    suggested_tags = ai_tasks.select_top_tags(clip, threshold=threshold, limit=3)
     if suggested_tags:
-        ordered = sorted(suggested_tags, key=lambda entry: entry[1], reverse=True)
-        preview.tags = [name for name, _ in ordered]
+        preview.tags = [name for name, _ in suggested_tags]
 
     preview.confidence = clip.get("category_confidence", preview.confidence)
     return preview

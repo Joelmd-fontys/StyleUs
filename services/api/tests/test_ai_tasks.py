@@ -130,6 +130,52 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
     assert refreshed.ai_style_tags == ["heritage"]
 
 
+def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypatch):
+    _prepare_settings(monkeypatch, tmp_path, session=db_session)
+    item_id = uuid.uuid4()
+    image_rel = f"/media/{item_id}/orig.jpg"
+    item = WardrobeItem(
+        id=item_id,
+        user_id=DEFAULT_USER_ID,
+        category="unknown",
+        color="unspecified",
+        brand=None,
+        image_url=image_rel,
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    _create_local_image(tmp_path / str(item_id) / "orig.jpg")
+
+    pipeline_result = _mock_pipeline_result(
+        primary="Black",
+        secondary=None,
+        color_conf=0.9,
+        secondary_conf=None,
+        category="shoes",
+        category_conf=0.93,
+        materials=[("leather", 0.86), ("canvas", 0.81)],
+        style_tags=[
+            ("streetwear", 0.91),
+            ("retro", 0.89),
+            ("minimal", 0.88),
+            ("heritage", 0.83),
+        ],
+        subcategory="sneakers",
+        subcategory_conf=0.9,
+    )
+    monkeypatch.setattr(ai_tasks.pipeline, "run", lambda path: pipeline_result)
+
+    ai_tasks.classify_and_update_item(item_id)
+
+    refreshed = db_session.get(WardrobeItem, item_id)
+    assert refreshed is not None
+    saved_tags = [tag.tag for tag in refreshed.tags]
+    assert set(saved_tags) == {"minimal", "retro", "streetwear"}
+    assert len(saved_tags) == 3
+    assert refreshed.ai_style_tags == ["streetwear", "retro", "minimal"]
+
+
 def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, monkeypatch):
     _prepare_settings(monkeypatch, tmp_path, session=db_session)
     item_id = uuid.uuid4()

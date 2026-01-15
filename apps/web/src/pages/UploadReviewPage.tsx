@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
 import { resolveApiUrl } from '../lib/config';
 import { getSubcategories } from '../domain/labels';
+import { type AIPreviewResponse } from '../domain/contracts';
 
 const toTitleCase = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -33,6 +34,25 @@ const toDisplayTags = (input: string): string[] =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
+const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
+  if (!ai) {
+    return [];
+  }
+  if (ai.tags && ai.tags.length > 0) {
+    return ai.tags.slice(0, 3);
+  }
+  const combined = [...(ai.materials ?? []), ...(ai.styleTags ?? [])];
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  combined.forEach((tag) => {
+    if (!seen.has(tag)) {
+      seen.add(tag);
+      unique.push(tag);
+    }
+  });
+  return unique.slice(0, 3);
+};
+
 const UploadReviewPage = (): ReactElement | null => {
   const { id: itemId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -57,6 +77,7 @@ const UploadReviewPage = (): ReactElement | null => {
 
   const item = uploadReview?.item;
   const ai = uploadReview?.ai;
+  const aiTagSuggestions = useMemo(() => toTopAITags(ai), [ai]);
   const resolvedSubcategory =
     (ai?.subcategory as WardrobeSubcategory | undefined) ??
     (item?.subcategory as WardrobeSubcategory | undefined) ??
@@ -115,8 +136,7 @@ const UploadReviewPage = (): ReactElement | null => {
     const basePrimary = ai?.primaryColor ?? item.primaryColor ?? item.color ?? '';
     const baseSecondary = ai?.secondaryColor ?? item.secondaryColor ?? '';
     const baseBrand = item.brand ?? '';
-    const aiSuggestedTags = [...(ai?.materials ?? []), ...(ai?.styleTags ?? []), ...(ai?.tags ?? [])];
-    const baseTags = aiSuggestedTags.length ? aiSuggestedTags : (item.tags ?? []);
+    const baseTags = aiTagSuggestions.length ? aiTagSuggestions : (item.tags ?? []);
 
     setForm({
       category: baseCategory,
@@ -130,10 +150,8 @@ const UploadReviewPage = (): ReactElement | null => {
     ai?.category,
     ai?.primaryColor,
     ai?.secondaryColor,
-    ai?.tags,
-    ai?.materials,
-    ai?.styleTags,
     ai?.subcategory,
+    aiTagSuggestions,
     item
   ]);
 
@@ -185,7 +203,6 @@ const UploadReviewPage = (): ReactElement | null => {
       return;
     }
     const normalizedBrand = form.brand.trim();
-    const aiTagSuggestions = [...(ai.materials ?? []), ...(ai.styleTags ?? []), ...(ai.tags ?? [])];
     const payload = {
       category: (ai.category as WardrobeCategory) ?? item.category,
       subcategory: (ai.subcategory as WardrobeSubcategory | undefined) ?? item.subcategory ?? null,
@@ -306,7 +323,6 @@ const UploadReviewPage = (): ReactElement | null => {
   };
 
   const renderTagList = () => {
-    const aiTagSuggestions = [...(ai?.materials ?? []), ...(ai?.styleTags ?? []), ...(ai?.tags ?? [])];
     const tags =
       mode === 'edit'
         ? toDisplayTags(form.tagsInput)

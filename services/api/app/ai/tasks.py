@@ -22,6 +22,23 @@ from app.utils import s3 as s3_utils
 LOGGER = logging.getLogger("app.ai.tasks")
 
 
+def select_top_tags(
+    clip: pipeline.ClipPrediction, *, threshold: float, limit: int = 3
+) -> list[tuple[str, float]]:
+    """Return up to ``limit`` highest-confidence tag names across materials + styles."""
+
+    scores: dict[str, float] = {}
+    for name, score in clip.get("materials", []):
+        if score >= threshold:
+            scores[name] = max(scores.get(name, 0.0), float(score))
+    for name, score in clip.get("style_tags", []):
+        if score >= threshold:
+            scores[name] = max(scores.get(name, 0.0), float(score))
+
+    ordered = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
+    return ordered[:limit]
+
+
 def classify_and_update_item(item_id: UUID) -> None:
     """Run classification for the given wardrobe item and persist predictions."""
     if not settings.ai_enable_classifier:
@@ -200,26 +217,23 @@ def _apply_classification(
         name for name, score in clip.get("materials", []) if score >= threshold
     ]
     style_tags_above_threshold = [
-        name for name, score in clip.get("style_tags", []) if score >= threshold
+        name
+        for name, score in sorted(
+            clip.get("style_tags", []), key=lambda entry: entry[1], reverse=True
+        )
+        if score >= threshold
     ]
     if materials_above_threshold:
         update_kwargs["ai_materials"] = materials_above_threshold[:5]
     if style_tags_above_threshold:
-        update_kwargs["ai_style_tags"] = style_tags_above_threshold[:5]
+        update_kwargs["ai_style_tags"] = style_tags_above_threshold[:3]
 
     existing_tags = [tag.tag for tag in item.tags]
-    suggested_tags: list[str] = []
-    for name, score in clip.get("materials", []):
-        if score >= threshold:
-            suggested_tags.append(name)
-    for name, score in clip.get("style_tags", []):
-        if score >= threshold:
-            suggested_tags.append(name)
+    top_scored_tags = select_top_tags(clip, threshold=threshold, limit=3)
+    suggested_tags = [name for name, _ in top_scored_tags]
 
     if not existing_tags and suggested_tags:
-        unique_tags = sorted({tag.strip() for tag in suggested_tags if tag.strip()})
-        if unique_tags:
-            update_kwargs["tags"] = unique_tags[:10]
+        update_kwargs["tags"] = suggested_tags
     elif existing_tags and suggested_tags:
         combined = existing_tags + [
             tag for tag in suggested_tags if tag not in existing_tags

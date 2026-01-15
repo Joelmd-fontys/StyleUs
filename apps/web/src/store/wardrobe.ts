@@ -71,7 +71,7 @@ const deriveAIPreviewFromItem = (item: WardrobeItem): AIPreviewResponse => ({
   secondaryColor: item.secondaryColor ?? null,
   secondaryColorConfidence: null,
   materials: item.ai?.materials ?? [],
-  styleTags: item.ai?.styleTags ?? [],
+  styleTags: (item.ai?.styleTags ?? []).slice(0, 3),
   tags: item.tags,
   confidence: item.ai?.confidence ?? item.aiConfidence ?? null
 });
