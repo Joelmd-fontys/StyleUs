@@ -1,7 +1,10 @@
 API_DIR := services/api
 WEB_DIR := apps/web
 
-.PHONY: db-up db-down run lint test typecheck
+.PHONY: dev db-up db-down run lint test typecheck
+
+dev:
+	./dev.sh
 
 db-up:
 	$(MAKE) -C $(API_DIR) db-up

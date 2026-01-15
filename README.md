@@ -8,28 +8,30 @@ StyleUs is a local-first wardrobe companion: upload garments, get AI-suggested c
 - `docs` – Product and technical documentation, including `docs/tech-stack.md` for current stack choices.
 
 ## Quickstart
-1) Backend
+From the repo root, start everything with one command:
 ```bash
-cp services/api/.env.example services/api/.env
-make db-up                     # start Postgres in Docker
-make run                       # launches FastAPI on http://127.0.0.1:8000
+./dev.sh
+# or: make dev
 ```
-2) Frontend
-```bash
-cd apps/web
-npm install
-cp .env.example .env.local
-npm run dev                    # opens http://127.0.0.1:5173
-```
-3) Quality checks
+What it does:
+- Checks for Docker (and that it is running), Node/npm, and Python 3.11+.
+- Creates/updates `services/api/.venv` and installs backend deps.
+- Ensures `.env` files exist (`services/api/.env`, `apps/web/.env.local`) and loads backend env vars.
+- Starts PostgreSQL in Docker (`styleus-db`) and waits for it to be healthy.
+- Applies Alembic migrations, then starts the FastAPI API on http://localhost:8000.
+- Installs frontend deps (if needed) and starts the Vite dev server on http://localhost:5173.
+
+Existing individual commands (e.g., `make run`, `npm run dev`) still work for advanced use.
+
+### Quality checks
 ```bash
 make lint          # Ruff + Prettier
 make test          # pytest + vitest run
 make typecheck     # mypy + tsc --noEmit
 ```
-Stop the database when done with `make db-down`.
 
 ## Troubleshooting
-- Docker not running: start Docker Desktop/daemon, then rerun `make db-up`.
-- Port conflicts: change the mapped port in `services/api/docker-compose.yml` (e.g., `5433:5432`) and update `DATABASE_URL`; adjust Vite port with `--host --port` if 5173 is taken.
-- Migrations: ensure Postgres is up, then run `cd services/api && alembic upgrade head`; if Alembic complains about revisions, delete stale containers/volumes and rerun `make db-up`.
+- Docker not running: start Docker Desktop/daemon, then rerun `./dev.sh`.
+- Port already in use: update the port mapping in `services/api/docker-compose.yml` (e.g., `5433:5432`) and adjust `DATABASE_URL`; pass `--port` to Vite if 5173 is taken.
+- Database reset: stop the stack (Ctrl+C), run `make db-down` to remove the container, and rerun `./dev.sh` (data lives in the `styleus-pgdata` volume unless you remove it).
+- Migrations failing: ensure Postgres is up (`docker ps`), then run `cd services/api && .venv/bin/alembic upgrade head`; if revisions are out of sync, remove the container/volume and rerun `./dev.sh`.
