@@ -4,6 +4,7 @@ FastAPI backend for StyleUs wardrobe management. It handles presigned uploads (S
 
 ## Requirements
 - Python 3.11
+- OpenCV (installed via `opencv-python-headless` when you run `make setup`/`make dev`)
 - Docker (for local PostgreSQL)
 - AWS credentials only if you want S3 uploads; local uploads work without them.
 
@@ -26,6 +27,9 @@ Copy `.env.example` to `.env` and adjust as needed.
 | `AI_DEVICE` | Torch device string (`cpu`/`cuda`) | `cpu` |
 | `AI_CONFIDENCE_THRESHOLD` | Minimum confidence for writes | `0.6` |
 | `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | Subcategory confidence floor | `0.5` |
+| `AI_COLOR_USE_MASK` | Apply foreground masking before color extraction | `true` |
+| `AI_COLOR_MASK_METHOD` | `grabcut` (if OpenCV available) or `heuristic` | `grabcut` |
+| `AI_COLOR_MIN_FOREGROUND_PIXELS` | Minimum masked pixels before falling back to no mask | `3000` |
 | `AI_COLOR_TOPK` | Number of colors to keep | `2` |
 | `AI_ONNX` / `AI_ONNX_MODEL_PATH` | Enable ONNX CLIP encoder | `false` / _(unset)_ |
 | `SEED_ON_START` / `SEED_LIMIT` / `SEED_KEY` | Local seeding controls | `true` / `25` / `local-seed-v1` |

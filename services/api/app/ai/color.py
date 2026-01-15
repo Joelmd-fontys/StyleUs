@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+import logging
 
 import numpy as np
 from PIL import Image
 from sklearn.cluster import KMeans
 
+from app.ai.segmentation import MaskMethod, build_foreground_mask, has_opencv
 from app.core.config import settings
+
+LOGGER = logging.getLogger("app.ai.color")
 
 _PALETTE_RGB: Sequence[tuple[str, tuple[int, int, int]]] = (
     ("black", (0, 0, 0)),
@@ -118,13 +121,32 @@ def _center_crop(image: Image.Image) -> Image.Image:
     return image.crop((left, top, left + side, top + side))
 
 
-def _prepare_pixels(image_path: Path) -> np.ndarray:
-    with Image.open(image_path) as img:
-        rgb_image = _center_crop(img.convert("RGB")).resize((256, 256))
-        rgb_array = np.asarray(rgb_image, dtype=np.float64) / 255.0
+def _prepare_pixels(
+    image: Image.Image, *, mask: np.ndarray | None
+) -> tuple[np.ndarray, int | None]:
+    resized = image.resize((256, 256))
+    rgb_array = np.asarray(resized, dtype=np.float64) / 255.0
+
+    masked_pixels: int | None = None
+    if mask is not None:
+        mask_image = Image.fromarray((mask.astype(np.uint8)) * 255)
+        if mask_image.size != image.size:
+            mask_image = mask_image.resize(image.size, resample=Image.NEAREST)
+        mask_image = mask_image.resize(resized.size, resample=Image.NEAREST)
+        mask_array = np.asarray(mask_image, dtype=bool)
+        masked_pixels = int(mask_array.sum())
+        if masked_pixels > 0:
+            rgb_array = rgb_array[mask_array]
+        else:
+            rgb_array = rgb_array.reshape(-1, 3)
+    else:
         rgb_array = rgb_array.reshape(-1, 3)
+
+    if rgb_array.size == 0:
+        return np.empty((0, 3)), masked_pixels
+
     lab = _linear_to_lab(_srgb_to_linear(rgb_array))
-    return lab
+    return lab, masked_pixels
 
 
 def _map_to_palette(lab_vector: np.ndarray) -> str:
@@ -137,14 +159,57 @@ def get_colors(image_path: str) -> ColorResult:
     """Return primary/secondary colors (human readable) from an image."""
 
     try:
-        lab_pixels = _prepare_pixels(Path(image_path))
-    except Exception:
+        with Image.open(image_path) as img:
+            image = _center_crop(img.convert("RGB"))
+    except Exception as exc:
+        LOGGER.warning("ai.color.image_load_failed", extra={"error": str(exc)})
         return ColorResult(
             primary_color="Unknown",
             secondary_color=None,
             confidence=0.0,
             secondary_confidence=None,
         )
+
+    mask_method: MaskMethod = (
+        settings.ai_color_mask_method
+        if settings.ai_color_mask_method in {"grabcut", "heuristic"}
+        else "grabcut"
+    )
+    if mask_method == "grabcut" and not has_opencv():
+        LOGGER.info("ai.color.opencv_missing_fallback", extra={"fallback": "heuristic"})
+        mask_method = "heuristic"
+
+    mask: np.ndarray | None = None
+    if settings.ai_color_use_mask:
+        try:
+            mask = build_foreground_mask(image, method=mask_method)
+        except Exception as exc:
+            LOGGER.warning("ai.color.mask_failed", extra={"error": str(exc)})
+
+    try:
+        lab_pixels, masked_pixels = _prepare_pixels(image, mask=mask)
+    except Exception as exc:
+        LOGGER.warning("ai.color.pixel_prep_failed", extra={"error": str(exc)})
+        return ColorResult(
+            primary_color="Unknown",
+            secondary_color=None,
+            confidence=0.0,
+            secondary_confidence=None,
+        )
+
+    if (
+        mask is not None
+        and masked_pixels is not None
+        and masked_pixels < settings.ai_color_min_foreground_pixels
+    ):
+        LOGGER.warning(
+            "ai.color.mask_too_small",
+            extra={
+                "foreground_pixels": masked_pixels,
+                "threshold": settings.ai_color_min_foreground_pixels,
+            },
+        )
+        lab_pixels, _ = _prepare_pixels(image, mask=None)
 
     if lab_pixels.size == 0:
         return ColorResult(

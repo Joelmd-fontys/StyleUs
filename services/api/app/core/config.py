@@ -51,6 +51,13 @@ class Settings(BaseSettings):
         default=0.5,
         alias="AI_SUBCATEGORY_CONFIDENCE_THRESHOLD",
     )
+    ai_color_use_mask: bool = Field(default=True, alias="AI_COLOR_USE_MASK")
+    ai_color_mask_method: Literal["grabcut", "heuristic"] = Field(
+        default="grabcut", alias="AI_COLOR_MASK_METHOD"
+    )
+    ai_color_min_foreground_pixels: int = Field(
+        default=3000, alias="AI_COLOR_MIN_FOREGROUND_PIXELS"
+    )
     ai_color_topk: int = Field(default=2, alias="AI_COLOR_TOPK")
     ai_onnx_model_path: str | None = Field(default=None, alias="AI_ONNX_MODEL_PATH")
 
@@ -101,6 +108,10 @@ class Settings(BaseSettings):
             or self.ai_subcategory_confidence_threshold > 1
         ):
             self.ai_subcategory_confidence_threshold = 0.5
+        if self.ai_color_mask_method not in {"grabcut", "heuristic"}:
+            self.ai_color_mask_method = "grabcut"
+        if self.ai_color_min_foreground_pixels <= 0:
+            self.ai_color_min_foreground_pixels = 3000
         return self
 
     @property
