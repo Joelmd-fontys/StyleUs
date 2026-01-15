@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -61,6 +62,16 @@ def classify_and_update_item(item_id: UUID) -> None:
             if cleanup_path:
                 _safe_unlink(image_path)
 
+        LOGGER.debug(
+            "ai.tasks.prediction",
+            extra={
+                "item_id": str(item.id),
+                "category": pipeline_result.clip.get("category"),
+                "subcategory": pipeline_result.clip.get("subcategory"),
+                "category_confidence": pipeline_result.clip.get("category_confidence"),
+                "subcategory_confidence": pipeline_result.clip.get("subcategory_confidence"),
+            },
+        )
         _apply_classification(session, item, pipeline_result)
 
 
@@ -130,6 +141,7 @@ def _apply_classification(
 ) -> None:
     update_kwargs: dict[str, object] = {}
     threshold = settings.ai_confidence_threshold
+    subcategory_threshold = settings.ai_subcategory_confidence_threshold
 
     color_result = result.colors
     if color_result.primary_color:
@@ -175,12 +187,32 @@ def _apply_classification(
     ):
         update_kwargs["category"] = clip["category"]
 
+    subcategory_label = clip.get("subcategory")
+    subcategory_conf = clip.get("subcategory_confidence") or 0.0
+    if (
+        subcategory_label
+        and subcategory_conf >= subcategory_threshold
+        and (not getattr(item, "subcategory", None) or item.subcategory in {"", "unspecified"})
+    ):
+        update_kwargs["subcategory"] = subcategory_label
+
+    materials_above_threshold = [
+        name for name, score in clip.get("materials", []) if score >= threshold
+    ]
+    style_tags_above_threshold = [
+        name for name, score in clip.get("style_tags", []) if score >= threshold
+    ]
+    if materials_above_threshold:
+        update_kwargs["ai_materials"] = materials_above_threshold[:5]
+    if style_tags_above_threshold:
+        update_kwargs["ai_style_tags"] = style_tags_above_threshold[:5]
+
     existing_tags = [tag.tag for tag in item.tags]
     suggested_tags: list[str] = []
     for name, score in clip.get("materials", []):
         if score >= threshold:
             suggested_tags.append(name)
-    for name, score in clip.get("styles", []):
+    for name, score in clip.get("style_tags", []):
         if score >= threshold:
             suggested_tags.append(name)
 
@@ -197,16 +229,37 @@ def _apply_classification(
             update_kwargs["tags"] = combined
 
     if update_kwargs:
-        update_kwargs["ai_confidence"] = category_conf
-        items_service.update_item(session, item, **update_kwargs)
+        items_service.update_item(
+            session,
+            item,
+            category=cast(str | None, update_kwargs.get("category")),
+            subcategory=cast(str | None, update_kwargs.get("subcategory")),
+            color=cast(str | None, update_kwargs.get("color")),
+            brand=cast(str | None, update_kwargs.get("brand")),
+            tags=cast(list[str] | None, update_kwargs.get("tags")),
+            primary_color=cast(str | None, update_kwargs.get("primary_color")),
+            secondary_color=cast(str | None, update_kwargs.get("secondary_color")),
+            ai_materials=cast(list[str] | None, update_kwargs.get("ai_materials")),
+            ai_style_tags=cast(list[str] | None, update_kwargs.get("ai_style_tags")),
+            ai_confidence=category_conf,
+        )
         LOGGER.info(
             "ai.tasks.updated_item",
             extra={
                 "item_id": str(item.id),
                 "category": update_kwargs.get("category", item.category),
+                "subcategory": update_kwargs.get("subcategory", getattr(item, "subcategory", None)),
                 "primary_color": update_kwargs.get("primary_color", item.primary_color),
                 "secondary_color": update_kwargs.get("secondary_color", item.secondary_color),
                 "tags": update_kwargs.get("tags", existing_tags),
+                "ai_materials": update_kwargs.get(
+                    "ai_materials",
+                    getattr(item, "ai_materials", None),
+                ),
+                "ai_style_tags": update_kwargs.get(
+                    "ai_style_tags",
+                    getattr(item, "ai_style_tags", None),
+                ),
                 "confidence": category_conf,
             },
         )

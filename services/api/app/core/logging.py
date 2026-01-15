@@ -31,15 +31,15 @@ class JsonFormatter(logging.Formatter):
         }
 
         if getattr(record, "request_id", None):
-            payload["request_id"] = record.request_id
+            payload["request_id"] = record.request_id  # type: ignore[attr-defined]
         if getattr(record, "path", None):
-            payload["path"] = record.path
+            payload["path"] = record.path  # type: ignore[attr-defined]
         if getattr(record, "method", None):
-            payload["method"] = record.method
+            payload["method"] = record.method  # type: ignore[attr-defined]
         if getattr(record, "status_code", None) is not None:
-            payload["status_code"] = record.status_code
+            payload["status_code"] = record.status_code  # type: ignore[attr-defined]
         if getattr(record, "latency_ms", None) is not None:
-            payload["latency_ms"] = record.latency_ms
+            payload["latency_ms"] = record.latency_ms  # type: ignore[attr-defined]
 
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)

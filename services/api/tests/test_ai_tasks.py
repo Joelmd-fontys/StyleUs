@@ -51,11 +51,13 @@ def _mock_pipeline_result(
     category: str,
     category_conf: float,
     materials: list[tuple[str, float]],
-    styles: list[tuple[str, float]],
+    style_tags: list[tuple[str, float]],
+    subcategory: str | None = None,
+    subcategory_conf: float | None = None,
 ) -> PipelineResult:
     scores_category = {category: category_conf}
     score_materials = dict(materials)
-    score_styles = dict(styles)
+    score_style_tags = dict(style_tags)
     return PipelineResult(
         colors=color.ColorResult(
             primary_color=primary,
@@ -67,11 +69,14 @@ def _mock_pipeline_result(
             "category": category,
             "category_confidence": category_conf,
             "materials": materials,
-            "styles": styles,
+            "style_tags": style_tags,
+            "subcategory": subcategory,
+            "subcategory_confidence": subcategory_conf,
             "scores": {
                 "category": scores_category,
                 "materials": score_materials,
-                "styles": score_styles,
+                "style_tags": score_style_tags,
+                "subcategory": {subcategory: subcategory_conf} if subcategory else {},
             },
         },
         cached=False,
@@ -103,7 +108,9 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
         category="outerwear",
         category_conf=0.92,
         materials=[("leather", 0.88)],
-        styles=[("heritage", 0.81)],
+        style_tags=[("heritage", 0.81)],
+        subcategory="coat",
+        subcategory_conf=0.91,
     )
     monkeypatch.setattr(ai_tasks.pipeline, "run", lambda path: pipeline_result)
 
@@ -112,12 +119,15 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
     refreshed = db_session.get(WardrobeItem, item_id)
     assert refreshed is not None
     assert refreshed.category == "outerwear"
+    assert refreshed.subcategory == "coat"
     assert refreshed.primary_color == "Camel"
     assert refreshed.secondary_color == "Tan"
     assert refreshed.color == "Camel"
     assert refreshed.ai_confidence == pytest.approx(0.92)
     refreshed_tags = sorted(tag.tag for tag in refreshed.tags)
     assert refreshed_tags == ["heritage", "leather"]
+    assert refreshed.ai_materials == ["leather"]
+    assert refreshed.ai_style_tags == ["heritage"]
 
 
 def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, monkeypatch):
@@ -146,7 +156,9 @@ def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, m
         category="outerwear",
         category_conf=0.75,
         materials=[("wool", 0.72)],
-        styles=[("outdoor", 0.7)],
+        style_tags=[("outdoor", 0.7)],
+        subcategory="coat",
+        subcategory_conf=0.74,
     )
     monkeypatch.setattr(ai_tasks.pipeline, "run", lambda path: pipeline_result)
 
@@ -156,12 +168,15 @@ def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, m
     assert refreshed is not None
     # Category already set; should remain unchanged.
     assert refreshed.category == "top"
+    assert refreshed.subcategory == "coat"
     merged_tags = [tag.tag for tag in refreshed.tags]
     assert merged_tags == ["casual", "outdoor", "wool"]
     assert refreshed.primary_color == "Brown"
     assert refreshed.secondary_color == "Tan"
     assert refreshed.ai_confidence == pytest.approx(0.75)
     assert refreshed.color == "blue"
+    assert refreshed.ai_materials == ["wool"]
+    assert refreshed.ai_style_tags == ["outdoor"]
 
 
 def test_classify_and_update_item_skips_deleted(db_session, tmp_path, monkeypatch):

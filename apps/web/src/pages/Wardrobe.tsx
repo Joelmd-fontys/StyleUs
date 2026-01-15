@@ -19,9 +19,7 @@ const Wardrobe = (): ReactElement => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [feedback, setFeedback] = useState<
-    { message: string; tone: 'success' | 'danger' } | null
-  >(null);
+  const [feedback, setFeedback] = useState<{ message: string; tone: 'success' | 'danger' } | null>(null);
 
   useEffect(() => {
     if (location.state && (location.state as { deleted?: boolean }).deleted) {
@@ -58,9 +56,7 @@ const Wardrobe = (): ReactElement => {
     <div className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">Wardrobe</h1>
-        <p className="text-sm text-neutral-500">
-          Browse your collection, edit details, and add new pieces.
-        </p>
+        <p className="text-sm text-neutral-500">Browse your collection, edit details, and add new pieces.</p>
       </div>
 
       <Filters

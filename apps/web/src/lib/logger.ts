@@ -4,7 +4,6 @@ type EventPayload = Record<string, unknown> | undefined;
 
 const log = (event: EventName, payload: EventPayload): void => {
   const timestamp = new Date().toISOString();
-  // eslint-disable-next-line no-console
   console.info(`[styleus:${event}]`, { timestamp, ...payload });
 };
 

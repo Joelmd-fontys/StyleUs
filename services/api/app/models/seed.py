@@ -11,7 +11,7 @@ from app.db.base import Base
 
 
 class SeedRun(Base):
-    __tablename__ = "seeds"
+    __tablename__: str = "seeds"  # type: ignore[assignment]
 
     key: Mapped[str] = mapped_column(String(length=100), primary_key=True)
     applied_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

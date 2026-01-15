@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     ai_device: str = Field(default="cpu", alias="AI_DEVICE")
     ai_onnx: bool = Field(default=False, alias="AI_ONNX")
     ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
+    ai_subcategory_confidence_threshold: float = Field(
+        default=0.5,
+        alias="AI_SUBCATEGORY_CONFIDENCE_THRESHOLD",
+    )
     ai_color_topk: int = Field(default=2, alias="AI_COLOR_TOPK")
     ai_onnx_model_path: str | None = Field(default=None, alias="AI_ONNX_MODEL_PATH")
 
@@ -92,6 +96,11 @@ class Settings(BaseSettings):
             self.ai_color_topk = 2
         if self.ai_confidence_threshold <= 0 or self.ai_confidence_threshold > 1:
             self.ai_confidence_threshold = 0.6
+        if (
+            self.ai_subcategory_confidence_threshold <= 0
+            or self.ai_subcategory_confidence_threshold > 1
+        ):
+            self.ai_subcategory_confidence_threshold = 0.5
         return self
 
     @property

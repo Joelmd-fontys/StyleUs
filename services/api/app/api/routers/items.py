@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import uuid
 from collections.abc import Sequence
-import datetime
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
@@ -100,6 +100,7 @@ def update_wardrobe_item(
         db,
         item,
         category=payload.category,
+        subcategory=payload.subcategory,
         color=payload.color,
         brand=payload.brand,
         tags=payload.tags,

@@ -19,6 +19,7 @@ def seed_items(db_session):
         id=uuid.uuid4(),
         user_id=DEFAULT_USER_ID,
         category="top",
+        subcategory="t-shirt",
         color="red",
         brand="Nike",
     )
@@ -28,6 +29,7 @@ def seed_items(db_session):
         id=uuid.uuid4(),
         user_id=DEFAULT_USER_ID,
         category="bottom",
+        subcategory="jeans",
         color="blue",
         brand="Levis",
     )
@@ -48,6 +50,9 @@ def test_list_items_with_filters(client, db_session):
     assert len(data) == 1
     item = data[0]
     assert item["category"] == "top"
+    assert item["subcategory"] == "t-shirt"
+    assert item["ai"] is not None
+    assert item["ai"]["subcategory"] == "t-shirt"
     assert any(tag == "sport" for tag in item["tags"])
 
 
@@ -110,9 +115,11 @@ def test_ai_preview_endpoint_returns_predictions(client, db_session):
     assert response.status_code == 200
     payload = response.json()
     assert payload["category"] == "top"
-    assert "subcategory" not in payload
+    assert payload["subcategory"] is None
     assert payload["primaryColor"] == "Camel"
     assert payload["secondaryColor"] == "Tan"
+    assert payload["materials"] == []
+    assert payload["styleTags"] == []
     assert payload["confidence"] == 0.82
     assert payload["categoryConfidence"] == 0.82
     assert payload["primaryColorConfidence"] is None or isinstance(

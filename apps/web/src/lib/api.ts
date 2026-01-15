@@ -132,10 +132,7 @@ export const deleteItem = async (id: string): Promise<void> => {
   await handleResponse<void>(response);
 };
 
-export const completeUpload = async (
-  id: string,
-  body: CompleteUploadRequest
-): Promise<GetItemResponse> => {
+export const completeUpload = async (id: string, body: CompleteUploadRequest): Promise<GetItemResponse> => {
   const response = await fetch(resolveApiUrl(`/items/${id}/complete-upload`), {
     method: 'POST',
     headers: {

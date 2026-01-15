@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import shutil
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from app.seed.utils import (
 )
 from app.services import items as items_service
 from app.services import uploads as uploads_service
+from app.services.uploads import UploadFinalizationResult
 from app.utils import s3 as s3_utils
 from app.utils.images import ProcessedImage, process_image_bytes, save_image_bytes
 
@@ -230,11 +232,11 @@ def _create_placeholder_with_upload(
 
 def _finalize_upload(
     settings: Settings,
-    item_id,
+    item_id: uuid.UUID,
     object_key: str | None,
     file_name: str,
     processed: ProcessedImage,
-):
+) -> UploadFinalizationResult:
     if settings.is_s3_enabled:
         if not object_key:
             raise SeedSourceError("Missing S3 object key for seeding")
@@ -250,12 +252,14 @@ def _finalize_upload(
     save_image_bytes(media_dir / "medium.jpg", processed.medium_bytes)
     save_image_bytes(media_dir / "thumb.jpg", processed.thumb_bytes)
 
-    metadata = ImageMetadata(
-        width=processed.width,
-        height=processed.height,
-        bytes=processed.bytes,
-        mime_type=processed.mime_type,
-        checksum=processed.checksum,
+    metadata = ImageMetadata.model_validate(
+        {
+            "width": processed.width,
+            "height": processed.height,
+            "bytes": processed.size_bytes,
+            "mime_type": processed.mime_type,
+            "checksum": processed.checksum,
+        }
     )
 
     base_url = f"{settings.media_url_path.rstrip('/')}/{item_id}"

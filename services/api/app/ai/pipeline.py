@@ -11,12 +11,8 @@ from typing import Any
 import numpy as np
 
 from app.ai import color
-from app.ai.clip_heads import (
-    MATERIALS,
-    STYLES,
-    ClipPrediction,
-    get_predictor,
-)
+from app.ai.clip_heads import ClipPrediction, get_predictor
+from app.ai.labels import MATERIAL_LABELS, STYLE_LABELS
 from app.core.config import settings
 
 LOGGER = logging.getLogger("app.ai.pipeline")
@@ -24,38 +20,57 @@ LOGGER = logging.getLogger("app.ai.pipeline")
 _EMB_CACHE_DIR = settings.media_root_path / ".emb_cache"
 _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-_HEURISTIC_KEYWORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("sneaker", "shoes", ("streetwear", "sport")),
-    ("runner", "shoes", ("athletic", "sport")),
-    ("boot", "shoes", ("outdoor", "heritage")),
-    ("loafer", "shoes", ("smart-casual", "minimal")),
-    ("heel", "shoes", ("luxury", "formal")),
-    ("sand", "shoes", ("summer", "casual")),
-    ("jacket", "outerwear", ("outdoor", "streetwear")),
-    ("coat", "outerwear", ("formal", "luxury")),
-    ("puffer", "outerwear", ("outdoor", "warm")),
-    ("hoodie", "top", ("streetwear", "casual")),
-    ("sweater", "top", ("minimal", "warm")),
-    ("crew", "top", ("minimal", "casual")),
-    ("tshirt", "top", ("casual", "minimal")),
-    ("tee", "top", ("casual", "minimal")),
-    ("shirt", "top", ("smart-casual", "formal")),
-    ("blouse", "top", ("formal", "minimal")),
-    ("jean", "bottom", ("denim", "casual")),
-    ("chino", "bottom", ("smart-casual", "minimal")),
-    ("trouser", "bottom", ("formal", "smart-casual")),
-    ("pant", "bottom", ("formal", "minimal")),
-    ("short", "bottom", ("summer", "casual")),
-    ("skirt", "bottom", ("minimal", "formal")),
-    ("legging", "bottom", ("athletic", "casual")),
-    ("bag", "accessory", ("streetwear", "minimal")),
-    ("belt", "accessory", ("heritage", "smart-casual")),
-    ("cap", "accessory", ("streetwear", "athletic")),
-    ("beanie", "accessory", ("winter", "outdoor")),
-    ("scarf", "accessory", ("winter", "heritage")),
-    ("watch", "accessory", ("luxury", "formal")),
-    ("sunglass", "accessory", ("retro", "summer")),
-    ("glove", "accessory", ("winter", "outdoor")),
+_SUBCATEGORY_FALLBACK_CONFIDENCE = 0.55
+
+
+@dataclass(frozen=True, slots=True)
+class KeywordHint:
+    keyword: str
+    category: str
+    subcategory: str | None
+    materials: tuple[str, ...]
+    style_tags: tuple[str, ...]
+
+
+_HEURISTIC_KEYWORDS: tuple[KeywordHint, ...] = (
+    KeywordHint("sneaker", "shoes", "sneakers", ("mesh", "leather"), ("streetwear", "sport")),
+    KeywordHint("runner", "shoes", "sneakers", ("mesh",), ("sport",)),
+    KeywordHint("boot", "shoes", "boots", ("leather", "suede"), ("outdoor",)),
+    KeywordHint("loafer", "shoes", "loafers", ("leather",), ("formal", "minimal")),
+    KeywordHint("heel", "shoes", "heels", ("leather",), ("formal",)),
+    KeywordHint("sandal", "shoes", "sandals", ("mesh", "leather"), ("minimal", "retro")),
+    KeywordHint("jacket", "top", "jacket", ("nylon",), ("outdoor", "streetwear")),
+    KeywordHint("coat", "top", "coat", ("wool", "leather"), ("formal",)),
+    KeywordHint("puffer", "outerwear", "puffer", ("nylon", "fleece"), ("outdoor",)),
+    KeywordHint("windbreaker", "outerwear", "windbreaker", ("nylon",), ("sport", "outdoor")),
+    KeywordHint("rain", "outerwear", "rain jacket", ("nylon",), ("outdoor",)),
+    KeywordHint("fleece", "outerwear", "fleece", ("fleece",), ("outdoor", "minimal")),
+    KeywordHint("hoodie", "top", "hoodie", ("knit", "fleece"), ("streetwear", "sport")),
+    KeywordHint("sweatshirt", "top", "sweatshirt", ("knit",), ("streetwear", "minimal")),
+    KeywordHint("sweater", "top", "sweater", ("wool", "knit"), ("minimal", "retro")),
+    KeywordHint("crew", "top", "long sleeve", ("cotton",), ("minimal", "retro")),
+    KeywordHint("tshirt", "top", "t-shirt", ("cotton",), ("minimal", "streetwear")),
+    KeywordHint("tee", "top", "t-shirt", ("cotton",), ("minimal", "streetwear")),
+    KeywordHint("tank", "top", "tank top", ("cotton", "mesh"), ("sport", "minimal")),
+    KeywordHint("shirt", "top", "shirt", ("cotton",), ("formal", "minimal")),
+    KeywordHint("polo", "top", "polo", ("cotton",), ("sport", "minimal")),
+    KeywordHint("longsleeve", "top", "long sleeve", ("cotton",), ("minimal", "retro")),
+    KeywordHint("jean", "bottom", "jeans", ("denim",), ("retro", "streetwear")),
+    KeywordHint("denim", "bottom", "jeans", ("denim",), ("retro", "streetwear")),
+    KeywordHint("chino", "bottom", "chinos", ("cotton",), ("minimal", "formal")),
+    KeywordHint("trouser", "bottom", "trousers", ("wool", "cotton"), ("formal",)),
+    KeywordHint("pant", "bottom", "trousers", ("cotton",), ("formal", "minimal")),
+    KeywordHint("short", "bottom", "shorts", ("cotton",), ("sport", "retro")),
+    KeywordHint("skirt", "bottom", "skirt", ("cotton", "denim"), ("minimal", "retro")),
+    KeywordHint("sneak", "shoes", "sneakers", ("mesh",), ("sport", "streetwear")),
+    KeywordHint("bag", "accessory", "bag", ("leather", "canvas"), ("streetwear", "minimal")),
+    KeywordHint("belt", "accessory", "belt", ("leather",), ("formal", "retro")),
+    KeywordHint("cap", "accessory", "cap", ("mesh", "cotton"), ("sport", "streetwear")),
+    KeywordHint("beanie", "accessory", "beanie", ("knit", "fleece"), ("outdoor",)),
+    KeywordHint("scarf", "accessory", "scarf", ("wool", "knit"), ("retro", "formal")),
+    KeywordHint("watch", "accessory", "watch", ("leather",), ("formal", "minimal")),
+    KeywordHint("sunglass", "accessory", "sunglasses", (), ("retro", "minimal")),
+    KeywordHint("goggle", "accessory", "sunglasses", (), ("sport", "outdoor")),
 )
 
 
@@ -93,49 +108,130 @@ def _load_embedding(image_path: Path, predictor: Any) -> tuple[np.ndarray, bool]
     return embedding, False
 
 
+def _normalize_token(value: str | None) -> str:
+    return value.lower().strip() if value else ""
+
+
+def _match_keyword(keyword_source: str, *, category: str | None = None) -> KeywordHint | None:
+    for hint in _HEURISTIC_KEYWORDS:
+        if hint.keyword in keyword_source and (category is None or hint.category == category):
+            return hint
+    return None
+
+
+def _find_keyword_hint(
+    *,
+    category: str | None,
+    image_path: Path,
+    colors: color.ColorResult,
+) -> KeywordHint | None:
+    candidates = [
+        image_path.name.lower(),
+        image_path.stem.lower(),
+        _normalize_token(colors.primary_color),
+        _normalize_token(colors.secondary_color),
+    ]
+    for value in candidates:
+        if not value:
+            continue
+        hint = _match_keyword(value, category=category)
+        if hint:
+            return hint
+    return None
+
+
+def _select_subcategory(
+    *,
+    clip: ClipPrediction,
+    image_path: Path,
+    colors: color.ColorResult,
+) -> tuple[str | None, float | None]:
+    scores = (clip.get("scores") or {}).get("subcategory", {}) or {}
+    candidate = clip.get("subcategory")
+    candidate_conf = clip.get("subcategory_confidence") or (
+        scores.get(candidate) if candidate else None
+    )
+
+    if not candidate and scores:
+        candidate, candidate_conf = max(scores.items(), key=lambda item: item[1])
+
+    if candidate and candidate_conf is not None:
+        if candidate_conf >= settings.ai_subcategory_confidence_threshold:
+            return candidate, candidate_conf
+
+    hint = _find_keyword_hint(category=clip["category"], image_path=image_path, colors=colors)
+    if hint and hint.subcategory:
+        return (
+            hint.subcategory,
+            max(settings.ai_subcategory_confidence_threshold, _SUBCATEGORY_FALLBACK_CONFIDENCE),
+        )
+
+    if candidate:
+        return candidate, candidate_conf
+    return None, None
+
+
+def _apply_subcategory_selection(
+    clip: ClipPrediction,
+    *,
+    image_path: Path,
+    colors: color.ColorResult,
+) -> None:
+    selected, confidence = _select_subcategory(clip=clip, image_path=image_path, colors=colors)
+    clip["subcategory"] = selected
+    clip["subcategory_confidence"] = confidence
+    scores = clip.setdefault("scores", {})
+    sub_scores = dict(scores.get("subcategory") or {})
+    if selected and confidence is not None:
+        sub_scores[selected] = confidence
+    scores["subcategory"] = sub_scores
+
+
+def _score_list(labels: tuple[str, ...], *, base: float) -> list[tuple[str, float]]:
+    seen: set[str] = set()
+    results: list[tuple[str, float]] = []
+    for label in labels:
+        normalized = _normalize_token(label)
+        if not normalized or normalized in seen:
+            continue
+        if normalized not in MATERIAL_LABELS and normalized not in STYLE_LABELS:
+            continue
+        seen.add(normalized)
+        results.append((normalized, base))
+    return results
+
+
 def _heuristic_prediction(image_path: Path, colors: color.ColorResult) -> ClipPrediction:
-    filename = image_path.name.lower()
-    category = "accessory"
-    category_conf = 0.45
-    tags: list[str] = []
+    hint = _find_keyword_hint(category=None, image_path=image_path, colors=colors)
+    category = hint.category if hint else "accessory"
+    subcategory = hint.subcategory if hint else None
+    category_conf = 0.72 if hint else 0.45
+    subcategory_conf = 0.6 if subcategory else None
 
-    for keyword, cat, extra_tags in _HEURISTIC_KEYWORDS:
-        if keyword in filename:
-            category = cat
-            category_conf = 0.72
-            tags.extend(extra_tags)
-            break
+    material_labels: list[tuple[str, float]] = []
+    style_labels: list[tuple[str, float]] = []
+    if hint:
+        material_labels.extend(_score_list(hint.materials, base=0.7))
+        style_labels.extend(_score_list(hint.style_tags, base=0.68))
 
-    if colors.primary_color:
-        primary_tag = colors.primary_color.lower()
-        if primary_tag not in tags:
-            tags.append(primary_tag)
-
-    unique_tags: list[str] = []
-    for tag in tags:
-        normalized = tag.strip().lower()
-        if normalized and normalized not in unique_tags:
-            unique_tags.append(normalized)
-
-    materials_list: list[tuple[str, float]] = []
-    styles_list: list[tuple[str, float]] = []
-    for tag in unique_tags:
-        if tag in MATERIALS:
-            materials_list.append((tag, 0.68))
-        elif tag in STYLES:
-            styles_list.append((tag, 0.65))
-        else:
-            styles_list.append((tag, 0.6))
+    material_scores = dict(material_labels)
+    style_scores = dict(style_labels)
+    sub_scores: dict[str, float] = {}
+    if subcategory and subcategory_conf is not None:
+        sub_scores[subcategory] = subcategory_conf
 
     return ClipPrediction(
         category=category,
         category_confidence=category_conf,
-        materials=materials_list,
-        styles=styles_list,
+        materials=material_labels,
+        style_tags=style_labels,
+        subcategory=subcategory,
+        subcategory_confidence=subcategory_conf,
         scores={
             "category": {category: category_conf},
-            "materials": dict(materials_list),
-            "styles": dict(styles_list),
+            "materials": material_scores,
+            "style_tags": style_scores,
+            "subcategory": sub_scores,
         },
     )
 
@@ -147,6 +243,22 @@ def run(image_path: Path) -> PipelineResult:
         predictor = get_predictor()
         embedding, cached = _load_embedding(image_path, predictor)
         clip_result = predictor.predict(embedding)
+        _apply_subcategory_selection(
+            clip_result,
+            image_path=image_path,
+            colors=color_result,
+        )
+        LOGGER.debug(
+            "ai.pipeline.prediction",
+            extra={
+                "category": clip_result.get("category"),
+                "category_confidence": clip_result.get("category_confidence"),
+                "subcategory": clip_result.get("subcategory"),
+                "subcategory_confidence": clip_result.get("subcategory_confidence"),
+                "materials": clip_result.get("materials", [])[:3],
+                "style_tags": clip_result.get("style_tags", [])[:3],
+            },
+        )
     except RuntimeError as exc:
         LOGGER.warning("ai.pipeline.predictor_unavailable", extra={"error": str(exc)})
         clip_result = _heuristic_prediction(image_path, color_result)

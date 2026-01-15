@@ -5,55 +5,35 @@ from __future__ import annotations
 import importlib
 import logging
 import threading
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import numpy as np
 from PIL import Image
 
+from app.ai.labels import (
+    CATEGORY_LABELS,
+    MATERIAL_LABELS,
+    STYLE_LABELS,
+    SUBCATEGORY_LABELS,
+)
 from app.core.config import settings
 
 LOGGER = logging.getLogger("app.ai.clip")
 
+# Suppress noisy timm deprecation warning emitted by open-clip imports.
+warnings.filterwarnings(
+    "ignore",
+    message="Importing from timm.models.layers is deprecated.*",
+    category=FutureWarning,
+)
+
 PROMPT_TEMPLATES: Sequence[str] = (
-    "studio product photo of a {label}",
-    "close-up {label} garment",
-)
-
-CATEGORIES: Sequence[str] = ("top", "bottom", "outerwear", "shoes", "accessory")
-
-MATERIALS: Sequence[str] = (
-    "denim",
-    "cotton",
-    "wool",
-    "cashmere",
-    "linen",
-    "silk",
-    "leather",
-    "suede",
-    "canvas",
-    "synthetic",
-    "mesh",
-    "rubber",
-    "fleece",
-    "knit",
-)
-
-STYLES: Sequence[str] = (
-    "minimal",
-    "streetwear",
-    "athletic",
-    "casual",
-    "formal",
-    "smart-casual",
-    "relaxed",
-    "outdoor",
-    "vintage",
-    "luxury",
-    "edgy",
-    "preppy",
-    "boho",
+    "studio photo of a {label}",
+    "clean product image of a {label}",
+    "clothing item: {label}",
 )
 
 
@@ -61,7 +41,9 @@ class ClipPrediction(TypedDict):
     category: str
     category_confidence: float
     materials: list[tuple[str, float]]
-    styles: list[tuple[str, float]]
+    style_tags: list[tuple[str, float]]
+    subcategory: str | None
+    subcategory_confidence: float | None
     scores: dict[str, dict[str, float]]
 
 
@@ -73,6 +55,7 @@ class ClipPredictor:
         self.onnx_session: Any | None = None
         self._open_clip, self._torch = self._load_dependencies()
         self.device = self._torch.device(settings.ai_device)
+        self.subcategory_text: dict[str, Any] = {}
         self._load_model()
         self._prepare_text_heads()
 
@@ -92,7 +75,7 @@ class ClipPredictor:
         if settings.ai_onnx:
             model_path = settings.ai_onnx_model_path
             try:
-                import onnxruntime as ort  # type: ignore[import]
+                import onnxruntime as ort
 
                 if model_path:
                     self.onnx_session = ort.InferenceSession(
@@ -105,13 +88,14 @@ class ClipPredictor:
             except Exception as exc:  # pragma: no cover - optional dependency
                 LOGGER.warning("ai.clip.onnx_unavailable", extra={"error": str(exc)})
 
-        model, _, preprocess = open_clip.create_model_and_transforms(  # type: ignore[attr-defined]
+        oc = cast(Any, open_clip)
+        model, _, preprocess = oc.create_model_and_transforms(
             model_name,
             pretrained=pretrained,
             device="cpu",
         )
         self.preprocess = preprocess
-        self.tokenizer = open_clip.get_tokenizer(model_name)  # type: ignore[attr-defined]
+        self.tokenizer = oc.get_tokenizer(model_name)
 
         if self.use_onnx:
             self.model = model.to(self.device)
@@ -122,9 +106,13 @@ class ClipPredictor:
     def _prepare_text_heads(self) -> None:
         torch = self._torch
         with torch.no_grad():
-            self.category_text = self._build_text_embeddings(CATEGORIES)
-            self.material_text = self._build_text_embeddings(MATERIALS)
-            self.style_text = self._build_text_embeddings(STYLES)
+            self.category_text = self._build_text_embeddings(CATEGORY_LABELS)
+            self.material_text = self._build_text_embeddings(MATERIAL_LABELS)
+            self.style_text = self._build_text_embeddings(STYLE_LABELS)
+            self.subcategory_text = {
+                category: self._build_text_embeddings(labels)
+                for category, labels in SUBCATEGORY_LABELS.items()
+            }
 
     def _build_text_embeddings(self, labels: Sequence[str]) -> Any:
         torch = self._torch
@@ -152,8 +140,8 @@ class ClipPredictor:
 
         if self.use_onnx and self.onnx_session is not None:
             try:
-                input_name = self.onnx_session.get_inputs()[0].name  # type: ignore[attr-defined]
-                outputs = self.onnx_session.run(  # type: ignore[attr-defined]
+                input_name = self.onnx_session.get_inputs()[0].name
+                outputs = self.onnx_session.run(
                     None,
                     {input_name: pixel_tensor.numpy()},
                 )
@@ -177,7 +165,7 @@ class ClipPredictor:
         norm = np.linalg.norm(embedding)
         if norm > 0:
             embedding = embedding / norm
-        return embedding.astype(np.float32)
+        return cast(np.ndarray, np.asarray(embedding, dtype=np.float32))
 
     def predict(self, embedding: np.ndarray) -> ClipPrediction:
         torch = self._torch
@@ -187,19 +175,36 @@ class ClipPredictor:
         category_logits = (embedding_tensor @ self.category_text.T) * 100
         category_probs = torch.softmax(category_logits, dim=-1)[0]
         category_idx = int(torch.argmax(category_probs).item())
-        category_label = CATEGORIES[category_idx]
+        category_label = CATEGORY_LABELS[category_idx]
         category_conf = float(category_probs[category_idx].item())
 
         category_scores = {
             label: float(category_probs[i].item())
-            for i, label in enumerate(CATEGORIES)
+            for i, label in enumerate(CATEGORY_LABELS)
         }
+
+        subcategory_label: str | None = None
+        subcategory_conf: float | None = None
+        subcategory_scores: dict[str, float] = {}
+        sub_labels = SUBCATEGORY_LABELS.get(category_label, ())
+        if sub_labels:
+            sub_text = self.subcategory_text.get(category_label)
+            if sub_text is not None:
+                sub_logits = (embedding_tensor @ sub_text.T) * 100
+                sub_probs = torch.softmax(sub_logits, dim=-1)[0]
+                subcategory_scores = {
+                    label: float(sub_probs[i].item())
+                    for i, label in enumerate(sub_labels)
+                }
+                sub_idx = int(torch.argmax(sub_probs).item())
+                subcategory_label = sub_labels[sub_idx]
+                subcategory_conf = float(sub_probs[sub_idx].item())
 
         material_logits = (embedding_tensor @ self.material_text.T) * 100
         material_probs = torch.softmax(material_logits, dim=-1)[0]
         material_scores = {
             label: float(material_probs[i].item())
-            for i, label in enumerate(MATERIALS)
+            for i, label in enumerate(MATERIAL_LABELS)
         }
         material_ranked = sorted(
             material_scores.items(), key=lambda item: item[1], reverse=True
@@ -207,21 +212,26 @@ class ClipPredictor:
 
         style_logits = (embedding_tensor @ self.style_text.T) * 100
         style_probs = torch.softmax(style_logits, dim=-1)[0]
-        style_scores = {
+        style_tag_scores = {
             label: float(style_probs[i].item())
-            for i, label in enumerate(STYLES)
+            for i, label in enumerate(STYLE_LABELS)
         }
-        style_ranked = sorted(style_scores.items(), key=lambda item: item[1], reverse=True)
+        style_ranked = sorted(
+            style_tag_scores.items(), key=lambda item: item[1], reverse=True
+        )
 
         return ClipPrediction(
             category=category_label,
             category_confidence=category_conf,
             materials=material_ranked,
-            styles=style_ranked,
+            style_tags=style_ranked,
+            subcategory=subcategory_label,
+            subcategory_confidence=subcategory_conf,
             scores={
                 "category": category_scores,
                 "materials": material_scores,
-                "styles": style_scores,
+                "style_tags": style_tag_scores,
+                "subcategory": subcategory_scores,
             },
         )
 

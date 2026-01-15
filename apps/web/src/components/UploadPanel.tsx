@@ -162,7 +162,8 @@ const UploadPanel = (): ReactElement => {
       >
         <p className="text-sm font-semibold text-neutral-900">Upload a new item</p>
         <p className="max-w-sm text-xs text-neutral-500">
-          Drag and drop an image or select a file. Supported formats: JPG, PNG, WEBP. Maximum size: {MAX_FILE_SIZE_MB}
+          Drag and drop an image or select a file. Supported formats: JPG, PNG, WEBP. Maximum size:{' '}
+          {MAX_FILE_SIZE_MB}
           MB.
         </p>
         <Button
@@ -200,18 +201,12 @@ const UploadPanel = (): ReactElement => {
       ) : null}
 
       {state.message ? (
-        <p
-          className={`mt-3 text-sm ${
-            state.status === 'error' ? 'text-danger-500' : 'text-success-500'
-          }`}
-        >
+        <p className={`mt-3 text-sm ${state.status === 'error' ? 'text-danger-500' : 'text-success-500'}`}>
           {state.message}
         </p>
       ) : (
         <p className="mt-3 text-xs text-neutral-400">
-          {USE_LIVE_API_UPLOAD
-            ? 'Uploads are sent to the live API.'
-            : 'Uploads are mocked locally.'}
+          {USE_LIVE_API_UPLOAD ? 'Uploads are sent to the live API.' : 'Uploads are mocked locally.'}
         </p>
       )}
     </section>

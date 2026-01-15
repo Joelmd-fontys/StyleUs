@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -119,23 +120,28 @@ def save_local_upload(
     return destination
 
 
-def _load_local_upload_info(media_dir: Path) -> dict | None:
+def _load_local_upload_info(media_dir: Path) -> dict[str, Any] | None:
     info_path = media_dir / UPLOAD_INFO_FILENAME
     if not info_path.exists():
         return None
     try:
-        return json.loads(info_path.read_text(encoding="utf-8"))
+        loaded = json.loads(info_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:  # pragma: no cover - defensive
         return None
+    if isinstance(loaded, dict):
+        return cast(dict[str, Any], loaded)
+    return None
 
 
 def _update_metadata_with_bytes(processed: ProcessedImage) -> ImageMetadata:
-    return ImageMetadata(
-        width=processed.width,
-        height=processed.height,
-        bytes=processed.bytes,
-        mime_type=processed.mime_type,
-        checksum=processed.checksum,
+    return ImageMetadata.model_validate(
+        {
+            "width": processed.width,
+            "height": processed.height,
+            "bytes": processed.size_bytes,
+            "mime_type": processed.mime_type,
+            "checksum": processed.checksum,
+        }
     )
 
 

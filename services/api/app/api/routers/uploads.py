@@ -49,7 +49,9 @@ def create_presigned_upload(
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return response
 
-    return PresignResponse(upload_url=upload_url, item_id=item.id, object_key=object_key)
+    return PresignResponse.model_validate(
+        {"upload_url": upload_url, "item_id": item.id, "object_key": object_key}
+    )
 
 
 @router.put("/uploads/{item_id}")
@@ -80,6 +82,7 @@ async def upload_blob(
         }
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=detail)
 
+    content_length: int | None = None
     content_length_header = request.headers.get("content-length")
     if content_length_header:
         try:

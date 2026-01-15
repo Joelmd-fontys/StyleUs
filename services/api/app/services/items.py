@@ -13,7 +13,7 @@ from sqlalchemy.sql import Select
 from app.ai import tasks as ai_tasks
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import ImageMetadata, ItemAIPreview, ItemDetail
+from app.schemas.items import ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
 
 
@@ -94,16 +94,21 @@ def update_item(
     item: WardrobeItem,
     *,
     category: str | None = None,
+    subcategory: str | None = None,
     color: str | None = None,
     brand: str | None = None,
     tags: list[str] | None = None,
     primary_color: str | None = None,
     secondary_color: str | None = None,
+    ai_materials: list[str] | None = None,
+    ai_style_tags: list[str] | None = None,
     ai_confidence: float | None = None,
 ) -> WardrobeItem:
     """Persist field updates and normalized tag values for an item."""
     if category is not None:
         item.category = category
+    if subcategory is not None:
+        item.subcategory = subcategory
     if color is not None:
         item.color = color
     if brand is not None:
@@ -112,6 +117,10 @@ def update_item(
         item.primary_color = primary_color
     if secondary_color is not None:
         item.secondary_color = secondary_color
+    if ai_materials is not None:
+        item.ai_materials = ai_materials
+    if ai_style_tags is not None:
+        item.ai_style_tags = ai_style_tags
     if ai_confidence is not None:
         item.ai_confidence = ai_confidence
 
@@ -178,18 +187,41 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             item.image_checksum,
         )
     ):
-        metadata = ImageMetadata(
-            width=item.image_width,
-            height=item.image_height,
-            bytes=item.image_bytes,
-            mime_type=item.image_mime_type,
-            checksum=item.image_checksum,
+        metadata = ImageMetadata.model_validate(
+            {
+                "width": item.image_width,
+                "height": item.image_height,
+                "bytes": item.image_bytes,
+                "mime_type": item.image_mime_type,
+                "checksum": item.image_checksum,
+            }
+        )
+
+    ai_block: ItemAIAttributes | None = None
+    if any(
+        value
+        for value in (
+            item.ai_confidence,
+            item.ai_materials,
+            item.ai_style_tags,
+            item.subcategory,
+        )
+    ):
+        ai_block = ItemAIAttributes.model_validate(
+            {
+                "category": item.category if item.category not in {"", "uncategorized"} else None,
+                "subcategory": item.subcategory,
+                "materials": item.ai_materials or [],
+                "style_tags": item.ai_style_tags or [],
+                "confidence": item.ai_confidence,
+            }
         )
 
     return ItemDetail.model_validate(
         {
             "id": item.id,
             "category": item.category,
+            "subcategory": item.subcategory,
             "color": item.color,
             "brand": item.brand,
             "primary_color": item.primary_color,
@@ -201,19 +233,26 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "tags": [tag.tag for tag in item.tags],
             "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
             "ai_confidence": item.ai_confidence,
+            "ai": ai_block.model_dump(by_alias=True) if ai_block else None,
         }
     )
 
 
 def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
     """Build an AI preview payload using the latest item data."""
-    preview = ItemAIPreview(
-        category=item.category if item.category not in {"", "uncategorized"} else None,
-        category_confidence=item.ai_confidence,
-        primary_color=item.primary_color or None,
-        secondary_color=item.secondary_color or None,
-        tags=[tag.tag for tag in item.tags],
-        confidence=item.ai_confidence,
+    preview = ItemAIPreview.model_validate(
+        {
+            "category": item.category if item.category not in {"", "uncategorized"} else None,
+            "category_confidence": item.ai_confidence,
+            "subcategory": None,
+            "subcategory_confidence": None,
+            "primary_color": item.primary_color or None,
+            "secondary_color": item.secondary_color or None,
+            "materials": list(item.ai_materials or []),
+            "style_tags": list(item.ai_style_tags or []),
+            "tags": [tag.tag for tag in item.tags],
+            "confidence": item.ai_confidence,
+        }
     )
 
     pipeline_result = ai_tasks.get_pipeline_preview(item)
@@ -223,6 +262,10 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
     clip = pipeline_result.clip
     preview.category = clip.get("category") or preview.category
     preview.category_confidence = clip.get("category_confidence") or preview.category_confidence
+    preview.subcategory = clip.get("subcategory") or preview.subcategory
+    preview.subcategory_confidence = (
+        clip.get("subcategory_confidence") or preview.subcategory_confidence
+    )
 
     color_result = pipeline_result.colors
     if color_result.primary_color:
@@ -232,10 +275,13 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
         preview.secondary_color = color_result.secondary_color
         preview.secondary_color_confidence = color_result.secondary_confidence
 
+    preview.materials = [name for name, _ in clip.get("materials", [])[:5]]
+    preview.style_tags = [name for name, _ in clip.get("style_tags", [])[:5]]
+
     suggested_tags: list[tuple[str, float]] = []
     for name, score in clip.get("materials", [])[:3]:
         suggested_tags.append((name, float(score)))
-    for name, score in clip.get("styles", [])[:3]:
+    for name, score in clip.get("style_tags", [])[:3]:
         if all(existing != name for existing, _ in suggested_tags):
             suggested_tags.append((name, float(score)))
 

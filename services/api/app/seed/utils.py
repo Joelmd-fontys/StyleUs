@@ -9,7 +9,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from PIL import Image
 
 MAX_REMOTE_BYTES = 10 * 1024 * 1024  # 10MB ceiling for remote assets

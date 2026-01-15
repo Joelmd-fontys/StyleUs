@@ -70,9 +70,7 @@ const AppShell = () => {
             role="status"
             className={cn(
               'rounded-lg px-4 py-3 text-sm shadow-lg transition',
-              flashMessage.type === 'success'
-                ? 'bg-emerald-500 text-white'
-                : 'bg-red-500 text-white'
+              flashMessage.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
             )}
           >
             {flashMessage.message}

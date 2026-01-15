@@ -4,19 +4,22 @@ import Button, { buttonClasses } from '../components/Button';
 import Card from '../components/Card';
 import Field from '../components/Field';
 import { wardrobeItemEditSchema } from '../lib/validation';
+import type { PatchItemRequest } from '../domain/contracts';
 import { useWardrobeStore } from '../store/wardrobe';
-import { WardrobeCategory } from '../domain/types';
+import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
 import { resolveMediaUrl } from '../lib/media';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { cn } from '../lib/utils';
 import { formatUtcDate, formatUtcTime } from '../lib/datetime';
 import { useStatsPreference } from '../hooks/useStatsPreference';
+import { getSubcategories } from '../domain/labels';
+
+const toTitleCase = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
 const formatSize = (value?: number | null): string =>
   typeof value === 'number' && !Number.isNaN(value) ? `${(value / 1024).toFixed(1)} kB` : '—';
-
 
 const ItemDetail = (): ReactElement => {
   const { id } = useParams<{ id: string }>();
@@ -29,9 +32,8 @@ const ItemDetail = (): ReactElement => {
   const refreshItem = useWardrobeStore((state) => state.refreshItem);
   const deleteItem = useWardrobeStore((state) => state.deleteItem);
 
-  const item = useMemo(() => items.find((entry) => entry.id === id), [id, items]);
-
   const [category, setCategory] = useState<WardrobeCategory>('unknown');
+  const [subcategory, setSubcategory] = useState<WardrobeSubcategory | ''>('');
   const [color, setColor] = useState('');
   const [brand, setBrand] = useState('');
   const [tagsInput, setTagsInput] = useState('');
@@ -41,6 +43,9 @@ const ItemDetail = (): ReactElement => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [statsForNerds] = useStatsPreference();
+
+  const item = useMemo(() => items.find((entry) => entry.id === id), [id, items]);
+  const subcategoryOptions = useMemo(() => getSubcategories(category), [category]);
 
   useEffect(() => {
     if (!items.length) {
@@ -65,10 +70,17 @@ const ItemDetail = (): ReactElement => {
       return;
     }
     setCategory(item.category);
+    setSubcategory((item.subcategory as WardrobeSubcategory | undefined) ?? '');
     setColor(item.color);
     setBrand(item.brand ?? '');
     setTagsInput(item.tags.join(', '));
   }, [item]);
+
+  useEffect(() => {
+    if (subcategory && !subcategoryOptions.includes(subcategory as WardrobeSubcategory)) {
+      setSubcategory('');
+    }
+  }, [subcategoryOptions, subcategory]);
 
   const brandNeedsAttention = brand.trim().length === 0;
   const brandFieldError = errors.brand ?? (brandNeedsAttention ? 'Please add a brand' : undefined);
@@ -92,6 +104,7 @@ const ItemDetail = (): ReactElement => {
 
     const parsed = wardrobeItemEditSchema.safeParse({
       category,
+      subcategory: subcategory || null,
       color,
       brand,
       tags
@@ -115,7 +128,10 @@ const ItemDetail = (): ReactElement => {
     setStatus('saving');
     setMessage(undefined);
 
-    const payload = parsed.data;
+    const payload: PatchItemRequest = {
+      ...parsed.data,
+      subcategory: (parsed.data.subcategory as WardrobeSubcategory | null | undefined) ?? null
+    };
     const result = await saveItem(id, payload);
 
     if (result) {
@@ -210,12 +226,7 @@ const ItemDetail = (): ReactElement => {
           <Link to="/wardrobe" className={buttonClasses('ghost', 'sm')}>
             Back to Wardrobe
           </Link>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={deleteBusy}
-          >
+          <Button variant="danger" size="sm" onClick={() => setDeleteDialogOpen(true)} disabled={deleteBusy}>
             Delete
           </Button>
         </div>
@@ -239,6 +250,10 @@ const ItemDetail = (): ReactElement => {
                 <dt className="font-medium text-neutral-900">Category</dt>
                 <dd className="capitalize">{item.category}</dd>
               </div>
+              <div>
+                <dt className="font-medium text-neutral-900">Subcategory</dt>
+                <dd className="capitalize">{item.subcategory ? toTitleCase(item.subcategory) : '—'}</dd>
+              </div>
               {renderColorDetail('Primary color', item.primaryColor)}
               {renderColorDetail('Secondary color', item.secondaryColor)}
               <div>
@@ -253,7 +268,9 @@ const ItemDetail = (): ReactElement => {
                 <div className="col-span-2">
                   <dt className="font-medium text-neutral-900">Image details</dt>
                   <dd>
-                    <span>{item.imageMetadata.width ?? '—'} × {item.imageMetadata.height ?? '—'} px</span>
+                    <span>
+                      {item.imageMetadata.width ?? '—'} × {item.imageMetadata.height ?? '—'} px
+                    </span>
                     <span className="ml-2 text-neutral-500">{formatSize(item.imageMetadata.bytes)}</span>
                   </dd>
                 </div>
@@ -279,6 +296,23 @@ const ItemDetail = (): ReactElement => {
                 <option value="accessory">Accessory</option>
                 <option value="unknown">Unknown</option>
                 <option value="uncategorized">Uncategorized</option>
+              </select>
+            </Field>
+            <Field label="Subcategory" htmlFor="subcategory">
+              <select
+                id="subcategory"
+                name="subcategory"
+                value={subcategory}
+                onChange={(event) => setSubcategory(event.target.value as WardrobeSubcategory | '')}
+                disabled={!subcategoryOptions.length}
+                className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-600/20 disabled:cursor-not-allowed disabled:bg-neutral-50"
+              >
+                <option value="">Select a subcategory</option>
+                {subcategoryOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {toTitleCase(option)}
+                  </option>
+                ))}
               </select>
             </Field>
 
@@ -309,12 +343,7 @@ const ItemDetail = (): ReactElement => {
               />
             </Field>
 
-            <Field
-              label="Tags"
-              htmlFor="tags"
-              description="Comma separated"
-              error={errors.tags}
-            >
+            <Field label="Tags" htmlFor="tags" description="Comma separated" error={errors.tags}>
               <input
                 id="tags"
                 name="tags"
@@ -328,7 +357,11 @@ const ItemDetail = (): ReactElement => {
             {message ? (
               <p
                 className={`text-sm ${
-                  status === 'success' ? 'text-success-500' : status === 'error' ? 'text-danger-500' : 'text-neutral-500'
+                  status === 'success'
+                    ? 'text-success-500'
+                    : status === 'error'
+                      ? 'text-danger-500'
+                      : 'text-neutral-500'
                 }`}
               >
                 {message}
@@ -341,6 +374,7 @@ const ItemDetail = (): ReactElement => {
                 variant="ghost"
                 onClick={() => {
                   setCategory(item.category);
+                  setSubcategory((item.subcategory as WardrobeSubcategory | undefined) ?? '');
                   setColor(item.color);
                   setBrand(item.brand ?? '');
                   setTagsInput(item.tags.join(', '));

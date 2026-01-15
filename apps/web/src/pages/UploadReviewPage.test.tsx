@@ -21,6 +21,7 @@ const mockItem: WardrobeItem = {
   thumbUrl: '/image.jpg',
   mediumUrl: '/image.jpg',
   category: 'shoes',
+  subcategory: 'sneakers',
   color: 'Black',
   primaryColor: 'Black',
   secondaryColor: 'Gray',
@@ -33,11 +34,15 @@ const mockItem: WardrobeItem = {
 
 const mockAI = {
   category: 'shoes',
+  subcategory: 'sneakers',
   primaryColor: 'black',
   secondaryColor: 'gray',
+  materials: ['mesh'],
+  styleTags: ['streetwear'],
   tags: ['streetwear', 'leather'],
   confidence: 0.84,
   categoryConfidence: 0.84,
+  subcategoryConfidence: 0.73,
   primaryColorConfidence: 0.7,
   secondaryColorConfidence: 0.4
 };
@@ -92,6 +97,7 @@ describe('UploadReviewPage', () => {
       mockItem.id,
       expect.objectContaining({
         category: 'shoes',
+        subcategory: 'sneakers',
         primaryColor: 'black',
         secondaryColor: 'gray',
         brand: 'Mock'
@@ -136,6 +142,9 @@ describe('UploadReviewPage', () => {
     const primaryColorInput = screen.getByLabelText(/primary color/i) as HTMLInputElement;
     fireEvent.change(primaryColorInput, { target: { value: 'Midnight Blue' } });
 
+    const subcategorySelect = screen.getByLabelText(/subcategory/i) as HTMLSelectElement;
+    fireEvent.change(subcategorySelect, { target: { value: 'boots' } });
+
     const brandInput = screen.getByPlaceholderText(/e\.g\./i);
     fireEvent.change(brandInput, { target: { value: 'Edited Brand' } });
 
@@ -148,6 +157,7 @@ describe('UploadReviewPage', () => {
     expect(saveItemMock).toHaveBeenCalledWith(
       mockItem.id,
       expect.objectContaining({
+        subcategory: 'boots',
         primaryColor: 'Midnight Blue',
         tags: ['edited', 'custom'],
         brand: 'Edited Brand'

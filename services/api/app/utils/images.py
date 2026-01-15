@@ -26,7 +26,7 @@ class ProcessedImage:
 
     width: int
     height: int
-    bytes: int
+    size_bytes: int
     mime_type: str
     checksum: str
     original_bytes: bytes
@@ -55,7 +55,8 @@ def process_image_bytes(data: bytes, mime_type: str) -> ProcessedImage:
         raise ValueError(f"Unsupported MIME type: {mime_type}")
 
     image = Image.open(io.BytesIO(data))
-    image = ImageOps.exif_transpose(image)
+    transposed = ImageOps.exif_transpose(image)
+    image = transposed if transposed is not None else image
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
 
@@ -68,7 +69,7 @@ def process_image_bytes(data: bytes, mime_type: str) -> ProcessedImage:
     return ProcessedImage(
         width=width,
         height=height,
-        bytes=len(original_bytes),
+        size_bytes=len(original_bytes),
         mime_type="image/jpeg",
         checksum=checksum,
         original_bytes=original_bytes,

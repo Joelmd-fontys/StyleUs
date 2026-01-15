@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
@@ -35,7 +36,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await anyio.to_thread.run_sync(ensure_schema)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         yield

@@ -32,6 +32,7 @@ class PresignResponse(CamelModel):
 class ItemBase(CamelModel):
     id: uuid.UUID
     category: str
+    subcategory: str | None = None
     color: str
     brand: str | None = None
     primary_color: str | None = Field(default=None, alias="primaryColor")
@@ -44,12 +45,22 @@ class ItemBase(CamelModel):
     ai_confidence: float | None = Field(default=None, alias="aiConfidence")
 
 
+class ItemAIAttributes(CamelModel):
+    category: str | None = None
+    subcategory: str | None = None
+    materials: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list, alias="styleTags")
+    confidence: float | None = Field(default=None, alias="confidence")
+
+
 class ItemDetail(ItemBase):
     tags: list[str]
+    ai: ItemAIAttributes | None = None
 
 
 class ItemUpdate(CamelModel):
     category: str | None = None
+    subcategory: str | None = None
     color: str | None = None
     brand: str | None = None
     tags: list[str] | None = None
@@ -66,9 +77,16 @@ class CompleteUploadRequest(CamelModel):
 class ItemAIPreview(CamelModel):
     category: str | None = None
     category_confidence: float | None = Field(default=None, alias="categoryConfidence")
+    subcategory: str | None = None
+    subcategory_confidence: float | None = Field(
+        default=None,
+        alias="subcategoryConfidence",
+    )
     primary_color: str | None = Field(default=None, alias="primaryColor")
     primary_color_confidence: float | None = Field(default=None, alias="primaryColorConfidence")
     secondary_color: str | None = Field(default=None, alias="secondaryColor")
     secondary_color_confidence: float | None = Field(default=None, alias="secondaryColorConfidence")
+    materials: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list, alias="styleTags")
     tags: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, alias="confidence")

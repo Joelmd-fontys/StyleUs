@@ -1,41 +1,35 @@
 # StyleUs – AI Fashion Companion
 
-StyleUs is an AI-assisted wardrobe companion composed of a FastAPI backend, a Vite + React web client, and shared tooling for tests, docs, and infrastructure.
+StyleUs is a local-first wardrobe companion: upload garments, get AI-suggested categories/colors/tags instantly, review them, and keep everything in sync between a modern React client and a FastAPI API on PostgreSQL.
+
+## Monorepo layout
+- `apps/web` – Vite + React + TypeScript + Tailwind client (React Router, Zustand, MSW for mocks).
+- `services/api` – FastAPI + SQLAlchemy + Alembic API with local AI enrichment and PostgreSQL (Docker).
+- `docs` – Product and technical documentation, including `docs/tech-stack.md` for current stack choices.
 
 ## Quickstart
-
-### Backend (FastAPI + PostgreSQL)
-
+1) Backend
 ```bash
-cd services/api
-cp .env.example .env
-make setup      # install Python deps
-make db-up      # start postgres via Docker (optional helper)
-make run        # launches FastAPI on http://127.0.0.1:8000
+cp services/api/.env.example services/api/.env
+make db-up                     # start Postgres in Docker
+make run                       # launches FastAPI on http://127.0.0.1:8000
 ```
-
-See [services/api/README.md](services/api/README.md) for Docker Compose, seeding, migrations, and available Make targets.
-
-### Frontend (Vite + React)
-
+2) Frontend
 ```bash
 cd apps/web
 npm install
 cp .env.example .env.local
-npm run dev     # opens http://127.0.0.1:5173
+npm run dev                    # opens http://127.0.0.1:5173
 ```
+3) Quality checks
+```bash
+make lint          # Ruff + Prettier
+make test          # pytest + vitest run
+make typecheck     # mypy + tsc --noEmit
+```
+Stop the database when done with `make db-down`.
 
-Feature flags for API vs. MSW mocks live in `.env.local`. Full details live in [apps/web/README.md](apps/web/README.md).
-
-### Tests & Quality
-
-- Frontend: `cd apps/web && npm run typecheck && npx vitest run`
-- Backend: `cd services/api && make lint && pytest`
-
-Root-level `tests/` hosts cross-cutting suites; each subdirectory contains its own README.
-
-## Reference Docs
-
-- Product overview: [docs/prd](docs/prd/README.md)
-- Iteration status & scope: [docs/scope](docs/scope/iteration-1.md)
-- Infrastructure notes: [docs/infra](docs/infra/README.md) (when applicable)
+## Troubleshooting
+- Docker not running: start Docker Desktop/daemon, then rerun `make db-up`.
+- Port conflicts: change the mapped port in `services/api/docker-compose.yml` (e.g., `5433:5432`) and update `DATABASE_URL`; adjust Vite port with `--host --port` if 5173 is taken.
+- Migrations: ensure Postgres is up, then run `cd services/api && alembic upgrade head`; if Alembic complains about revisions, delete stale containers/volumes and rerun `make db-up`.

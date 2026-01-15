@@ -3,18 +3,29 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../components/Button';
 import { useWardrobeStore } from '../store/wardrobe';
 import { cn } from '../lib/utils';
-import { WardrobeCategory } from '../domain/types';
+import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
 import { resolveApiUrl } from '../lib/config';
+import { getSubcategories } from '../domain/labels';
+
+const toTitleCase = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());
 
 interface UploadReviewForm {
   category: WardrobeCategory;
+  subcategory: WardrobeSubcategory | '';
   brand: string;
   primaryColor: string;
   secondaryColor: string;
   tagsInput: string;
 }
 
-const categoryOptions: WardrobeCategory[] = ['top', 'bottom', 'outerwear', 'shoes', 'accessory', 'uncategorized'];
+const categoryOptions: WardrobeCategory[] = [
+  'top',
+  'bottom',
+  'outerwear',
+  'shoes',
+  'accessory',
+  'uncategorized'
+];
 
 const toDisplayTags = (input: string): string[] =>
   input
@@ -36,6 +47,7 @@ const UploadReviewPage = (): ReactElement | null => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [form, setForm] = useState<UploadReviewForm>({
     category: 'uncategorized',
+    subcategory: '',
     brand: '',
     primaryColor: '',
     secondaryColor: '',
@@ -45,15 +57,36 @@ const UploadReviewPage = (): ReactElement | null => {
 
   const item = uploadReview?.item;
   const ai = uploadReview?.ai;
+  const resolvedSubcategory =
+    (ai?.subcategory as WardrobeSubcategory | undefined) ??
+    (item?.subcategory as WardrobeSubcategory | undefined) ??
+    null;
+  const availableSubcategories = useMemo(() => getSubcategories(form.category), [form.category]);
+  useEffect(() => {
+    if (form.subcategory && !availableSubcategories.includes(form.subcategory as WardrobeSubcategory)) {
+      setForm((prev) => ({ ...prev, subcategory: '' }));
+    }
+  }, [availableSubcategories, form.subcategory]);
   const confidenceMetrics = useMemo(() => {
     const format = (value?: number | null) =>
       typeof value === 'number' && !Number.isNaN(value) ? Math.round(value * 100) : null;
     return [
-      { label: 'Category', value: format(ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null) },
+      {
+        label: 'Category',
+        value: format(ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null)
+      },
+      { label: 'Subcategory', value: format(ai?.subcategoryConfidence ?? null) },
       { label: 'Primary color', value: format(ai?.primaryColorConfidence) },
       { label: 'Secondary color', value: format(ai?.secondaryColorConfidence) }
     ];
-  }, [ai?.categoryConfidence, ai?.confidence, ai?.primaryColorConfidence, ai?.secondaryColorConfidence, item?.aiConfidence]);
+  }, [
+    ai?.categoryConfidence,
+    ai?.confidence,
+    ai?.primaryColorConfidence,
+    ai?.secondaryColorConfidence,
+    ai?.subcategoryConfidence,
+    item?.aiConfidence
+  ]);
 
   useEffect(() => {
     if (!itemId) {
@@ -76,19 +109,33 @@ const UploadReviewPage = (): ReactElement | null => {
       (ai?.category as WardrobeCategory | undefined) ??
       (item.category as WardrobeCategory) ??
       'uncategorized';
+    const baseSubcategory = ((ai?.subcategory as WardrobeSubcategory | undefined) ??
+      (item.subcategory as WardrobeSubcategory | undefined) ??
+      '') as WardrobeSubcategory | '';
     const basePrimary = ai?.primaryColor ?? item.primaryColor ?? item.color ?? '';
     const baseSecondary = ai?.secondaryColor ?? item.secondaryColor ?? '';
     const baseBrand = item.brand ?? '';
-    const baseTags = ai?.tags?.length ? ai.tags : item.tags ?? [];
+    const aiSuggestedTags = [...(ai?.materials ?? []), ...(ai?.styleTags ?? []), ...(ai?.tags ?? [])];
+    const baseTags = aiSuggestedTags.length ? aiSuggestedTags : (item.tags ?? []);
 
     setForm({
       category: baseCategory,
+      subcategory: baseSubcategory,
       brand: baseBrand,
       primaryColor: basePrimary ?? '',
       secondaryColor: baseSecondary ?? '',
       tagsInput: baseTags.join(', ')
     });
-  }, [ai?.category, ai?.primaryColor, ai?.secondaryColor, ai?.tags, item]);
+  }, [
+    ai?.category,
+    ai?.primaryColor,
+    ai?.secondaryColor,
+    ai?.tags,
+    ai?.materials,
+    ai?.styleTags,
+    ai?.subcategory,
+    item
+  ]);
 
   useEffect(() => {
     if (!uploadReview || uploadReview.error) {
@@ -138,13 +185,15 @@ const UploadReviewPage = (): ReactElement | null => {
       return;
     }
     const normalizedBrand = form.brand.trim();
+    const aiTagSuggestions = [...(ai.materials ?? []), ...(ai.styleTags ?? []), ...(ai.tags ?? [])];
     const payload = {
       category: (ai.category as WardrobeCategory) ?? item.category,
+      subcategory: (ai.subcategory as WardrobeSubcategory | undefined) ?? item.subcategory ?? null,
       color: ai.primaryColor ?? item.primaryColor ?? item.color,
       primaryColor: ai.primaryColor ?? null,
       secondaryColor: ai.secondaryColor ?? null,
       brand: normalizedBrand.length ? normalizedBrand : null,
-      tags: ai.tags?.length ? ai.tags : item.tags
+      tags: aiTagSuggestions.length ? aiTagSuggestions : item.tags
     };
     const updated = await saveItem(itemId, payload);
     if (updated) {
@@ -165,6 +214,7 @@ const UploadReviewPage = (): ReactElement | null => {
     const normalizedBrand = form.brand.trim();
     const payload = {
       category: form.category,
+      subcategory: form.subcategory || item.subcategory || null,
       color: form.primaryColor || item.color,
       primaryColor: form.primaryColor || null,
       secondaryColor: form.secondaryColor || null,
@@ -221,7 +271,10 @@ const UploadReviewPage = (): ReactElement | null => {
     const isValidColor = value && value.trim().length > 0;
     return (
       <div>
-        <label className="text-sm font-medium text-neutral-700" htmlFor={mode === 'edit' ? inputId : undefined}>
+        <label
+          className="text-sm font-medium text-neutral-700"
+          htmlFor={mode === 'edit' ? inputId : undefined}
+        >
           {label}
         </label>
         <div className="mt-2 flex items-center gap-3">
@@ -253,7 +306,13 @@ const UploadReviewPage = (): ReactElement | null => {
   };
 
   const renderTagList = () => {
-    const tags = mode === 'edit' ? toDisplayTags(form.tagsInput) : ai?.tags?.length ? ai.tags : item?.tags ?? [];
+    const aiTagSuggestions = [...(ai?.materials ?? []), ...(ai?.styleTags ?? []), ...(ai?.tags ?? [])];
+    const tags =
+      mode === 'edit'
+        ? toDisplayTags(form.tagsInput)
+        : aiTagSuggestions.length
+          ? aiTagSuggestions
+          : (item?.tags ?? []);
     if (mode === 'edit') {
       return (
         <div>
@@ -262,7 +321,7 @@ const UploadReviewPage = (): ReactElement | null => {
             type="text"
             value={form.tagsInput}
             onChange={(event) => setForm((prev) => ({ ...prev, tagsInput: event.target.value }))}
-            placeholder="streetwear, leather"
+            placeholder="cotton, streetwear"
             className="mt-2 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none"
           />
           <p className="mt-1 text-xs text-neutral-500">Separate tags with commas.</p>
@@ -270,7 +329,7 @@ const UploadReviewPage = (): ReactElement | null => {
       );
     }
     if (!tags.length) {
-      return <p className="text-sm text-neutral-500">No tags predicted yet.</p>;
+      return <p className="text-sm text-neutral-500">No AI tags predicted yet.</p>;
     }
     return (
       <div className="flex flex-wrap gap-2">
@@ -323,7 +382,9 @@ const UploadReviewPage = (): ReactElement | null => {
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
               </div>
               <p className="mt-4 text-sm font-semibold text-neutral-800">Analyzing your item…</p>
-              <p className="mt-1 text-xs text-neutral-500">We&apos;re preparing color and style suggestions.</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                We&apos;re preparing color and style suggestions.
+              </p>
             </div>
           ) : null}
 
@@ -361,13 +422,38 @@ const UploadReviewPage = (): ReactElement | null => {
                 )}
               </div>
               <div>
+                <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                {mode === 'edit' ? (
+                  <select
+                    value={form.subcategory}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        subcategory: event.target.value as WardrobeSubcategory | ''
+                      }))
+                    }
+                    disabled={!availableSubcategories.length}
+                    className="mt-2 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50 md:w-56"
+                  >
+                    <option value="">Select a subcategory</option>
+                    {availableSubcategories.map((option) => (
+                      <option key={option} value={option}>
+                        {toTitleCase(option)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-1 text-sm text-neutral-700">
+                    {resolvedSubcategory ? toTitleCase(resolvedSubcategory) : 'Not set'}
+                  </p>
+                )}
+              </div>
+              <div>
                 <p className="text-sm font-medium text-neutral-700">Brand</p>
                 <input
                   type="text"
                   value={form.brand}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, brand: event.target.value }))
-                  }
+                  onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
                   placeholder="e.g. Nike"
                   className={brandInputClasses}
                   aria-invalid={brandNeedsAttention}
@@ -413,10 +499,10 @@ const UploadReviewPage = (): ReactElement | null => {
                           value === null
                             ? 'bg-neutral-300'
                             : value >= 70
-                            ? 'bg-emerald-500'
-                            : value >= 40
-                            ? 'bg-amber-500'
-                            : 'bg-neutral-400'
+                              ? 'bg-emerald-500'
+                              : value >= 40
+                                ? 'bg-amber-500'
+                                : 'bg-neutral-400'
                         )}
                         style={{ width: value !== null ? `${value}%` : '10%' }}
                       />
