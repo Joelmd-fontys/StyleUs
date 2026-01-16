@@ -15,7 +15,7 @@ From the repo root, start everything with one command:
 ```
 What it does:
 - Checks for Docker (and that it is running), Node/npm, and Python 3.11+.
-- Creates/updates `services/api/.venv` and installs backend deps.
+- Creates/updates `services/api/.venv` and installs backend deps (including OpenCV for foreground masking).
 - Ensures `.env` files exist (`services/api/.env`, `apps/web/.env.local`) and loads backend env vars.
 - Starts PostgreSQL in Docker (`styleus-db`) and waits for it to be healthy.
 - Applies Alembic migrations, then starts the FastAPI API on http://localhost:8000.
@@ -29,6 +29,12 @@ make lint          # Ruff + Prettier
 make test          # pytest + vitest run
 make typecheck     # mypy + tsc --noEmit
 ```
+
+### Color masking knobs
+- `AI_COLOR_USE_MASK` (default true) enables foreground masking for color extraction.
+- `AI_COLOR_MASK_METHOD` (`grabcut` with OpenCV by default, `heuristic` as fallback).
+- `AI_COLOR_MIN_FOREGROUND_PIXELS` (default 3000) controls fallback to the legacy unmasked path.
+These live in `services/api/.env` if you need overrides.
 
 ## Troubleshooting
 - Docker not running: start Docker Desktop/daemon, then rerun `./dev.sh`.

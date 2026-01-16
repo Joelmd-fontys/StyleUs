@@ -65,6 +65,7 @@ A background task runs after upload completion:
 - Falls back to deterministic color + keyword heuristics if CLIP is unavailable.
 - Embeddings are cached under `MEDIA_ROOT/.emb_cache/`.
 - Controlled via `AI_ENABLE_CLASSIFIER`, `AI_DEVICE`, `AI_CONFIDENCE_THRESHOLD`, and `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`.
+- Color extraction applies a foreground mask (GrabCut when OpenCV is available, heuristic otherwise) before LAB/KMeans; tune via `AI_COLOR_USE_MASK`, `AI_COLOR_MASK_METHOD`, and `AI_COLOR_MIN_FOREGROUND_PIXELS`.
 
 ## Testing & quality
 - `make lint` – Ruff
