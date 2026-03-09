@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -27,9 +27,12 @@ def _resize_for_processing(image: Image.Image, *, max_size: int = 512) -> tuple[
     if max_dim <= max_size:
         return image, 1.0
     scale = max_size / max_dim
-    resized = image.resize(
-        (max(1, int(width * scale)), max(1, int(height * scale))),
-        resample=Image.LANCZOS,
+    resized = cast(
+        Image.Image,
+        image.resize(
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            resample=Image.Resampling.LANCZOS,
+        ),
     )
     return resized, scale
 
@@ -39,9 +42,9 @@ def _pil_mask_to_bool(mask: Image.Image) -> np.ndarray:
 
 
 def _bool_mask_to_pil(mask: np.ndarray, *, size: tuple[int, int]) -> Image.Image:
-    pil_mask = Image.fromarray((mask.astype(np.uint8)) * 255)
+    pil_mask = cast(Image.Image, Image.fromarray((mask.astype(np.uint8)) * 255))
     if pil_mask.size != size:
-        pil_mask = pil_mask.resize(size, resample=Image.NEAREST)
+        pil_mask = cast(Image.Image, pil_mask.resize(size, resample=Image.Resampling.NEAREST))
     return pil_mask
 
 
@@ -55,7 +58,7 @@ def _keep_largest_component(mask: np.ndarray) -> np.ndarray:
         if num_labels <= 1:
             return binary
         largest_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-        return (labels == largest_label).astype(np.uint8)
+        return cast(np.ndarray, (labels == largest_label).astype(np.uint8))
 
     # Fallback labeling without OpenCV (simple DFS)
     height, width = binary.shape

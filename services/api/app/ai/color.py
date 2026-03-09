@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-import logging
 
 import numpy as np
 from PIL import Image
@@ -131,8 +131,8 @@ def _prepare_pixels(
     if mask is not None:
         mask_image = Image.fromarray((mask.astype(np.uint8)) * 255)
         if mask_image.size != image.size:
-            mask_image = mask_image.resize(image.size, resample=Image.NEAREST)
-        mask_image = mask_image.resize(resized.size, resample=Image.NEAREST)
+            mask_image = mask_image.resize(image.size, resample=Image.Resampling.NEAREST)
+        mask_image = mask_image.resize(resized.size, resample=Image.Resampling.NEAREST)
         mask_array = np.asarray(mask_image, dtype=bool)
         masked_pixels = int(mask_array.sum())
         if masked_pixels > 0:

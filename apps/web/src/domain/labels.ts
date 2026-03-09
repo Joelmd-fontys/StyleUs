@@ -1,12 +1,36 @@
 import { WardrobeCategory, WardrobeSubcategory } from './types';
 
-export const CATEGORY_LABELS: WardrobeCategory[] = [
+interface CategoryOption {
+  label: string;
+  value?: WardrobeCategory;
+}
+
+export const FILTER_CATEGORY_OPTIONS: ReadonlyArray<CategoryOption> = [
+  { label: 'All', value: undefined },
+  { label: 'Tops', value: 'top' },
+  { label: 'Bottoms', value: 'bottom' },
+  { label: 'Outerwear', value: 'outerwear' },
+  { label: 'Shoes', value: 'shoes' },
+  { label: 'Accessories', value: 'accessory' },
+  { label: 'Uncategorized', value: 'uncategorized' }
+];
+
+export const ITEM_DETAIL_CATEGORY_OPTIONS: ReadonlyArray<WardrobeCategory> = [
   'top',
   'bottom',
-  'shoes',
   'outerwear',
+  'shoes',
   'accessory',
   'unknown',
+  'uncategorized'
+];
+
+export const UPLOAD_REVIEW_CATEGORY_OPTIONS: ReadonlyArray<WardrobeCategory> = [
+  'top',
+  'bottom',
+  'outerwear',
+  'shoes',
+  'accessory',
   'uncategorized'
 ];
 
@@ -31,20 +55,8 @@ export const SUBCATEGORY_LABELS: Record<WardrobeCategory, WardrobeSubcategory[]>
   uncategorized: []
 };
 
-export const STYLE_LABELS = ['streetwear', 'sport', 'minimal', 'retro', 'outdoor', 'formal', 'grunge'];
-
-export const MATERIAL_LABELS = [
-  'cotton',
-  'denim',
-  'wool',
-  'leather',
-  'nylon',
-  'knit',
-  'fleece',
-  'suede',
-  'mesh'
-];
-
 export const getSubcategories = (category: WardrobeCategory): WardrobeSubcategory[] => {
   return SUBCATEGORY_LABELS[category] ?? [];
 };
+
+export const toDisplayLabel = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());

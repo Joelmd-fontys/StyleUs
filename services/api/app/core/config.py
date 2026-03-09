@@ -143,9 +143,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
-
-def is_s3_enabled() -> bool:
-    """Helper function that exposes whether S3 uploads are active."""
-
-    return settings.is_s3_enabled

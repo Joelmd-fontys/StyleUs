@@ -1,80 +1,133 @@
 # StyleUs API Service
 
-FastAPI backend for StyleUs wardrobe management. It handles presigned uploads (S3 or local), persists wardrobe items in PostgreSQL, and enriches uploads with a local-first AI pipeline.
+The API owns wardrobe persistence, upload finalization, local media serving, background AI enrichment, and the deterministic seed dataset used in local development.
 
-## Requirements
-- Python 3.11
-- OpenCV (installed via `opencv-python-headless` when you run `make setup`/`make dev`)
-- Docker (for local PostgreSQL)
-- AWS credentials only if you want S3 uploads; local uploads work without them.
+## Stack
 
-## Environment variables
-Copy `.env.example` to `.env` and adjust as needed.
+- FastAPI
+- SQLAlchemy 2
+- Alembic
+- PostgreSQL
+- Pillow / NumPy / scikit-learn
+- `open-clip-torch` with optional ONNX inference
+- FastAPI `BackgroundTasks`
+
+## Service structure
+
+- `app/main.py` – app creation, middleware, CORS, media mount, migration-on-start, seed-on-start
+- `app/api/routers` – health, version, item, and upload routes
+- `app/services/items.py` – wardrobe CRUD and response shaping
+- `app/services/uploads.py` – presign, local upload persistence, and upload finalization
+- `app/ai` – CLIP heads, color extraction, segmentation, pipeline coordination, background task logic
+- `app/models` – SQLAlchemy models
+- `app/seed` – deterministic seed dataset and runner
+
+## Main runtime flow
+
+### Upload
+
+1. `POST /items/presign`
+2. A placeholder item is created in Postgres.
+3. The client uploads bytes either:
+   - to `PUT /items/uploads/{item_id}` in local mode, or
+   - directly to S3 in S3 mode.
+4. `POST /items/{item_id}/complete-upload`
+5. The API generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores metadata, and schedules AI classification.
+
+### AI enrichment
+
+The background task in `app/ai/tasks.py`:
+
+- loads the finalized image from local media or S3;
+- runs the shared pipeline in `app/ai/pipeline.py`;
+- writes back colors, category, subcategory, materials, style tags, top tags, and AI confidence only when thresholds are met;
+- avoids overwriting user-supplied data unless fields are still empty or placeholder-like.
+
+### AI preview
+
+`GET /items/{id}/ai-preview` returns a preview payload based on:
+
+- persisted AI fields already stored on the item, plus
+- a fresh non-persisted pipeline pass when the source image is available.
+
+That endpoint is intended for the upload review UI, not as a separate persistence model.
+
+## Routes
+
+- `GET /health`
+- `GET /version`
+- `GET /items`
+- `GET /items/{item_id}`
+- `GET /items/{item_id}/ai-preview`
+- `PATCH /items/{item_id}`
+- `DELETE /items/{item_id}`
+- `POST /items/presign`
+- `PUT /items/uploads/{item_id}` in local upload mode
+- `POST /items/{item_id}/complete-upload`
+
+## Environment
+
+Copy `.env.example` to `.env` before running locally.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `APP_ENV` | `local`, `staging`, or `production` | `local` |
-| `APP_VERSION` | Reported by `/health` and `/version` | `0.1.0` |
-| `API_KEY` | Required in staging/production for `X-API-Key` auth | _(unset)_ |
-| `DATABASE_URL` | SQLAlchemy connection string | _(required)_ |
-| `CORS_ORIGINS` | CSV of allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
-| `UPLOAD_MODE` | `s3` or `local`; auto-detected from AWS vars | auto |
-| `MEDIA_ROOT` | Directory for local uploads | `./media` |
-| `MEDIA_URL_PATH` | Public URL prefix for local media | `/media` |
-| `MEDIA_MAX_UPLOAD_SIZE` | Max upload size (bytes) | `15728640` |
-| `AWS_REGION` / `S3_BUCKET_NAME` | Required when using S3 uploads | _(unset)_ |
-| `AI_ENABLE_CLASSIFIER` | Toggle background classification | `true` |
-| `AI_DEVICE` | Torch device string (`cpu`/`cuda`) | `cpu` |
-| `AI_CONFIDENCE_THRESHOLD` | Minimum confidence for writes | `0.6` |
-| `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | Subcategory confidence floor | `0.5` |
-| `AI_COLOR_USE_MASK` | Apply foreground masking before color extraction | `true` |
-| `AI_COLOR_MASK_METHOD` | `grabcut` (if OpenCV available) or `heuristic` | `grabcut` |
-| `AI_COLOR_MIN_FOREGROUND_PIXELS` | Minimum masked pixels before falling back to no mask | `3000` |
-| `AI_COLOR_TOPK` | Number of colors to keep | `2` |
-| `AI_ONNX` / `AI_ONNX_MODEL_PATH` | Enable ONNX CLIP encoder | `false` / _(unset)_ |
-| `SEED_ON_START` / `SEED_LIMIT` / `SEED_KEY` | Local seeding controls | `true` / `25` / `local-seed-v1` |
-
-Local media lives under `MEDIA_ROOT` (gitignored) and is served at `MEDIA_URL_PATH`.
+| `APP_ENV` | `local`, `staging`, `production` | `local` |
+| `APP_VERSION` | value returned by `/health` and `/version` | `0.1.0` |
+| `API_KEY` | enforced only in staging/production | _(unset)_ |
+| `DATABASE_URL` | SQLAlchemy/Postgres connection string | required |
+| `CORS_ORIGINS` | comma-separated allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
+| `UPLOAD_MODE` | `local` or `s3`; auto-derived if omitted | auto |
+| `MEDIA_ROOT` | local media directory | `./media` |
+| `MEDIA_URL_PATH` | static mount path for local media | `/media` |
+| `MEDIA_MAX_UPLOAD_SIZE` | upload ceiling in bytes | `15728640` |
+| `AWS_REGION` / `S3_BUCKET_NAME` | required only for S3 mode | _(unset)_ |
+| `AI_ENABLE_CLASSIFIER` | enable background classification | `true` |
+| `AI_DEVICE` | model device, usually `cpu` locally | `cpu` |
+| `AI_CONFIDENCE_THRESHOLD` | write threshold for category/material/style updates | `0.6` |
+| `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | write threshold for subcategory updates | `0.5` |
+| `AI_COLOR_USE_MASK` | enable foreground masking before color clustering | `true` |
+| `AI_COLOR_MASK_METHOD` | `grabcut` or `heuristic` | `grabcut` |
+| `AI_COLOR_MIN_FOREGROUND_PIXELS` | minimum masked pixel count before unmasked fallback | `3000` |
+| `AI_COLOR_TOPK` | number of colors retained from clustering | `2` |
+| `AI_ONNX` / `AI_ONNX_MODEL_PATH` | optional ONNX inference path | `false` / unset |
+| `SEED_ON_START` / `SEED_LIMIT` / `SEED_KEY` | local seeding controls | `true` / `25` / `local-seed-v1` |
 
 ## Local development
+
 ```bash
+cd services/api
 cp .env.example .env
 make setup
 make db-up
-alembic upgrade head     # or rely on startup auto-migration
-make run                 # http://127.0.0.1:8000
+make upgrade
+make run
 ```
-Stop Postgres with `make db-down`. Use `make seed` to populate the local wardrobe or `make reset-seed` to clear it.
 
-## Docker Compose
-From `services/api`:
-```bash
-docker compose up --build
-```
-The API is exposed on `http://localhost:8000` with a persistent `styleus-pgdata` volume. Override env vars inline (e.g., `AWS_REGION=us-west-2 docker compose up`).
+Default API URL: `http://127.0.0.1:8000`
 
-## Upload modes
-- **Local (default without AWS vars):** `/items/presign` returns an API upload sink; files are stored under `MEDIA_ROOT/<item_id>/` and served from `MEDIA_URL_PATH`.
-- **S3:** When `AWS_REGION` and `S3_BUCKET_NAME` are set, `/items/presign` returns presigned S3 URLs; final URLs are built from the bucket/region unless the client supplies one.
+Useful commands:
 
-Every upload writes image metadata (dimensions, bytes, mime type, checksum) and generates `imageUrl`, `mediumUrl`, and `thumbUrl`.
+- `make seed` – apply the deterministic seed dataset
+- `make reset-seed` – remove seeded items and their media
+- `make lint`
+- `make typecheck`
+- `make test`
 
-## AI classification (local-first)
-A background task runs after upload completion:
-- Prefers a local CLIP model (`open-clip-torch`, optional ONNX) for category/subcategory/material/style tags.
-- Falls back to deterministic color + keyword heuristics if CLIP is unavailable.
-- Embeddings are cached under `MEDIA_ROOT/.emb_cache/`.
-- Controlled via `AI_ENABLE_CLASSIFIER`, `AI_DEVICE`, `AI_CONFIDENCE_THRESHOLD`, and `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`.
-- Color extraction applies a foreground mask (GrabCut when OpenCV is available, heuristic otherwise) before LAB/KMeans; tune via `AI_COLOR_USE_MASK`, `AI_COLOR_MASK_METHOD`, and `AI_COLOR_MIN_FOREGROUND_PIXELS`.
+## Docker and Postgres
 
-## Testing & quality
-- `make lint` – Ruff
-- `make typecheck` – mypy
-- `make test` – pytest (SQLite with mocked AWS)
-- `make migrate MESSAGE="short description"` – create an Alembic revision
-- `make upgrade` – apply migrations
+- `docker-compose.yml` starts Postgres only.
+- Normal development runs the API on the host, not in Docker.
+- The database container is named `styleus-db`.
+- Data is persisted in the `styleus-pgdata` Docker volume.
+
+## Testing notes
+
+- Backend tests run with pytest.
+- The current test configuration expects a Postgres database reachable via `DATABASE_URL`; the default test setup points at `postgresql+psycopg://postgres:postgres@localhost:5432/postgres`.
+- AWS interactions are mocked in unit tests.
 
 ## Troubleshooting
-- **Port 5432 in use:** change the mapping in `docker-compose.yml` (e.g., `5433:5432`) and update `DATABASE_URL`.
-- **Migrations failing:** ensure `make db-up` ran, then `alembic upgrade head`; if the volume is corrupt, remove `styleus-db` and `styleus-pgdata`.
-- **Local media cleanup:** delete paths under `MEDIA_ROOT` if your disk fills; they are safe to regenerate from new uploads or seeds.
+
+- If `5432` is already in use, change the mapping in `docker-compose.yml` and keep `DATABASE_URL` in sync.
+- If migrations fail during startup, verify Postgres is running and rerun `make upgrade`.
+- Local uploads and embedding cache live under `MEDIA_ROOT`; these files are safe to delete when you want a clean media directory.

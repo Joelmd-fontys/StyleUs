@@ -258,16 +258,6 @@ def finalize_s3_upload(
         thumb_url=build_public_s3_url(settings, object_key=thumb_key),
         metadata=metadata,
     )
-
-
-def build_local_media_url(settings: Settings, *, item_id: uuid.UUID, file_name: str) -> str:
-    """Derive the public URL for an image stored on local disk."""
-    extension = os.path.splitext(file_name)[1]
-    default_extension = extension if extension in ALLOWED_CONTENT_TYPES.values() else ".jpg"
-    safe_name = sanitize_file_name(file_name, default_extension=default_extension)
-    return f"{settings.media_url_path.rstrip('/')}/{item_id}/{safe_name}"
-
-
 def build_public_s3_url(settings: Settings, *, object_key: str) -> str:
     """Construct an S3 object URL suitable for public consumption."""
     region = settings.aws_region or ""

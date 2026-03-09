@@ -1,5 +1,8 @@
 # Iteration 1 Scope
 
+This document is a historical planning artifact for the earliest repository setup phase.
+The current implementation now exceeds this scope substantially.
+
 ## Goal
 Deliver a usable Iteration 1 web frontend powered by Vite, Tailwind, and MSW that demonstrates the StyleUs wardrobe experience end to end without relying on live backend services.
 

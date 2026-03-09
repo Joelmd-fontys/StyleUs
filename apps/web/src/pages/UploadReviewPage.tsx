@@ -4,11 +4,9 @@ import Button from '../components/Button';
 import { useWardrobeStore } from '../store/wardrobe';
 import { cn } from '../lib/utils';
 import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
-import { resolveApiUrl } from '../lib/config';
-import { getSubcategories } from '../domain/labels';
+import { getSubcategories, toDisplayLabel, UPLOAD_REVIEW_CATEGORY_OPTIONS } from '../domain/labels';
 import { type AIPreviewResponse } from '../domain/contracts';
-
-const toTitleCase = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());
+import { resolveMediaUrl } from '../lib/media';
 
 interface UploadReviewForm {
   category: WardrobeCategory;
@@ -18,15 +16,6 @@ interface UploadReviewForm {
   secondaryColor: string;
   tagsInput: string;
 }
-
-const categoryOptions: WardrobeCategory[] = [
-  'top',
-  'bottom',
-  'outerwear',
-  'shoes',
-  'accessory',
-  'uncategorized'
-];
 
 const toDisplayTags = (input: string): string[] =>
   input
@@ -146,14 +135,7 @@ const UploadReviewPage = (): ReactElement | null => {
       secondaryColor: baseSecondary ?? '',
       tagsInput: baseTags.join(', ')
     });
-  }, [
-    ai?.category,
-    ai?.primaryColor,
-    ai?.secondaryColor,
-    ai?.subcategory,
-    aiTagSuggestions,
-    item
-  ]);
+  }, [ai?.category, ai?.primaryColor, ai?.secondaryColor, ai?.subcategory, aiTagSuggestions, item]);
 
   useEffect(() => {
     if (!uploadReview || uploadReview.error) {
@@ -264,22 +246,16 @@ const UploadReviewPage = (): ReactElement | null => {
     uploadReview !== undefined && (uploadReview.loading || (!uploadReview.ai && !uploadReview.error));
 
   const renderImagePreview = () => {
-    const source = item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl ?? null;
-    if (!source) {
+    const hasImage = Boolean(item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl);
+    if (!hasImage) {
       return (
         <div className="flex h-72 w-full items-center justify-center rounded-xl bg-neutral-100 text-sm text-neutral-500">
           No image available
         </div>
       );
     }
-    const resolvedSource = source.startsWith('http') ? source : resolveApiUrl(source);
-    return (
-      <img
-        src={resolvedSource}
-        alt="Uploaded item"
-        className="h-72 w-full rounded-xl object-cover shadow-sm"
-      />
-    );
+    const source = resolveMediaUrl(item?.imageUrl, item?.mediumUrl, item?.thumbUrl);
+    return <img src={source} alt="Uploaded item" className="h-72 w-full rounded-xl object-cover shadow-sm" />;
   };
 
   const renderColorSwatch = (label: string, value: string, fallbackText: string) => {
@@ -332,8 +308,11 @@ const UploadReviewPage = (): ReactElement | null => {
     if (mode === 'edit') {
       return (
         <div>
-          <label className="text-sm font-medium text-neutral-700">Tags</label>
+          <label className="text-sm font-medium text-neutral-700" htmlFor="review-tags">
+            Tags
+          </label>
           <input
+            id="review-tags"
             type="text"
             value={form.tagsInput}
             onChange={(event) => setForm((prev) => ({ ...prev, tagsInput: event.target.value }))}
@@ -413,9 +392,16 @@ const UploadReviewPage = (): ReactElement | null => {
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm font-medium text-neutral-700">Category</p>
+                {mode === 'edit' ? (
+                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-category">
+                    Category
+                  </label>
+                ) : (
+                  <p className="text-sm font-medium text-neutral-700">Category</p>
+                )}
                 {mode === 'edit' ? (
                   <select
+                    id="review-category"
                     value={form.category}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -425,9 +411,9 @@ const UploadReviewPage = (): ReactElement | null => {
                     }
                     className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none"
                   >
-                    {categoryOptions.map((option) => (
+                    {UPLOAD_REVIEW_CATEGORY_OPTIONS.map((option) => (
                       <option key={option} value={option}>
-                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                        {toDisplayLabel(option)}
                       </option>
                     ))}
                   </select>
@@ -438,9 +424,16 @@ const UploadReviewPage = (): ReactElement | null => {
                 )}
               </div>
               <div>
-                <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                {mode === 'edit' ? (
+                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-subcategory">
+                    Subcategory
+                  </label>
+                ) : (
+                  <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                )}
                 {mode === 'edit' ? (
                   <select
+                    id="review-subcategory"
                     value={form.subcategory}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -454,19 +447,22 @@ const UploadReviewPage = (): ReactElement | null => {
                     <option value="">Select a subcategory</option>
                     {availableSubcategories.map((option) => (
                       <option key={option} value={option}>
-                        {toTitleCase(option)}
+                        {toDisplayLabel(option)}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <p className="mt-1 text-sm text-neutral-700">
-                    {resolvedSubcategory ? toTitleCase(resolvedSubcategory) : 'Not set'}
+                    {resolvedSubcategory ? toDisplayLabel(resolvedSubcategory) : 'Not set'}
                   </p>
                 )}
               </div>
               <div>
-                <p className="text-sm font-medium text-neutral-700">Brand</p>
+                <label className="text-sm font-medium text-neutral-700" htmlFor="review-brand">
+                  Brand
+                </label>
                 <input
+                  id="review-brand"
                   type="text"
                   value={form.brand}
                   onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}

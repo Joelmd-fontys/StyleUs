@@ -1,27 +1,29 @@
 # Recap
 
-## What’s live
-- **Frontend:** Vite + React + TypeScript + Tailwind with React Router screens (dashboard, wardrobe list/detail, upload review, settings), Zustand store, and MSW mocks behind feature flags. Upload panel flows through presign → PUT upload → completion and routes to the AI-assisted review screen.
-- **Backend:** FastAPI + SQLAlchemy + Alembic on PostgreSQL (Docker). Endpoints for health/version/items, presign/upload/complete-upload, AI preview, and background classification (local CLIP + heuristics) with media served from `MEDIA_ROOT`.
-- **Tooling:** Root `Makefile` for `db-up/db-down/run/lint/test/typecheck`, Ruff + mypy on the API, Prettier + tsc + Vitest on the web app, and refreshed `.env.example` files plus `docs/tech-stack.md` outlining stack decisions.
-- **Data/Media:** Local uploads live under `services/api/media` (gitignored) with seeding available via `make seed` / `make reset-seed`.
+## What was cleaned up
 
-## Simplifications just completed
-- Removed unused scaffolding directories (config/infrastructure/data/scripts/packages/tests/services/ai) and the stray `styleus_api.egg-info` artefact; trimmed unused deps (`httpx`, `@testing-library/user-event`).
-- Added Prettier (with `npm run lint/format`) and made `npm test` use `vitest run`; MSW now only starts when mocks are enabled.
-- Added root Makefile wrappers, updated READMEs, and documented new AI env knobs (`AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`, `AI_DEVICE`).
+- Rewrote the main repository READMEs so they match the code that actually exists today.
+- Replaced several placeholder-style docs with concrete pointers to the frontend and backend runtime docs.
+- Centralized frontend category option lists and shared display-label formatting to reduce duplication across wardrobe and upload-review screens.
+- Refactored backend item serialization and AI preview shaping into smaller helper functions for readability.
 
-## Known gaps / risks
-- Tests were not executed in this pass; run `make test` and `npm test` after installing dependencies.
-- Frontend test coverage is still limited (upload review); broader flows rely on manual verification.
-- Local media can grow quickly; clear `services/api/media` periodically if disk space is constrained.
+## What was simplified
 
-## Color pipeline audit (background leakage)
-- Color extraction lives in `services/api/app/ai/color.py`: loads the image, center-crops to a square, resizes to 256×256, flattens all pixels, converts to LAB, then runs KMeans to map cluster centers to a fixed palette.
-- No masking/segmentation is applied—every pixel in the center crop is used—so backgrounds that occupy the crop dominate the histogram and influence primary/secondary colors.
-- There is no other background suppression elsewhere in the pipeline; `pipeline.run` simply calls `color.get_colors` on the raw file.
+- Shared frontend category configuration now lives in `apps/web/src/domain/labels.ts`.
+- The upload review and item detail pages now rely on the same label formatting helper instead of duplicating local string utilities.
+- Backend `to_item_detail` and `to_ai_preview` logic is broken into explicit helper steps so media metadata, AI attributes, and pipeline overlays are easier to follow.
 
-## Background suppression changes
-- Added `app/ai/segmentation.py` with GrabCut (when OpenCV is present) and heuristic masking plus largest-component/edge smoothing helpers; `get_colors` now applies the mask before LAB/KMeans and falls back to the prior center-crop path when masking fails or is too small.
-- New knobs: `AI_COLOR_USE_MASK` (default true), `AI_COLOR_MASK_METHOD` (`grabcut`/`heuristic`), `AI_COLOR_MIN_FOREGROUND_PIXELS` (3000 default). Tests now generate synthetic garments to assert masked colors ignore backgrounds.
-- Added `opencv-python-headless` to backend deps so GrabCut is available when running `make dev`/`make setup`.
+## What was removed
+
+- Unused frontend label exports that were no longer referenced anywhere in the web app.
+- Dead backend helpers that were not used by the runtime path:
+  - `build_local_media_url`
+  - `get_session`
+  - the top-level `is_s3_enabled()` wrapper function
+
+## What remains potentially fragile
+
+- The AI preview endpoint still mixes persisted AI fields with a fresh on-demand pipeline pass. That is intentional today, but it remains a conceptual edge in the design.
+- The prototype still uses a fixed stub user ID rather than a real auth/user model.
+- The frontend supports both live and mock API modes, which is useful for development but adds branching complexity to shared flows.
+- The backend test setup still depends on a reachable Postgres instance rather than a lighter isolated test database.

@@ -148,7 +148,7 @@ describe('UploadReviewPage', () => {
     const brandInput = screen.getByPlaceholderText(/e\.g\./i);
     fireEvent.change(brandInput, { target: { value: 'Edited Brand' } });
 
-    const tagsInput = screen.getByPlaceholderText(/streetwear, leather/i);
+    const tagsInput = screen.getByLabelText(/tags/i);
     fireEvent.change(tagsInput, { target: { value: 'edited, custom' } });
 
     fireEvent.click(screen.getByRole('button', { name: /confirm changes/i }));

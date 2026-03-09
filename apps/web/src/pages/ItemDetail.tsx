@@ -12,9 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { cn } from '../lib/utils';
 import { formatUtcDate, formatUtcTime } from '../lib/datetime';
 import { useStatsPreference } from '../hooks/useStatsPreference';
-import { getSubcategories } from '../domain/labels';
-
-const toTitleCase = (value: string): string => value.replace(/\b\w/g, (char) => char.toUpperCase());
+import { getSubcategories, ITEM_DETAIL_CATEGORY_OPTIONS, toDisplayLabel } from '../domain/labels';
 
 type FormErrors = Partial<Record<'category' | 'color' | 'brand' | 'tags', string>>;
 
@@ -252,7 +250,7 @@ const ItemDetail = (): ReactElement => {
               </div>
               <div>
                 <dt className="font-medium text-neutral-900">Subcategory</dt>
-                <dd className="capitalize">{item.subcategory ? toTitleCase(item.subcategory) : '—'}</dd>
+                <dd className="capitalize">{item.subcategory ? toDisplayLabel(item.subcategory) : '—'}</dd>
               </div>
               {renderColorDetail('Primary color', item.primaryColor)}
               {renderColorDetail('Secondary color', item.secondaryColor)}
@@ -289,13 +287,11 @@ const ItemDetail = (): ReactElement => {
                 onChange={(event) => setCategory(event.target.value as WardrobeCategory)}
                 className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-600/20"
               >
-                <option value="top">Top</option>
-                <option value="bottom">Bottom</option>
-                <option value="outerwear">Outerwear</option>
-                <option value="shoes">Shoes</option>
-                <option value="accessory">Accessory</option>
-                <option value="unknown">Unknown</option>
-                <option value="uncategorized">Uncategorized</option>
+                {ITEM_DETAIL_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {toDisplayLabel(option)}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Subcategory" htmlFor="subcategory">
@@ -310,7 +306,7 @@ const ItemDetail = (): ReactElement => {
                 <option value="">Select a subcategory</option>
                 {subcategoryOptions.map((option) => (
                   <option key={option} value={option}>
-                    {toTitleCase(option)}
+                    {toDisplayLabel(option)}
                   </option>
                 ))}
               </select>

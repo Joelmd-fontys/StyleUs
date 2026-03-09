@@ -11,10 +11,13 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
 from app.ai import tasks as ai_tasks
+from app.ai.pipeline import PipelineResult
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
 from app.schemas.items import ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
+
+_EMPTY_CATEGORY_VALUES = {"", "uncategorized"}
 
 
 def create_placeholder_item(db: Session, user_id: uuid.UUID) -> WardrobeItem:
@@ -176,46 +179,8 @@ def complete_upload(
 
 def to_item_detail(item: WardrobeItem) -> ItemDetail:
     """Convert an ORM object into a Pydantic response model."""
-    metadata: ImageMetadata | None = None
-    if any(
-        value is not None
-        for value in (
-            item.image_width,
-            item.image_height,
-            item.image_bytes,
-            item.image_mime_type,
-            item.image_checksum,
-        )
-    ):
-        metadata = ImageMetadata.model_validate(
-            {
-                "width": item.image_width,
-                "height": item.image_height,
-                "bytes": item.image_bytes,
-                "mime_type": item.image_mime_type,
-                "checksum": item.image_checksum,
-            }
-        )
-
-    ai_block: ItemAIAttributes | None = None
-    if any(
-        value
-        for value in (
-            item.ai_confidence,
-            item.ai_materials,
-            item.ai_style_tags,
-            item.subcategory,
-        )
-    ):
-        ai_block = ItemAIAttributes.model_validate(
-            {
-                "category": item.category if item.category not in {"", "uncategorized"} else None,
-                "subcategory": item.subcategory,
-                "materials": item.ai_materials or [],
-                "style_tags": (item.ai_style_tags or [])[:3],
-                "confidence": item.ai_confidence,
-            }
-        )
+    metadata = _build_image_metadata(item)
+    ai_block = _build_item_ai_attributes(item)
 
     return ItemDetail.model_validate(
         {
@@ -240,9 +205,82 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
 
 def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
     """Build an AI preview payload using the latest item data."""
-    preview = ItemAIPreview.model_validate(
+    preview = _build_base_ai_preview(item)
+
+    pipeline_result = ai_tasks.get_pipeline_preview(item)
+    if pipeline_result is None:
+        return preview
+
+    return _apply_pipeline_preview(preview, pipeline_result)
+
+
+def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
+    """Guarantee the backing user row exists before creating child objects."""
+    user = db.get(User, user_id)
+    if user is None:
+        user = User(id=user_id, email=f"user-{user_id}@example.com")
+        db.add(user)
+        db.flush()
+    return user
+
+
+def _normalized_item_category(item: WardrobeItem) -> str | None:
+    if item.category in _EMPTY_CATEGORY_VALUES:
+        return None
+    return item.category
+
+
+def _build_image_metadata(item: WardrobeItem) -> ImageMetadata | None:
+    if not any(
+        value is not None
+        for value in (
+            item.image_width,
+            item.image_height,
+            item.image_bytes,
+            item.image_mime_type,
+            item.image_checksum,
+        )
+    ):
+        return None
+
+    return ImageMetadata.model_validate(
         {
-            "category": item.category if item.category not in {"", "uncategorized"} else None,
+            "width": item.image_width,
+            "height": item.image_height,
+            "bytes": item.image_bytes,
+            "mime_type": item.image_mime_type,
+            "checksum": item.image_checksum,
+        }
+    )
+
+
+def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
+    if not any(
+        value
+        for value in (
+            item.ai_confidence,
+            item.ai_materials,
+            item.ai_style_tags,
+            item.subcategory,
+        )
+    ):
+        return None
+
+    return ItemAIAttributes.model_validate(
+        {
+            "category": _normalized_item_category(item),
+            "subcategory": item.subcategory,
+            "materials": item.ai_materials or [],
+            "style_tags": (item.ai_style_tags or [])[:3],
+            "confidence": item.ai_confidence,
+        }
+    )
+
+
+def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
+    return ItemAIPreview.model_validate(
+        {
+            "category": _normalized_item_category(item),
             "category_confidence": item.ai_confidence,
             "subcategory": None,
             "subcategory_confidence": None,
@@ -255,10 +293,24 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
         }
     )
 
-    pipeline_result = ai_tasks.get_pipeline_preview(item)
-    if pipeline_result is None:
-        return preview
 
+def _labels_above_threshold(
+    scored_labels: Sequence[tuple[str, float]],
+    *,
+    threshold: float,
+    limit: int,
+) -> list[str]:
+    return [
+        name
+        for name, score in sorted(scored_labels, key=lambda entry: entry[1], reverse=True)
+        if score >= threshold
+    ][:limit]
+
+
+def _apply_pipeline_preview(
+    preview: ItemAIPreview,
+    pipeline_result: PipelineResult,
+) -> ItemAIPreview:
     clip = pipeline_result.clip
     preview.category = clip.get("category") or preview.category
     preview.category_confidence = clip.get("category_confidence") or preview.category_confidence
@@ -276,20 +328,16 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
         preview.secondary_color_confidence = color_result.secondary_confidence
 
     threshold = ai_tasks.settings.ai_confidence_threshold
-    preview.materials = [
-        name
-        for name, score in sorted(
-            clip.get("materials", []), key=lambda entry: entry[1], reverse=True
-        )
-        if score >= threshold
-    ][:5]
-    preview.style_tags = [
-        name
-        for name, score in sorted(
-            clip.get("style_tags", []), key=lambda entry: entry[1], reverse=True
-        )
-        if score >= threshold
-    ][:3]
+    preview.materials = _labels_above_threshold(
+        clip.get("materials", []),
+        threshold=threshold,
+        limit=5,
+    )
+    preview.style_tags = _labels_above_threshold(
+        clip.get("style_tags", []),
+        threshold=threshold,
+        limit=3,
+    )
 
     suggested_tags = ai_tasks.select_top_tags(clip, threshold=threshold, limit=3)
     if suggested_tags:
@@ -297,13 +345,3 @@ def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
 
     preview.confidence = clip.get("category_confidence", preview.confidence)
     return preview
-
-
-def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
-    """Guarantee the backing user row exists before creating child objects."""
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id, email=f"user-{user_id}@example.com")
-        db.add(user)
-        db.flush()
-    return user
