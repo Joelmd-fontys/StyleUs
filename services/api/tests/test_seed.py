@@ -13,7 +13,7 @@ from app.seed import runner as seed_runner
 def test_seed_creates_items_and_is_idempotent(tmp_path, monkeypatch, db_session):
     media_root = tmp_path / "media"
     monkeypatch.setenv("MEDIA_ROOT", str(media_root))
-    monkeypatch.setenv("SEED_ON_START", "true")
+    monkeypatch.setenv("RUN_SEED_ON_START", "true")
     monkeypatch.setenv("SEED_KEY", "test-local-seed")
     monkeypatch.setenv("SEED_LIMIT", "3")
 

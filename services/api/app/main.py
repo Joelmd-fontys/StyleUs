@@ -19,14 +19,22 @@ from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
 
 
-def _maybe_run_seed(settings: Settings) -> None:
-    if settings.app_env != "local":
+def _maybe_run_migrations(settings: Settings) -> None:
+    if not settings.run_migrations_on_start:
+        logger.info("startup.migrations_skipped", extra={"app_env": settings.app_env})
         return
-    if not settings.seed_on_start:
+    logger.info("startup.migrations_started", extra={"app_env": settings.app_env})
+    ensure_schema()
+
+
+def _maybe_run_seed(settings: Settings) -> None:
+    if not settings.run_seed_on_start:
+        logger.info("startup.seed_skipped", extra={"app_env": settings.app_env})
         return
     try:
         from app.seed.runner import run_seed
 
+        logger.info("startup.seed_started", extra={"app_env": settings.app_env})
         run_seed(settings=settings)
     except Exception:  # pragma: no cover - defensive guard
         logger.exception("seed.failed")
@@ -37,7 +45,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await anyio.to_thread.run_sync(ensure_schema)
+        await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         yield
 

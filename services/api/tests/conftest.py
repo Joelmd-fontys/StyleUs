@@ -13,7 +13,8 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://postgres:postgres@lo
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
 os.environ.setdefault("APP_VERSION", "0.1.0")
-os.environ.setdefault("SEED_ON_START", "false")
+os.environ.setdefault("RUN_MIGRATIONS_ON_START", "false")
+os.environ.setdefault("RUN_SEED_ON_START", "false")
 
 from app.api.deps import get_db  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
@@ -25,7 +26,7 @@ engine = create_engine(os.environ["DATABASE_URL"], future=True, pool_pre_ping=Tr
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def setup_database() -> Generator[None, None, None]:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -33,7 +34,7 @@ def setup_database() -> Generator[None, None, None]:
 
 
 @pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
+def db_session(setup_database: None) -> Generator[Session, None, None]:
     connection = engine.connect()
     transaction = connection.begin()
     session = TestingSessionLocal(bind=connection)

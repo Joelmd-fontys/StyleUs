@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -21,6 +21,7 @@ ENV_FILES = tuple(
 )
 
 UploadMode = Literal["s3", "local"]
+AppEnv = Literal["local", "staging", "production"]
 
 
 class Settings(BaseSettings):
@@ -28,7 +29,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
-    app_env: Literal["local", "staging", "production"] = Field(default="local", alias="APP_ENV")
+    app_env: AppEnv = Field(default="local", alias="APP_ENV")
     api_key: str | None = Field(default=None, alias="API_KEY")
     database_url: str = Field(..., alias="DATABASE_URL")
     aws_region: str | None = Field(default=None, alias="AWS_REGION")
@@ -40,7 +41,15 @@ class Settings(BaseSettings):
     media_root: str = Field(default="./media", alias="MEDIA_ROOT")
     media_url_path: str = Field(default="/media", alias="MEDIA_URL_PATH")
     media_max_upload_size: int = Field(default=15 * 1024 * 1024, alias="MEDIA_MAX_UPLOAD_SIZE")
-    seed_on_start: bool | None = Field(default=None, alias="SEED_ON_START")
+    run_migrations_on_start: bool | None = Field(
+        default=None,
+        alias="RUN_MIGRATIONS_ON_START",
+    )
+    run_seed_on_start: bool | None = Field(
+        default=None,
+        alias="RUN_SEED_ON_START",
+        validation_alias=AliasChoices("RUN_SEED_ON_START", "SEED_ON_START"),
+    )
     seed_limit: int = Field(default=25, alias="SEED_LIMIT")
     seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
     ai_enable_classifier: bool = Field(default=True, alias="AI_ENABLE_CLASSIFIER")
@@ -66,6 +75,18 @@ class Settings(BaseSettings):
     def normalize_origins(cls, value: str) -> str:
         return value or ""
 
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized.startswith("postgresql+psycopg://"):
+            return normalized
+        if normalized.startswith("postgres://"):
+            return f"postgresql+psycopg://{normalized[len('postgres://'):]}"
+        if normalized.startswith("postgresql://"):
+            return f"postgresql+psycopg://{normalized[len('postgresql://'):]}"
+        return normalized
+
     @field_validator("media_url_path")
     @classmethod
     def normalize_media_url(cls, value: str) -> str:
@@ -74,7 +95,7 @@ class Settings(BaseSettings):
         return value if value.startswith("/") else f"/{value}"
 
     @model_validator(mode="after")
-    def finalize_upload_mode(self) -> Settings:
+    def finalize_settings(self) -> Settings:
         if self.upload_mode is None:
             self.upload_mode = "s3" if self.aws_region and self.s3_bucket_name else "local"
 
@@ -94,8 +115,10 @@ class Settings(BaseSettings):
                 joined = ", ".join(missing)
                 raise ValueError(f"Missing required environment variables: {joined}")
 
-        if self.seed_on_start is None:
-            self.seed_on_start = self.app_env == "local"
+        if self.run_migrations_on_start is None:
+            self.run_migrations_on_start = self.app_env == "local"
+        if self.run_seed_on_start is None:
+            self.run_seed_on_start = self.app_env == "local"
 
         if self.seed_limit <= 0:
             raise ValueError("SEED_LIMIT must be greater than zero")
@@ -124,6 +147,10 @@ class Settings(BaseSettings):
         return self.app_env in {"staging", "production"}
 
     @property
+    def is_local_env(self) -> bool:
+        return self.app_env == "local"
+
+    @property
     def media_root_path(self) -> Path:
         return Path(self.media_root).expanduser().resolve()
 
@@ -135,6 +162,11 @@ class Settings(BaseSettings):
     @property
     def is_s3_enabled(self) -> bool:
         return self.upload_mode_value == "s3"
+
+    @property
+    def seed_on_start(self) -> bool:
+        """Backward-compatible alias for older seed helpers."""
+        return bool(self.run_seed_on_start)
 
 
 @lru_cache(maxsize=1)

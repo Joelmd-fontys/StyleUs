@@ -6,11 +6,14 @@ under `sample_images/` so no scraping or external downloads are required.
 
 ## Environment Flags
 
-- `SEED_ON_START` – defaults to `true` in `APP_ENV=local`, otherwise `false`.
+- `RUN_SEED_ON_START` – defaults to `true` in `APP_ENV=local`, otherwise `false`.
   When enabled, the API seeds exactly once on startup.
 - `SEED_LIMIT` – maximum number of seed items to apply (default `25`).
 - `SEED_KEY` – logical identifier stored in the `seeds` table to ensure
   idempotency (default `local-seed-v1`). Change the key to run a new dataset.
+
+`SEED_ON_START` is still accepted as a legacy alias for local compatibility, but
+`RUN_SEED_ON_START` is the canonical name going forward.
 
 ## Commands
 
@@ -29,4 +32,4 @@ runs produce fresh variants.
 - All images are bundled assets licensed for unrestricted local development
   usage.
 - Idempotency is tracked via the `seeds` table—repeat runs skip once the key is
-  recorded. Set `SEED_ON_START=false` to suppress auto-seeding.
+  recorded. Set `RUN_SEED_ON_START=false` to suppress auto-seeding.
