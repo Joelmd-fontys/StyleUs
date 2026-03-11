@@ -1,6 +1,6 @@
 # StyleUs API Service
 
-The API owns wardrobe persistence, upload finalization, local media serving, and AI enrichment. It remains the business-logic boundary for the app in both local development and the planned production architecture.
+The API owns wardrobe persistence, private Supabase Storage upload finalization, and AI enrichment. It remains the business-logic boundary for the app in both local development and the planned production architecture.
 
 ## Stack
 
@@ -8,16 +8,18 @@ The API owns wardrobe persistence, upload finalization, local media serving, and
 - SQLAlchemy 2
 - Alembic
 - PostgreSQL
+- PyJWT with Supabase JWKS verification
 - Pillow / NumPy / scikit-learn
 - `open-clip-torch` with optional ONNX inference
 - FastAPI `BackgroundTasks`
 
 ## Service structure
 
-- `app/main.py` - app creation, middleware, CORS, media mount, startup tasks
+- `app/main.py` - app creation, middleware, CORS, startup tasks
 - `app/api/routers` - health, version, item, and upload routes
 - `app/services/items.py` - wardrobe CRUD and response shaping
-- `app/services/uploads.py` - presign, local upload persistence, and upload finalization
+- `app/services/uploads.py` - signed-upload creation, private variant persistence, and upload finalization
+- `app/utils/storage.py` - Supabase Storage REST adapter for signed reads, signed uploads, and object operations
 - `app/ai` - CLIP heads, color extraction, segmentation, pipeline coordination, background task logic
 - `app/models` - SQLAlchemy models
 - `app/seed` - deterministic seed dataset and runner
@@ -56,6 +58,24 @@ Hosted connection guidance for this phase:
 - keep `sslmode=require` on hosted connections
 - do not use transaction-pool mode for the API or Alembic in this phase
 
+### Authentication
+
+The backend now expects Supabase Auth bearer tokens in hosted environments.
+
+- the frontend signs in with Supabase
+- the frontend sends `Authorization: Bearer <token>` to the API
+- FastAPI validates asymmetric Supabase tokens against the project JWKS endpoint
+- legacy shared-secret tokens can fall back to `GET /auth/v1/user` when `SUPABASE_PUBLISHABLE_KEY` (or legacy `SUPABASE_ANON_KEY`) is set
+- the token `sub` becomes the application user ID
+- the API keeps business authorization and user-scoped queries in Python
+
+Local development still supports an explicit bypass:
+
+- `LOCAL_AUTH_BYPASS=true` allows the old single local user flow
+- this bypass is only valid when `APP_ENV=local`
+- the configured local identity (`LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL`) is also local-only and is reused by the seed commands
+- `staging` and `production` must use real bearer tokens
+
 ### Startup safety
 
 Startup-only convenience behavior is now config-gated:
@@ -78,17 +98,15 @@ This means local `make run` and `./dev.sh` remain convenient, while hosted envir
 
 1. `POST /items/presign`
 2. A placeholder item is created in Postgres.
-3. The client uploads bytes either:
-   - to `PUT /items/uploads/{item_id}` in local upload mode, or
-   - directly to S3 in S3 mode.
+3. The client uploads the source image directly to a private Supabase Storage object using the signed upload target.
 4. `POST /items/{item_id}/complete-upload`
-5. The API generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores metadata, and schedules AI classification.
+5. The API downloads the private source object, generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores private object paths plus metadata, and schedules AI classification.
 
 ### AI enrichment
 
 The background task in `app/ai/tasks.py`:
 
-- loads the finalized image from local media or S3;
+- downloads the finalized private image object from Supabase Storage when object-path fields are present;
 - runs the shared pipeline in `app/ai/pipeline.py`;
 - writes back colors, category, subcategory, materials, style tags, top tags, and confidence when thresholds are met;
 - avoids overwriting user-supplied data unless fields are still empty or placeholder-like.
@@ -112,7 +130,7 @@ That preview endpoint is still designed for the upload review UI. It is not yet 
 - `PATCH /items/{item_id}`
 - `DELETE /items/{item_id}`
 - `POST /items/presign`
-- `PUT /items/uploads/{item_id}` in local upload mode
+- `PUT /items/uploads/{item_id}` legacy route that now returns `410 Gone`
 - `POST /items/{item_id}/complete-upload`
 
 ## Environment variables
@@ -121,18 +139,22 @@ Copy `.env.example` to `.env` before running locally.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `APP_ENV` | `local`, `staging`, `production` | `local` |
+| `APP_ENV` | `local`, `staging`, `production` | required |
 | `APP_VERSION` | value returned by `/health` and `/version` | `0.1.0` |
-| `API_KEY` | temporary secure-env guard until real auth arrives | _(unset)_ |
 | `DATABASE_URL` | SQLAlchemy/Postgres connection string; local Docker or Supabase-hosted | required |
+| `SUPABASE_URL` | Supabase project URL used for auth verification and Storage API calls | required in hosted envs; optional for local boot |
+| `SUPABASE_SERVICE_ROLE_KEY` | private backend key used for Supabase Storage operations | required in hosted envs and for local live uploads |
+| `SUPABASE_STORAGE_BUCKET` | private bucket name for uploaded wardrobe media | required in hosted envs and for local live uploads |
+| `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_ANON_KEY` | optional public key used only for legacy shared-secret token verification | _(unset)_ |
+| `SUPABASE_JWT_AUDIENCE` | expected access-token audience | `authenticated` |
+| `LOCAL_AUTH_BYPASS` | allow the local-only guest workflow without bearer tokens | `true` in local, otherwise `false` |
+| `LOCAL_AUTH_USER_ID` / `LOCAL_AUTH_EMAIL` | explicit local bypass identity | local developer defaults |
 | `CORS_ORIGINS` | comma-separated allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
-| `UPLOAD_MODE` | `local` or `s3`; auto-derived if omitted | auto |
-| `MEDIA_ROOT` | local media directory | `./media` |
-| `MEDIA_URL_PATH` | static mount path for local media | `/media` |
 | `MEDIA_MAX_UPLOAD_SIZE` | upload ceiling in bytes | `15728640` |
+| `SUPABASE_SIGNED_URL_TTL_SECONDS` | signed read URL lifetime returned in item payloads | `3600` |
+| `MEDIA_ROOT` | local scratch/cache directory still used by image/AI helpers | `./media` |
 | `RUN_MIGRATIONS_ON_START` | run Alembic migrations during app startup | `true` in local, otherwise `false` |
 | `RUN_SEED_ON_START` | apply deterministic seed data during app startup | `true` in local, otherwise `false` |
-| `AWS_REGION` / `S3_BUCKET_NAME` | required only for S3 mode | _(unset)_ |
 | `AI_ENABLE_CLASSIFIER` | enable background classification | `true` |
 | `AI_DEVICE` | model device, usually `cpu` locally | `cpu` |
 | `AI_CONFIDENCE_THRESHOLD` | write threshold for category/material/style updates | `0.6` |
@@ -143,6 +165,25 @@ Copy `.env.example` to `.env` before running locally.
 | `AI_COLOR_TOPK` | number of colors retained from clustering | `2` |
 | `AI_ONNX` / `AI_ONNX_MODEL_PATH` | optional ONNX inference path | `false` / unset |
 | `SEED_LIMIT` / `SEED_KEY` | deterministic seed controls | `25` / `local-seed-v1` |
+
+## Supabase Storage setup
+
+The API now assumes a private Supabase Storage bucket.
+
+Minimum dashboard configuration:
+
+1. Create the bucket named by `SUPABASE_STORAGE_BUCKET`.
+2. Keep the bucket private.
+3. Set the bucket file size limit to match `MEDIA_MAX_UPLOAD_SIZE`.
+4. Restrict allowed MIME types to `image/jpeg`, `image/png`, and `image/webp`.
+5. Store `SUPABASE_SERVICE_ROLE_KEY` only on the backend.
+
+Security model:
+
+- the browser never receives the service-role key
+- the API issues short-lived signed upload targets
+- item payloads expose only signed read URLs, not permanent public URLs
+- AI/seed/server-side flows use direct authenticated Storage access from the backend
 
 ## Local development
 
@@ -157,13 +198,26 @@ make run
 
 Default API URL: `http://127.0.0.1:8000`
 
+The copied example file includes placeholder Supabase Storage values. Replace them before exercising the live upload path.
+
 Useful commands:
 
 - `make seed` - apply the deterministic seed dataset
-- `make reset-seed` - remove seeded items and their media
+- `make reset-seed` - remove seeded items and their stored media objects
 - `make lint`
 - `make typecheck`
 - `make test`
+
+`make seed` and `make reset-seed` are local-development commands. They now refuse to run unless `APP_ENV=local`, because the seed dataset attaches to the configured local auth identity.
+
+To test real auth locally:
+
+1. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in `services/api/.env`
+2. Set `LOCAL_AUTH_BYPASS=false`
+3. If your Supabase project still uses legacy shared-secret JWT signing, also set `SUPABASE_PUBLISHABLE_KEY`
+4. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env.local`
+5. Create the private Storage bucket in Supabase and align its size/MIME rules with `MEDIA_MAX_UPLOAD_SIZE`
+6. Sign in from the web app
 
 ## Running against Supabase Postgres
 
@@ -175,6 +229,9 @@ Recommended migration flow against Supabase:
 cd services/api
 export APP_ENV=staging
 export DATABASE_URL='postgresql://postgres.<project-ref>:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require'
+export SUPABASE_URL='https://<project-ref>.supabase.co'
+export SUPABASE_SERVICE_ROLE_KEY='<service-role-key>'
+export SUPABASE_STORAGE_BUCKET='wardrobe-images'
 export RUN_MIGRATIONS_ON_START=false
 export RUN_SEED_ON_START=false
 make upgrade
@@ -194,15 +251,18 @@ Notes:
 
 - API runs on the host.
 - Postgres runs in Docker.
-- Media is local disk by default unless S3 mode is configured.
-- Auth is still a stub user model.
+- Uploaded media lives in a private Supabase Storage bucket.
+- Auth can use either:
+  - explicit local bypass, or
+  - real Supabase bearer tokens when configured locally
 
 ### Target hosted shape
 
 - Render web service -> FastAPI API
 - Render worker -> future background worker, not implemented yet
 - Supabase Postgres -> supported hosted database target in this phase
-- Supabase Auth and Supabase Storage -> later phases
+- Supabase Auth -> implemented for bearer-token validation in this phase
+- Supabase Storage -> implemented in this phase for private uploads and signed reads
 
 The API remains the only component that should own:
 
@@ -217,8 +277,6 @@ The frontend should only know public API and public auth configuration. Database
 
 This repository is now documented for the target platform split, but the following are still future work:
 
-- Supabase Auth integration
-- Supabase Storage migration
 - separate background worker runtime
 - staging and production rollout
 
@@ -233,7 +291,7 @@ This repository is now documented for the target platform split, but the followi
 
 - Backend tests run with pytest.
 - The current test configuration expects a Postgres database reachable via `DATABASE_URL`; the default test setup points at `postgresql+psycopg://postgres:postgres@localhost:5432/postgres`.
-- AWS interactions are mocked in unit tests.
+- Supabase Storage interactions are mocked in unit tests.
 
 See also:
 

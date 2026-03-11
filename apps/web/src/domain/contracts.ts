@@ -6,6 +6,8 @@ export interface PresignItemResponse {
   uploadUrl: string;
   itemId: string;
   objectKey?: string;
+  uploadToken?: string;
+  bucket?: string;
 }
 
 export type GetItemResponse = WardrobeItem;

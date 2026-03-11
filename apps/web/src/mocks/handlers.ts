@@ -141,6 +141,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
         const body = (await request.json()) as Partial<{
           fileName: string;
           contentType: string;
+          fileSize: number;
         }>;
         const itemId =
           typeof crypto !== 'undefined' && 'randomUUID' in crypto

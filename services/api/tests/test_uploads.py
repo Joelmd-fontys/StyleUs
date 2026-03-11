@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import io
 import uuid
-from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
@@ -14,47 +12,63 @@ from app.api.deps import DEFAULT_USER_ID, get_db
 from app.core.config import get_settings
 from app.main import create_app
 from app.models.wardrobe import WardrobeItem
-from app.utils import s3 as s3_utils
+from app.utils import storage as storage_utils
 
 
-class DummyS3Client:
-    def __init__(self, expected_bucket: str):
-        self.expected_bucket = expected_bucket
-        self.called_with: dict[str, str] | None = None
+class FakeStorageAdapter:
+    def __init__(self) -> None:
+        self.created_uploads: list[str] = []
+        self.uploaded_objects: dict[str, bytes] = {}
+        self.deleted_objects: list[str] = []
+        self.downloaded_path: str | None = None
+        self.info_by_path: dict[str, dict[str, object]] = {}
+        self.file_by_path: dict[str, storage_utils.DownloadedObject] = {}
 
-    def generate_presigned_url(
+    def create_signed_upload_target(self, object_path: str) -> storage_utils.SignedUploadTarget:
+        self.created_uploads.append(object_path)
+        return storage_utils.SignedUploadTarget(
+            bucket="wardrobe-images",
+            object_path=object_path,
+            upload_url=f"https://storage.example/upload/{object_path}",
+            token="signed-upload-token",
+        )
+
+    def get_object_info(self, object_path: str) -> dict[str, object]:
+        return self.info_by_path[object_path]
+
+    def download_object(self, object_path: str) -> storage_utils.DownloadedObject:
+        self.downloaded_path = object_path
+        return self.file_by_path[object_path]
+
+    def upload_bytes(
         self,
+        object_path: str,
         *,
-        ClientMethod: str,  # noqa: N803 - fixture emulates boto3 signature
-        Params: dict,  # noqa: N803 - fixture emulates boto3 signature
-        ExpiresIn: int,  # noqa: N803 - fixture emulates boto3 signature
-    ) -> str:  # noqa: N803
-        assert ClientMethod == "put_object"
-        assert Params["Bucket"] == self.expected_bucket
-        self.called_with = {
-            "key": Params["Key"],
-            "content_type": Params["ContentType"],
-            "expires": ExpiresIn,
+        data: bytes,
+        content_type: str,
+        upsert: bool = True,
+    ) -> None:
+        _ = content_type, upsert
+        self.uploaded_objects[object_path] = data
+
+    def delete_objects(self, object_paths: list[str]) -> None:
+        self.deleted_objects.extend(object_paths)
+
+    def create_signed_urls(self, object_paths: list[str]) -> dict[str, str]:
+        return {
+            path: f"https://signed.example/{path.replace('/', '%2F')}"
+            for path in object_paths
         }
-        return "https://example.com/upload"
 
 
 def _make_sample_image_bytes(color: tuple[int, int, int] = (200, 40, 40)) -> bytes:
     image = Image.new("RGB", (64, 48), color=color)
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG")
+    image.save(buffer, format="PNG")
     return buffer.getvalue()
 
 
-@pytest.fixture()
-def s3_client(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """Build a TestClient configured for S3 upload mode."""
-
-    monkeypatch.setenv("UPLOAD_MODE", "s3")
-    monkeypatch.setenv("AWS_REGION", "us-east-1")
-    monkeypatch.setenv("S3_BUCKET_NAME", "test-bucket")
-    get_settings.cache_clear()
-
+def _build_client(db_session: Session) -> TestClient:
     application = create_app()
 
     def override_get_db():
@@ -64,182 +78,133 @@ def s3_client(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> TestClien
             pass
 
     application.dependency_overrides[get_db] = override_get_db
-    dummy_client = DummyS3Client(expected_bucket="test-bucket")
-    monkeypatch.setattr(s3_utils, "get_s3_client", lambda region: dummy_client)
     return TestClient(application)
 
 
-def test_presign_creates_item_and_returns_url(
-    s3_client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+def test_presign_creates_item_and_returns_signed_upload_target(
+    db_session: Session,
+    monkeypatch,
 ) -> None:
-    dummy_client = DummyS3Client(expected_bucket="test-bucket")
-    monkeypatch.setattr(s3_utils, "get_s3_client", lambda region: dummy_client)
+    fake_storage = FakeStorageAdapter()
+    monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: fake_storage)
+    get_settings.cache_clear()
 
-    response = s3_client.post(
-        "/items/presign",
-        json={"contentType": "image/jpeg", "fileName": "test.jpg"},
-    )
+    with _build_client(db_session) as client:
+        response = client.post(
+            "/items/presign",
+            json={"contentType": "image/jpeg", "fileName": "test.jpg", "fileSize": 1024},
+        )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["uploadUrl"] == "https://example.com/upload"
-    assert payload["objectKey"].startswith("user/")
     item_id = uuid.UUID(payload["itemId"])
+
+    assert payload["uploadUrl"] == (
+        f"https://storage.example/upload/users/{DEFAULT_USER_ID}/{item_id}/source/test.jpg"
+    )
+    assert payload["uploadToken"] == "signed-upload-token"
+    assert payload["bucket"] == "wardrobe-images"
+    assert payload["objectKey"] == f"users/{DEFAULT_USER_ID}/{item_id}/source/test.jpg"
+    assert fake_storage.created_uploads == [payload["objectKey"]]
 
     stmt = select(WardrobeItem).where(WardrobeItem.id == item_id)
     inserted = db_session.execute(stmt).scalar_one()
     assert inserted.image_url is None
+    assert inserted.image_object_path is None
     assert inserted.user_id == DEFAULT_USER_ID
-    assert dummy_client.called_with is not None
-    assert dummy_client.called_with["content_type"] == "image/jpeg"
-    assert dummy_client.called_with["key"] == payload["objectKey"]
 
 
-def test_complete_upload_constructs_public_url(
-    s3_client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    dummy_client = DummyS3Client(expected_bucket="test-bucket")
-    monkeypatch.setattr(s3_utils, "get_s3_client", lambda region: dummy_client)
-
-    sample_bytes = _make_sample_image_bytes()
-    uploaded_objects: dict[str, bytes] = {}
-
-    monkeypatch.setattr(
-        s3_utils,
-        "head_object",
-        lambda **kwargs: {"ContentType": "image/png"},
-    )
-    monkeypatch.setattr(
-        s3_utils,
-        "download_object",
-        lambda **kwargs: sample_bytes,
-    )
-
-    def _capture_upload(
-        *,
-        bucket: str,
-        key: str,
-        region: str,
-        data: bytes,
-        content_type: str,
-    ) -> None:
-        uploaded_objects[key] = data
-
-    monkeypatch.setattr(s3_utils, "upload_bytes", _capture_upload)
-
-    presign = s3_client.post(
-        "/items/presign",
-        json={"contentType": "image/png", "fileName": "look.png"},
-    )
-    assert presign.status_code == 200
-    payload = presign.json()
-    item_id = uuid.UUID(payload["itemId"])
-    object_key = payload["objectKey"]
-
-    complete = s3_client.post(
-        f"/items/{item_id}/complete-upload",
-        json={"objectKey": object_key, "fileName": "look.png"},
-    )
-
-    assert complete.status_code == 200
-    body = complete.json()
-    base_prefix, _sep, _ = object_key.rpartition("/")
-    prefix = f"{base_prefix}/" if base_prefix else ""
-    bucket_host = "https://test-bucket.s3.us-east-1.amazonaws.com"
-    expected_url = f"{bucket_host}/{prefix}orig.jpg"
-    assert body["imageUrl"] == expected_url
-    assert body["thumbUrl"].endswith("thumb.jpg")
-    assert body["mediumUrl"].endswith("medium.jpg")
-
-    metadata = body["imageMetadata"]
-    assert metadata["width"] == 64
-    assert metadata["height"] == 48
-    assert metadata["mimeType"] == "image/jpeg"
-
-    assert f"{prefix}orig.jpg" in uploaded_objects
-    assert f"{prefix}medium.jpg" in uploaded_objects
-    assert f"{prefix}thumb.jpg" in uploaded_objects
-
-    stmt = select(WardrobeItem).where(WardrobeItem.id == item_id)
-    stored = db_session.execute(stmt).scalar_one()
-    assert stored.image_url == expected_url
-
-
-def test_local_upload_flow(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    db_session: Session,
-) -> None:
-    monkeypatch.delenv("AWS_REGION", raising=False)
-    monkeypatch.delenv("S3_BUCKET_NAME", raising=False)
-    monkeypatch.setenv("UPLOAD_MODE", "local")
-    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+def test_presign_rejects_oversized_upload(db_session: Session, monkeypatch) -> None:
+    fake_storage = FakeStorageAdapter()
+    monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: fake_storage)
     get_settings.cache_clear()
 
-    application = create_app()
-
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
-
-    application.dependency_overrides[get_db] = override_get_db
-
-    with TestClient(application) as test_client:
-        presign = test_client.post(
+    with _build_client(db_session) as client:
+        response = client.post(
             "/items/presign",
-            json={"contentType": "image/jpeg", "fileName": "camera.jpg"},
+            json={"contentType": "image/jpeg", "fileName": "big.jpg", "fileSize": 99_999_999},
+        )
+
+    assert response.status_code == 400
+    assert fake_storage.created_uploads == []
+
+
+def test_complete_upload_persists_object_paths_and_returns_signed_urls(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    fake_storage = FakeStorageAdapter()
+    monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: fake_storage)
+    get_settings.cache_clear()
+
+    source_bytes = _make_sample_image_bytes()
+
+    with _build_client(db_session) as client:
+        presign = client.post(
+            "/items/presign",
+            json={"contentType": "image/png", "fileName": "look.png", "fileSize": len(source_bytes)},
         )
         assert presign.status_code == 200
-        presign_payload = presign.json()
-        assert presign_payload["uploadUrl"].startswith("/items/uploads/")
-        item_id = uuid.UUID(presign_payload["itemId"])
 
-        local_bytes = _make_sample_image_bytes()
-        upload = test_client.put(
-            presign_payload["uploadUrl"],
-            data=local_bytes,
-            headers={
-                "Content-Type": "image/jpeg",
-                "X-File-Name": "camera.jpg",
-            },
+        payload = presign.json()
+        item_id = uuid.UUID(payload["itemId"])
+        object_key = payload["objectKey"]
+
+        fake_storage.info_by_path[object_key] = {
+            "name": object_key,
+            "metadata": {"mimetype": "image/png", "size": len(source_bytes)},
+            "size": len(source_bytes),
+        }
+        fake_storage.file_by_path[object_key] = storage_utils.DownloadedObject(
+            object_path=object_key,
+            data=source_bytes,
+            content_type="image/png",
+            size=len(source_bytes),
         )
-        assert upload.status_code == 201
-        saved_data = upload.json()
-        saved_name = saved_data["fileName"]
 
-        initial_path = Path(tmp_path) / str(item_id) / saved_name
-        assert initial_path.exists()
-
-        complete = test_client.post(
+        complete = client.post(
             f"/items/{item_id}/complete-upload",
-            json={"fileName": "camera.jpg"},
+            json={"objectKey": object_key, "fileName": "look.png"},
         )
+
         assert complete.status_code == 200
-        completed = complete.json()
-        assert completed["imageUrl"].endswith("orig.jpg")
-        assert completed["thumbUrl"].endswith("thumb.jpg")
-        assert completed["mediumUrl"].endswith("medium.jpg")
-        metadata = completed["imageMetadata"]
+        body = complete.json()
+        expected_prefix = f"users/{DEFAULT_USER_ID}/{item_id}"
+
+        assert body["imageUrl"] == f"https://signed.example/{expected_prefix}%2Forig.jpg"
+        assert body["mediumUrl"] == f"https://signed.example/{expected_prefix}%2Fmedium.jpg"
+        assert body["thumbUrl"] == f"https://signed.example/{expected_prefix}%2Fthumb.jpg"
+
+        metadata = body["imageMetadata"]
         assert metadata["width"] == 64
         assert metadata["height"] == 48
         assert metadata["mimeType"] == "image/jpeg"
 
-        detail = test_client.get(f"/items/{item_id}")
+        assert fake_storage.downloaded_path == object_key
+        assert fake_storage.deleted_objects == [object_key]
+        assert f"{expected_prefix}/orig.jpg" in fake_storage.uploaded_objects
+        assert f"{expected_prefix}/medium.jpg" in fake_storage.uploaded_objects
+        assert f"{expected_prefix}/thumb.jpg" in fake_storage.uploaded_objects
+
+        detail = client.get(f"/items/{item_id}")
         assert detail.status_code == 200
         detail_payload = detail.json()
-        assert detail_payload["imageUrl"] == completed["imageUrl"]
+        assert detail_payload["imageUrl"] == body["imageUrl"]
 
-        media_response = test_client.get(detail_payload["imageUrl"])
-        assert media_response.status_code == 200
-        assert media_response.content.startswith(b"\xff\xd8\xff")
+    stmt = select(WardrobeItem).where(WardrobeItem.id == item_id)
+    stored = db_session.execute(stmt).scalar_one()
+    assert stored.image_object_path == f"{expected_prefix}/orig.jpg"
+    assert stored.image_medium_object_path == f"{expected_prefix}/medium.jpg"
+    assert stored.image_thumb_object_path == f"{expected_prefix}/thumb.jpg"
+    assert stored.image_url is None
 
-        item_dir = Path(tmp_path) / str(item_id)
-        assert (item_dir / "orig.jpg").exists()
-        assert (item_dir / "medium.jpg").exists()
-        assert (item_dir / "thumb.jpg").exists()
-        assert not initial_path.exists()
 
-    # Ensure temporary media directory was written
-    assert any(tmp_path.iterdir())
+def test_legacy_binary_upload_sink_is_gone(db_session: Session) -> None:
+    with _build_client(db_session) as client:
+        response = client.put(
+            f"/items/uploads/{uuid.uuid4()}",
+            data=b"image",
+            headers={"Content-Type": "image/jpeg"},
+        )
+
+    assert response.status_code == 410

@@ -65,11 +65,15 @@ const UploadPanel = (): ReactElement => {
 
     try {
       setState({ status: 'uploading', message: 'Requesting upload slot...' });
-      const { uploadUrl, itemId, objectKey } = await createPresign({
+      const { uploadUrl, itemId, objectKey, uploadToken, bucket } = await createPresign({
         contentType: file.type,
-        fileName: file.name
+        fileName: file.name,
+        fileSize: file.size
       });
-      const isLocalUpload = Boolean(!objectKey || uploadUrl.startsWith('/items/uploads/'));
+      if (USE_LIVE_API_UPLOAD && (!objectKey || !uploadToken || !bucket)) {
+        throw new Error('Upload slot is incomplete. Check Supabase Storage configuration.');
+      }
+      const isDirectStorageUpload = Boolean(objectKey && uploadToken && bucket);
 
       const uuidPattern = /^[0-9a-fA-F-]{36}$/;
       let resolvedItemId = itemId;
@@ -84,10 +88,16 @@ const UploadPanel = (): ReactElement => {
       }
       setState({ status: 'uploading', message: 'Uploading image...' });
       setProgress((prev) => Math.max(prev, 40));
-      await uploadFile(uploadUrl, file, { isLocal: isLocalUpload, fileName: file.name });
+      await uploadFile(uploadUrl, file, {
+        isLocal: !isDirectStorageUpload,
+        fileName: file.name,
+        objectKey,
+        uploadToken,
+        bucket
+      });
       setState({ status: 'uploading', message: 'Finalizing upload...' });
       const completePayload: CompleteUploadRequest = { fileName: file.name };
-      if (!isLocalUpload && objectKey) {
+      if (objectKey) {
         completePayload.objectKey = objectKey;
       }
       const uploadedItem = await completeUpload(resolvedItemId, completePayload);
@@ -95,7 +105,7 @@ const UploadPanel = (): ReactElement => {
       stopProgress();
       setProgress(100);
       setState({ status: 'success', message: `${file.name} ready for review.` });
-      logger.uploadSucceeded({ itemId, mode: isLocalUpload ? 'local' : 's3' });
+      logger.uploadSucceeded({ itemId, mode: isDirectStorageUpload ? 'supabase' : 'mock' });
       void fetchUploadReviewAI(resolvedItemId);
       resetMessage();
       navigate(`/upload/review/${resolvedItemId}`);

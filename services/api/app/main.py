@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 import anyio
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api import get_api_router
 from app.core.config import Settings, get_settings
@@ -58,10 +57,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    media_root = settings.media_root_path
-    media_root.mkdir(parents=True, exist_ok=True)
-    app.mount(settings.media_url_path, StaticFiles(directory=media_root), name="media")
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

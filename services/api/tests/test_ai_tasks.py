@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import uuid
 from contextlib import nullcontext
 from pathlib import Path
@@ -15,20 +16,30 @@ from app.api.deps import DEFAULT_USER_ID
 from app.core.config import get_settings
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
+from app.utils import storage as storage_utils
+
+
+class FakeStorageAdapter:
+    def __init__(self) -> None:
+        self.objects: dict[str, storage_utils.DownloadedObject] = {}
+
+    def download_object(self, object_path: str) -> storage_utils.DownloadedObject:
+        return self.objects[object_path]
 
 
 def _prepare_settings(
     monkeypatch: pytest.MonkeyPatch,
     media_root: Path,
+    storage: FakeStorageAdapter,
     session=None,
     **env: str,
 ) -> None:
     monkeypatch.setenv("MEDIA_ROOT", str(media_root))
-    monkeypatch.setenv("MEDIA_URL_PATH", "/media")
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     ai_tasks.settings = get_settings()
+    monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: storage)
     if session is not None:
         monkeypatch.setattr(ai_tasks, "SessionLocal", lambda: nullcontext(session))
         if session.get(User, DEFAULT_USER_ID) is None:
@@ -36,10 +47,11 @@ def _prepare_settings(
             session.commit()
 
 
-def _create_local_image(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _create_image_bytes() -> bytes:
     image = Image.new("RGB", (128, 128), color=(220, 180, 120))
-    image.save(path, format="JPEG")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 def _mock_pipeline_result(
@@ -84,21 +96,27 @@ def _mock_pipeline_result(
 
 
 def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, monkeypatch):
-    _prepare_settings(monkeypatch, tmp_path, session=db_session)
+    storage = FakeStorageAdapter()
+    _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)
     item_id = uuid.uuid4()
-    image_rel = f"/media/{item_id}/orig.jpg"
+    object_path = f"users/{DEFAULT_USER_ID}/{item_id}/orig.jpg"
     item = WardrobeItem(
         id=item_id,
         user_id=DEFAULT_USER_ID,
         category="unknown",
         color="unspecified",
         brand=None,
-        image_url=image_rel,
+        image_object_path=object_path,
     )
     db_session.add(item)
     db_session.commit()
 
-    _create_local_image(tmp_path / str(item_id) / "orig.jpg")
+    storage.objects[object_path] = storage_utils.DownloadedObject(
+        object_path=object_path,
+        data=_create_image_bytes(),
+        content_type="image/jpeg",
+        size=0,
+    )
 
     pipeline_result = _mock_pipeline_result(
         primary="Camel",
@@ -131,21 +149,27 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
 
 
 def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypatch):
-    _prepare_settings(monkeypatch, tmp_path, session=db_session)
+    storage = FakeStorageAdapter()
+    _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)
     item_id = uuid.uuid4()
-    image_rel = f"/media/{item_id}/orig.jpg"
+    object_path = f"users/{DEFAULT_USER_ID}/{item_id}/orig.jpg"
     item = WardrobeItem(
         id=item_id,
         user_id=DEFAULT_USER_ID,
         category="unknown",
         color="unspecified",
         brand=None,
-        image_url=image_rel,
+        image_object_path=object_path,
     )
     db_session.add(item)
     db_session.commit()
 
-    _create_local_image(tmp_path / str(item_id) / "orig.jpg")
+    storage.objects[object_path] = storage_utils.DownloadedObject(
+        object_path=object_path,
+        data=_create_image_bytes(),
+        content_type="image/jpeg",
+        size=0,
+    )
 
     pipeline_result = _mock_pipeline_result(
         primary="Black",
@@ -177,22 +201,28 @@ def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypat
 
 
 def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, monkeypatch):
-    _prepare_settings(monkeypatch, tmp_path, session=db_session)
+    storage = FakeStorageAdapter()
+    _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)
     item_id = uuid.uuid4()
-    image_rel = f"/media/{item_id}/orig.jpg"
+    object_path = f"users/{DEFAULT_USER_ID}/{item_id}/orig.jpg"
     item = WardrobeItem(
         id=item_id,
         user_id=DEFAULT_USER_ID,
         category="top",
         color="blue",
         brand="Acme",
-        image_url=image_rel,
+        image_object_path=object_path,
     )
     item.tags.append(ItemTag(tag="casual"))
     db_session.add(item)
     db_session.commit()
 
-    _create_local_image(tmp_path / str(item_id) / "orig.jpg")
+    storage.objects[object_path] = storage_utils.DownloadedObject(
+        object_path=object_path,
+        data=_create_image_bytes(),
+        content_type="image/jpeg",
+        size=0,
+    )
 
     pipeline_result = _mock_pipeline_result(
         primary="Brown",
@@ -226,22 +256,28 @@ def test_classify_and_update_item_respects_existing_data(db_session, tmp_path, m
 
 
 def test_classify_and_update_item_skips_deleted(db_session, tmp_path, monkeypatch):
-    _prepare_settings(monkeypatch, tmp_path, session=db_session)
+    storage = FakeStorageAdapter()
+    _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)
     item_id = uuid.uuid4()
-    image_rel = f"/media/{item_id}/orig.jpg"
+    object_path = f"users/{DEFAULT_USER_ID}/{item_id}/orig.jpg"
     item = WardrobeItem(
         id=item_id,
         user_id=DEFAULT_USER_ID,
         category="unknown",
         color="black",
         brand=None,
-        image_url=image_rel,
+        image_object_path=object_path,
         deleted_at=dt.datetime.now(dt.UTC),
     )
     db_session.add(item)
     db_session.commit()
 
-    _create_local_image(tmp_path / str(item_id) / "orig.jpg")
+    storage.objects[object_path] = storage_utils.DownloadedObject(
+        object_path=object_path,
+        data=_create_image_bytes(),
+        content_type="image/jpeg",
+        size=0,
+    )
     invoked = False
 
     def _unexpected_call(path: Path) -> PipelineResult:  # pragma: no cover

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -20,7 +21,6 @@ ENV_FILES = tuple(
     )
 )
 
-UploadMode = Literal["s3", "local"]
 AppEnv = Literal["local", "staging", "production"]
 
 
@@ -29,18 +29,35 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
-    app_env: AppEnv = Field(default="local", alias="APP_ENV")
-    api_key: str | None = Field(default=None, alias="API_KEY")
+    app_env: AppEnv = Field(..., alias="APP_ENV")
     database_url: str = Field(..., alias="DATABASE_URL")
-    aws_region: str | None = Field(default=None, alias="AWS_REGION")
-    s3_bucket_name: str | None = Field(default=None, alias="S3_BUCKET_NAME")
+    supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
+    supabase_public_key: str | None = Field(
+        default=None,
+        alias="SUPABASE_PUBLISHABLE_KEY",
+        validation_alias=AliasChoices("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY"),
+    )
+    supabase_service_role_key: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_storage_bucket: str | None = Field(default=None, alias="SUPABASE_STORAGE_BUCKET")
+    supabase_jwt_audience: str = Field(default="authenticated", alias="SUPABASE_JWT_AUDIENCE")
+    local_auth_bypass: bool | None = Field(default=None, alias="LOCAL_AUTH_BYPASS")
+    local_auth_user_id: uuid.UUID = Field(
+        default=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        alias="LOCAL_AUTH_USER_ID",
+    )
+    local_auth_email: str = Field(
+        default="local-user@styleus.invalid",
+        alias="LOCAL_AUTH_EMAIL",
+    )
     cors_origins: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
 
-    upload_mode: UploadMode | None = Field(default=None, alias="UPLOAD_MODE")
     media_root: str = Field(default="./media", alias="MEDIA_ROOT")
-    media_url_path: str = Field(default="/media", alias="MEDIA_URL_PATH")
     media_max_upload_size: int = Field(default=15 * 1024 * 1024, alias="MEDIA_MAX_UPLOAD_SIZE")
+    supabase_signed_url_ttl_seconds: int = Field(
+        default=3600,
+        alias="SUPABASE_SIGNED_URL_TTL_SECONDS",
+    )
     run_migrations_on_start: bool | None = Field(
         default=None,
         alias="RUN_MIGRATIONS_ON_START",
@@ -87,38 +104,54 @@ class Settings(BaseSettings):
             return f"postgresql+psycopg://{normalized[len('postgresql://'):]}"
         return normalized
 
-    @field_validator("media_url_path")
+    @field_validator("supabase_url")
     @classmethod
-    def normalize_media_url(cls, value: str) -> str:
-        if not value:
-            return "/media"
-        return value if value.startswith("/") else f"/{value}"
+    def normalize_supabase_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized.rstrip("/") or None
+
+    @field_validator("supabase_public_key")
+    @classmethod
+    def normalize_supabase_public_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("supabase_service_role_key", "supabase_storage_bucket")
+    @classmethod
+    def normalize_storage_value(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @model_validator(mode="after")
     def finalize_settings(self) -> Settings:
-        if self.upload_mode is None:
-            self.upload_mode = "s3" if self.aws_region and self.s3_bucket_name else "local"
-
-        if self.upload_mode == "s3" and not (self.aws_region and self.s3_bucket_name):
-            raise ValueError("S3 upload mode requires AWS_REGION and S3_BUCKET_NAME to be set")
-
-        if self.app_env in {"staging", "production"}:
-            missing: list[str] = []
-            if not self.api_key:
-                missing.append("API_KEY")
-            if self.upload_mode == "s3":
-                if not self.aws_region:
-                    missing.append("AWS_REGION")
-                if not self.s3_bucket_name:
-                    missing.append("S3_BUCKET_NAME")
-            if missing:
-                joined = ", ".join(missing)
-                raise ValueError(f"Missing required environment variables: {joined}")
-
         if self.run_migrations_on_start is None:
             self.run_migrations_on_start = self.app_env == "local"
         if self.run_seed_on_start is None:
             self.run_seed_on_start = self.app_env == "local"
+        if self.local_auth_bypass is None:
+            self.local_auth_bypass = self.app_env == "local"
+
+        missing: list[str] = []
+        if self.app_env in {"staging", "production"} and not self.supabase_url:
+            missing.append("SUPABASE_URL")
+        if not self.local_auth_bypass and not self.supabase_url:
+            missing.append("SUPABASE_URL")
+        if self.app_env in {"staging", "production"}:
+            if not self.supabase_service_role_key:
+                missing.append("SUPABASE_SERVICE_ROLE_KEY")
+            if not self.supabase_storage_bucket:
+                missing.append("SUPABASE_STORAGE_BUCKET")
+        if missing:
+            joined = ", ".join(sorted(set(missing)))
+            raise ValueError(f"Missing required environment variables: {joined}")
+        if self.app_env != "local" and self.local_auth_bypass:
+            raise ValueError("LOCAL_AUTH_BYPASS can only be enabled when APP_ENV=local")
 
         if self.seed_limit <= 0:
             raise ValueError("SEED_LIMIT must be greater than zero")
@@ -135,6 +168,8 @@ class Settings(BaseSettings):
             self.ai_color_mask_method = "grabcut"
         if self.ai_color_min_foreground_pixels <= 0:
             self.ai_color_min_foreground_pixels = 3000
+        if self.supabase_signed_url_ttl_seconds <= 0:
+            self.supabase_signed_url_ttl_seconds = 3600
         return self
 
     @property
@@ -151,17 +186,44 @@ class Settings(BaseSettings):
         return self.app_env == "local"
 
     @property
+    def local_auth_bypass_enabled(self) -> bool:
+        return self.is_local_env and bool(self.local_auth_bypass)
+
+    @property
+    def is_supabase_auth_configured(self) -> bool:
+        return bool(self.supabase_url)
+
+    @property
+    def is_supabase_storage_configured(self) -> bool:
+        return bool(
+            self.supabase_url
+            and self.supabase_service_role_key
+            and self.supabase_storage_bucket
+        )
+
+    @property
+    def supabase_issuer(self) -> str | None:
+        if not self.supabase_url:
+            return None
+        return f"{self.supabase_url}/auth/v1"
+
+    @property
+    def supabase_jwks_url(self) -> str | None:
+        issuer = self.supabase_issuer
+        if not issuer:
+            return None
+        return f"{issuer}/.well-known/jwks.json"
+
+    @property
+    def supabase_userinfo_url(self) -> str | None:
+        issuer = self.supabase_issuer
+        if not issuer:
+            return None
+        return f"{issuer}/user"
+
+    @property
     def media_root_path(self) -> Path:
         return Path(self.media_root).expanduser().resolve()
-
-    @property
-    def upload_mode_value(self) -> UploadMode:
-        # upload_mode is guaranteed to be populated in finalize_upload_mode
-        return self.upload_mode or "local"
-
-    @property
-    def is_s3_enabled(self) -> bool:
-        return self.upload_mode_value == "s3"
 
     @property
     def seed_on_start(self) -> bool:

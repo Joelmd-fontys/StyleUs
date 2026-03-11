@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -12,12 +13,15 @@ from sqlalchemy.sql import Select
 
 from app.ai import tasks as ai_tasks
 from app.ai.pipeline import PipelineResult
+from app.core.config import Settings
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
 from app.schemas.items import ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
+from app.utils import storage as storage_utils
 
 _EMPTY_CATEGORY_VALUES = {"", "uncategorized"}
+LOGGER = logging.getLogger("app.services.items")
 
 
 def create_placeholder_item(db: Session, user_id: uuid.UUID) -> WardrobeItem:
@@ -153,16 +157,19 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
 def complete_upload(
     db: Session,
     item: WardrobeItem,
-    image_url: str | None,
+    image_object_path: str | None,
     *,
-    thumb_url: str | None = None,
-    medium_url: str | None = None,
+    thumb_object_path: str | None = None,
+    medium_object_path: str | None = None,
     metadata: ImageMetadata | None = None,
 ) -> WardrobeItem:
-    """Store the image URL on an item once uploads finish."""
-    item.image_url = image_url
-    item.image_thumb_url = thumb_url
-    item.image_medium_url = medium_url
+    """Store image object paths on an item once uploads finish."""
+    item.image_object_path = image_object_path
+    item.image_thumb_object_path = thumb_object_path
+    item.image_medium_object_path = medium_object_path
+    item.image_url = None
+    item.image_thumb_url = None
+    item.image_medium_url = None
 
     if metadata is not None:
         item.image_width = metadata.width
@@ -177,10 +184,44 @@ def complete_upload(
     return item
 
 
-def to_item_detail(item: WardrobeItem) -> ItemDetail:
+def build_signed_media_urls(
+    settings: Settings,
+    items: Sequence[WardrobeItem],
+) -> dict[str, str]:
+    """Resolve temporary signed URLs for all private media paths referenced by the items."""
+    object_paths = collect_media_object_paths(items)
+    if not object_paths:
+        return {}
+    try:
+        return storage_utils.get_storage_adapter(settings).create_signed_urls(object_paths)
+    except storage_utils.SupabaseStorageError as exc:
+        LOGGER.warning("items.sign_media_failed", extra={"error": str(exc)})
+        return {}
+
+
+def collect_media_object_paths(items: Sequence[WardrobeItem]) -> list[str]:
+    """Collect distinct media object paths referenced by the provided items."""
+    paths: list[str] = []
+    for item in items:
+        for path in (
+            item.image_object_path,
+            item.image_medium_object_path,
+            item.image_thumb_object_path,
+        ):
+            if path:
+                paths.append(path)
+    return list(dict.fromkeys(paths))
+
+
+def to_item_detail(
+    item: WardrobeItem,
+    *,
+    signed_urls: Mapping[str, str] | None = None,
+) -> ItemDetail:
     """Convert an ORM object into a Pydantic response model."""
     metadata = _build_image_metadata(item)
     ai_block = _build_item_ai_attributes(item)
+    image_url, medium_url, thumb_url = _resolve_image_urls(item, signed_urls=signed_urls)
 
     return ItemDetail.model_validate(
         {
@@ -191,15 +232,39 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             "brand": item.brand,
             "primary_color": item.primary_color,
             "secondary_color": item.secondary_color,
-            "image_url": item.image_url,
-            "thumb_url": item.image_thumb_url,
-            "medium_url": item.image_medium_url,
+            "image_url": image_url,
+            "thumb_url": thumb_url,
+            "medium_url": medium_url,
             "created_at": item.created_at,
             "tags": [tag.tag for tag in item.tags],
             "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
             "ai_confidence": item.ai_confidence,
             "ai": ai_block.model_dump(by_alias=True) if ai_block else None,
         }
+    )
+
+
+def _resolve_image_urls(
+    item: WardrobeItem,
+    *,
+    signed_urls: Mapping[str, str] | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    signed_urls = signed_urls or {}
+    image_url = signed_urls.get(item.image_object_path or "") if item.image_object_path else None
+    medium_url = (
+        signed_urls.get(item.image_medium_object_path or "")
+        if item.image_medium_object_path
+        else None
+    )
+    thumb_url = (
+        signed_urls.get(item.image_thumb_object_path or "")
+        if item.image_thumb_object_path
+        else None
+    )
+    return (
+        image_url or item.image_url,
+        medium_url or item.image_medium_url,
+        thumb_url or item.image_thumb_url,
     )
 
 
@@ -218,7 +283,7 @@ def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
     """Guarantee the backing user row exists before creating child objects."""
     user = db.get(User, user_id)
     if user is None:
-        user = User(id=user_id, email=f"user-{user_id}@example.com")
+        user = User(id=user_id, email=f"user-{user_id}@styleus.invalid")
         db.add(user)
         db.flush()
     return user

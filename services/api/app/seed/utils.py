@@ -12,6 +12,8 @@ from pathlib import Path
 import yaml  # type: ignore[import-untyped]
 from PIL import Image
 
+from app.utils.http import urlopen
+
 MAX_REMOTE_BYTES = 10 * 1024 * 1024  # 10MB ceiling for remote assets
 ALLOWED_CONTENT_TYPES: dict[str, str] = {
     ".jpg": "image/jpeg",
@@ -121,7 +123,7 @@ def _load_local_image(path: Path, slug: str) -> tuple[bytes, str, str]:
 
 def _load_remote_image(url: str, slug: str) -> tuple[bytes, str, str]:
     request = urllib.request.Request(url, headers={"User-Agent": "StyleUsSeeder/1.0"})
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urlopen(request, timeout=10) as response:
         content_length = response.getheader("Content-Length")
         if content_length and int(content_length) > MAX_REMOTE_BYTES:
             raise SeedSourceError(f"Remote image too large for seed '{slug}'")

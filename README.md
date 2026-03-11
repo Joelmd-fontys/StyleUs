@@ -7,25 +7,26 @@ StyleUs is a wardrobe cataloging app with an AI-assisted review flow. The curren
 3. Run local AI enrichment for category, colors, and tags.
 4. Review the suggestions, accept or edit them, and save the item.
 
-The repository is a small monorepo with a React frontend and a FastAPI backend. The repo is now prepared for a split database strategy: local development still uses Docker Postgres, while hosted environments can point the backend at Supabase Postgres without changing the ORM or migration flow.
+The repository is a small monorepo with a React frontend and a FastAPI backend. The repo now supports a split infrastructure model: local development still uses Docker Postgres and can keep a local-only auth bypass, while hosted environments are expected to use Supabase Postgres plus Supabase Auth without changing the ORM or migration flow.
 
 ## Repository layout
 
 - `apps/web` - Vite + React + TypeScript client with Tailwind, React Router, Zustand, and MSW.
-- `services/api` - FastAPI + SQLAlchemy + Alembic API with uploads, local media serving, seeding, and embedded AI classification.
+- `services/api` - FastAPI + SQLAlchemy + Alembic API with private Supabase Storage uploads, seeding, and embedded AI classification.
 - `docs` - architecture, environment, and product notes.
 - `dev.sh` - local launcher for Postgres, migrations, API, and web app.
 
 ## What is implemented today
 
 - Wardrobe list, search, filter, detail, edit, and soft delete flows.
-- Upload flow with local uploads or S3 presigned uploads.
+- Upload flow with API-issued Supabase signed upload targets.
 - Upload review screen with AI preview, confidence bars, accept, edit, and cancel actions.
 - Background AI enrichment for category, subcategory, colors, materials, style tags, and top tags.
-- Local media variants (`orig`, `medium`, `thumb`) plus stored image metadata.
+- Private Supabase Storage variants (`orig`, `medium`, `thumb`) plus stored image metadata and signed read URLs.
 - Deterministic local seed dataset for demo and development.
+- Supabase Auth in the frontend plus bearer-token validation in the FastAPI API.
 
-The `Outfits` page and most settings are still placeholders. Supabase Auth, Supabase Storage, and a separate background worker are planned for later migration phases and are not implemented yet.
+The `Outfits` page and most settings are still placeholders. A separate background worker is still planned for a later migration phase.
 
 ## Local quickstart
 
@@ -47,6 +48,8 @@ This script:
 - starts the API on `http://localhost:8000`;
 - starts the web app on `http://localhost:5173`.
 
+Live uploads require real Supabase Auth/Storage values in `services/api/.env` and `apps/web/.env.local`. Without those values, the app can still run locally, but the direct-upload storage path will not work.
+
 Useful repo-level commands:
 
 ```bash
@@ -61,7 +64,7 @@ make typecheck
 
 The repo now treats environments explicitly as:
 
-- `local` - developer workstation with Docker Postgres, local media, auto-migrations, and optional auto-seeding.
+- `local` - developer workstation with Docker Postgres, Supabase Auth/Storage wiring, auto-migrations, and optional auto-seeding.
 - `staging` - pre-production deployment with production-like infrastructure and safe startup defaults.
 - `production` - public deployment with the same safe startup defaults as staging.
 
@@ -81,6 +84,42 @@ Staging and production env vars are intended to live in platform-managed secret 
 - Render for `services/api`
 
 See [docs/config/environments.md](docs/config/environments.md) for the full environment matrix.
+
+### Auth behavior by environment
+
+- `local` can still use `LOCAL_AUTH_BYPASS=true` on the API for the existing guest-style workflow.
+- `local` can also use real Supabase Auth by setting:
+  - `apps/web/.env.local` -> `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
+  - `services/api/.env` -> `SUPABASE_URL`
+- the fallback local identity and seeded demo wardrobe are confined to `APP_ENV=local`
+- `staging` and `production` require real Supabase bearer tokens and do not fall back to the local bypass.
+
+### Supabase Auth setup
+
+Minimum manual setup in the Supabase dashboard:
+
+1. Open Authentication -> Sign In / Providers and enable Email.
+2. Decide whether Confirm email should stay enabled for new signups.
+3. Open Authentication -> URL Configuration and set:
+   - Site URL: your active frontend origin, for example `http://127.0.0.1:5173` locally
+   - Additional Redirect URLs: every SPA origin you plan to use, including local, staging, and production
+4. Copy the project URL into:
+   - `VITE_SUPABASE_URL` for the frontend
+   - `SUPABASE_URL` for the backend
+5. Copy the public browser key into `VITE_SUPABASE_PUBLISHABLE_KEY`.
+   - `VITE_SUPABASE_ANON_KEY` still works as a legacy alias if your project has not moved to publishable keys yet.
+6. If your Supabase project still signs access tokens with the legacy shared secret instead of asymmetric keys, also set `SUPABASE_PUBLISHABLE_KEY` on the backend.
+
+### Supabase Storage setup
+
+Minimum manual setup in the Supabase dashboard:
+
+1. Open Storage and create a private bucket, for example `wardrobe-images`.
+2. Set the bucket file size limit to match `MEDIA_MAX_UPLOAD_SIZE` on the API.
+3. Restrict allowed MIME types to `image/jpeg`, `image/png`, and `image/webp`.
+4. Copy the bucket name into `SUPABASE_STORAGE_BUCKET`.
+5. Copy the service-role key into `SUPABASE_SERVICE_ROLE_KEY` on the backend only.
+6. Keep the bucket private. The app now serves image reads through temporary signed URLs only.
 
 ## Database strategy
 
@@ -138,11 +177,9 @@ That target architecture is documented here:
 
 1. The frontend calls `POST /items/presign`.
 2. The API creates a placeholder wardrobe item.
-3. The frontend uploads bytes to either:
-   - a local API upload endpoint, or
-   - an S3 presigned URL.
+3. The frontend uploads the source image directly to a private Supabase Storage object using the signed upload target.
 4. The frontend calls `POST /items/{item_id}/complete-upload`.
-5. The API generates normalized image variants, stores metadata, and schedules AI classification.
+5. The API downloads the private source object, generates normalized image variants, stores private object paths plus metadata, and schedules AI classification.
 
 ### Review flow
 
@@ -162,8 +199,6 @@ That target architecture is documented here:
 
 Still not part of the current repository implementation:
 
-- adding Supabase Auth
-- migrating uploads to Supabase Storage
 - introducing the Render worker
 - production deployment rollout
 

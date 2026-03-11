@@ -21,12 +21,15 @@ class ImageMetadata(CamelModel):
 class PresignRequest(CamelModel):
     content_type: str = Field(alias="contentType")
     file_name: str = Field(alias="fileName")
+    file_size: int = Field(alias="fileSize")
 
 
 class PresignResponse(CamelModel):
     upload_url: str = Field(alias="uploadUrl")
     item_id: uuid.UUID = Field(alias="itemId")
     object_key: str | None = Field(default=None, alias="objectKey")
+    upload_token: str | None = Field(default=None, alias="uploadToken")
+    bucket: str | None = None
 
 
 class ItemBase(CamelModel):

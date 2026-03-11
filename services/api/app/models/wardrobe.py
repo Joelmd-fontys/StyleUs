@@ -25,6 +25,9 @@ class WardrobeItem(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    image_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_thumb_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_medium_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_thumb_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_medium_url: Mapped[str | None] = mapped_column(Text, nullable=True)

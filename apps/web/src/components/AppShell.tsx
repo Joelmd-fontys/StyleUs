@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
 import Button from './Button';
 import { cn } from '../lib/utils';
 import { useWardrobeStore } from '../store/wardrobe';
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
 const AppShell = () => {
   const location = useLocation();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const { isConfigured, user, signOut } = useAuth();
   const flashMessage = useWardrobeStore((state) => state.flashMessage);
   const clearFlashMessage = useWardrobeStore((state) => state.clearFlashMessage);
 
@@ -61,6 +63,8 @@ const AppShell = () => {
       })}
     </ul>
   );
+
+  const userLabel = user?.email ?? 'Guest';
 
   return (
     <div className="flex min-h-screen bg-neutral-50">
@@ -106,7 +110,12 @@ const AppShell = () => {
             </div>
             <div className="flex items-center gap-3 text-sm text-neutral-500">
               <span>Signed in as</span>
-              <span className="font-medium text-neutral-900">Guest</span>
+              <span className="font-medium text-neutral-900">{userLabel}</span>
+              {isConfigured ? (
+                <Button variant="secondary" size="sm" onClick={() => void signOut()}>
+                  Sign out
+                </Button>
+              ) : null}
             </div>
           </div>
           {isMobileNavOpen ? (

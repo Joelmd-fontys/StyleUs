@@ -16,7 +16,7 @@ Browser
 FastAPI API
 -> Supabase Postgres
 -> Supabase Storage (later phase)
--> Supabase Auth token validation (later phase)
+-> Supabase Auth token validation
 
 FastAPI API
 -> Render worker enqueue boundary (later phase)
@@ -39,8 +39,8 @@ Should expose only browser-safe variables such as:
 
 - `VITE_APP_ENV`
 - `VITE_API_BASE_URL`
-- later, `VITE_SUPABASE_URL`
-- later, `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
 ### Render web service
 
@@ -55,9 +55,9 @@ Owns:
 Should own private variables such as:
 
 - `DATABASE_URL`
-- `API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_JWT_AUDIENCE`
 - storage credentials
-- future auth verification secrets/config
 - AI pipeline configuration
 
 ### Render worker
@@ -111,10 +111,11 @@ Implemented now:
 - startup mutation is config-gated
 - docs reflect the Vercel + Render + Supabase target split
 - the backend can now point `DATABASE_URL` at Supabase Postgres while keeping SQLAlchemy and Alembic unchanged
+- the frontend can sign in with Supabase Auth and send bearer tokens to FastAPI
+- FastAPI validates Supabase JWTs and maps `sub` to the application user ID
 
 Later phases will implement:
 
-- Supabase Auth
 - Supabase Storage
 - Render worker runtime
 - actual hosted deployment rollout

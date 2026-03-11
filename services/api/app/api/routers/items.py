@@ -10,13 +10,14 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user_id, get_db, verify_api_key
+from app.api.deps import get_current_user_id, get_db, get_settings_dependency
+from app.core.config import Settings
 from app.core.errors import error_response
 from app.models.wardrobe import WardrobeItem
 from app.schemas.items import ItemAIPreview, ItemDetail, ItemUpdate
 from app.services import items as items_service
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter()
 
 
 @router.get("", response_model=list[ItemDetail], response_model_by_alias=True)
@@ -30,6 +31,7 @@ def list_wardrobe_items(
     created_since: datetime.datetime | None = Query(default=None, alias="createdSince"),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings_dependency),
 ) -> list[ItemDetail]:
     """Return wardrobe items for the current user applying optional filters."""
 
@@ -43,7 +45,8 @@ def list_wardrobe_items(
         include_deleted=include_deleted,
         created_since=created_since,
     )
-    return [items_service.to_item_detail(item) for item in items]
+    signed_urls = items_service.build_signed_media_urls(settings, items)
+    return [items_service.to_item_detail(item, signed_urls=signed_urls) for item in items]
 
 
 @router.get("/{item_id}", response_model=ItemDetail, response_model_by_alias=True)
@@ -52,6 +55,7 @@ def get_wardrobe_item(
     item_id: uuid.UUID,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings_dependency),
 ) -> ItemDetail | JSONResponse:
     """Fetch a single wardrobe item or respond with 404 if it is missing."""
 
@@ -60,7 +64,8 @@ def get_wardrobe_item(
         response = error_response("not_found", "Wardrobe item not found", {"itemId": str(item_id)})
         response.status_code = status.HTTP_404_NOT_FOUND
         return response
-    return items_service.to_item_detail(item)
+    signed_urls = items_service.build_signed_media_urls(settings, [item])
+    return items_service.to_item_detail(item, signed_urls=signed_urls)
 
 
 @router.get("/{item_id}/ai-preview", response_model=ItemAIPreview, response_model_by_alias=True)

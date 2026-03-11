@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.wardrobe import WardrobeItem
 from app.services import items as items_service
-from app.utils import s3 as s3_utils
+from app.utils import storage as storage_utils
 
 LOGGER = logging.getLogger("app.ai.tasks")
 
@@ -53,15 +53,19 @@ def classify_and_update_item(item_id: UUID) -> None:
         if item.deleted_at is not None:
             LOGGER.debug("ai.tasks.skipped_deleted", extra={"item_id": str(item_id)})
             return
-        if not item.image_url:
+        if not item.image_object_path and not item.image_url:
             LOGGER.debug("ai.tasks.skipped_no_image", extra={"item_id": str(item_id)})
             return
 
-        image_path, cleanup_path = _prepare_image(item.image_url)
+        image_path, cleanup_path = _prepare_item_image(item)
         if image_path is None:
             LOGGER.warning(
                 "ai.tasks.image_unavailable",
-                extra={"item_id": str(item_id), "image_url": item.image_url},
+                extra={
+                    "item_id": str(item_id),
+                    "image_object_path": item.image_object_path,
+                    "image_url": item.image_url,
+                },
             )
             return
 
@@ -92,53 +96,48 @@ def classify_and_update_item(item_id: UUID) -> None:
         _apply_classification(session, item, pipeline_result)
 
 
-def _prepare_image(image_url: str) -> tuple[Path | None, bool]:
+def _prepare_item_image(item: WardrobeItem) -> tuple[Path | None, bool]:
+    if item.image_object_path:
+        return _download_from_storage(item.image_object_path)
+    if item.image_url:
+        return _prepare_legacy_image(item.image_url)
+    return None, False
+
+
+def _prepare_legacy_image(image_url: str) -> tuple[Path | None, bool]:
     """Return a local path to the image and whether it should be cleaned up."""
     parsed = urlparse(image_url)
-    # Local mode: relative URLs served from MEDIA_ROOT.
     if not parsed.scheme or parsed.scheme == "" or parsed.scheme == "file":
         return _resolve_local_image(Path(parsed.path or image_url)), False
     if parsed.scheme in {"http", "https"}:
-        if settings.is_s3_enabled and settings.aws_region and settings.s3_bucket_name:
-            return _download_from_s3(parsed.path), True
-        # If we are not in S3 mode, treat as local path within the same host.
         return _resolve_local_image(Path(parsed.path)), False
     return None, False
 
 
 def _resolve_local_image(path: Path) -> Path | None:
-    media_prefix = settings.media_url_path.rstrip("/")
     candidate = path.as_posix()
     if candidate.startswith("http"):
         candidate = urlparse(candidate).path
-    if media_prefix and candidate.startswith(media_prefix):
-        relative = candidate[len(media_prefix) :].lstrip("/")
-    else:
-        relative = candidate.lstrip("/")
-    local_path = settings.media_root_path / relative
+    local_path = settings.media_root_path / candidate.lstrip("/")
     if local_path.exists():
         return local_path
     return None
 
 
-def _download_from_s3(object_path: str) -> Path | None:
+def _download_from_storage(object_path: str) -> tuple[Path | None, bool]:
     key = object_path.lstrip("/")
     if not key:
-        return None
+        return None, False
     try:
-        data = s3_utils.download_object(
-            bucket=settings.s3_bucket_name,  # type: ignore[arg-type]
-            key=key,
-            region=settings.aws_region,  # type: ignore[arg-type]
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        LOGGER.warning("ai.tasks.s3_download_failed", extra={"key": key, "error": str(exc)})
-        return None
+        downloaded = storage_utils.get_storage_adapter(settings).download_object(key)
+    except storage_utils.SupabaseStorageError as exc:  # pragma: no cover - defensive
+        LOGGER.warning("ai.tasks.storage_download_failed", extra={"key": key, "error": str(exc)})
+        return None, False
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="styleus_ai_"))
     tmp_path = tmp_dir / Path(key).name
-    tmp_path.write_bytes(data)
-    return tmp_path
+    tmp_path.write_bytes(downloaded.data)
+    return tmp_path, True
 
 
 def _safe_unlink(path: Path) -> None:
@@ -291,10 +290,10 @@ def _apply_classification(
 def get_pipeline_preview(item: WardrobeItem) -> PipelineResult | None:
     """Run the AI pipeline for an item without persisting side effects."""
 
-    if not item.image_url:
+    if not item.image_object_path and not item.image_url:
         return None
 
-    image_path, cleanup_required = _prepare_image(item.image_url)
+    image_path, cleanup_required = _prepare_item_image(item)
     if image_path is None:
         return None
 

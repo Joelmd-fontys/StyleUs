@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { AuthProvider } from './auth/AuthProvider';
 import './index.css';
 import { USE_LIVE_API_ITEMS, USE_LIVE_API_UPLOAD } from './lib/config';
 
@@ -27,9 +28,11 @@ const enableMocking = async () => {
 enableMocking().finally(() => {
   root.render(
     <React.StrictMode>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AuthProvider>
     </React.StrictMode>
   );
 });
