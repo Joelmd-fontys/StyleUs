@@ -43,3 +43,6 @@ services/api/.env.example
 apps/web/.env.example
 .env.example
 apps/web/.env.example
+.env.example
+apps/web/.env.example
+services/api/.env.example
