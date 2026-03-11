@@ -354,18 +354,21 @@ def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
 
 def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
     job_state = _build_ai_job_state(item.ai_job)
+    payload = _build_job_preview_payload(item.ai_job)
     return ItemAIPreview.model_validate(
         {
-            "category": _normalized_item_category(item),
-            "category_confidence": item.ai_confidence,
-            "subcategory": item.subcategory,
-            "subcategory_confidence": None,
-            "primary_color": item.primary_color or None,
-            "secondary_color": item.secondary_color or None,
-            "materials": list(item.ai_materials or []),
-            "style_tags": list(item.ai_style_tags or [])[:3],
-            "tags": [tag.tag for tag in item.tags],
-            "confidence": item.ai_confidence,
+            "category": payload.get("category", _normalized_item_category(item)),
+            "category_confidence": payload.get("category_confidence", item.ai_confidence),
+            "subcategory": payload.get("subcategory", item.subcategory),
+            "subcategory_confidence": payload.get("subcategory_confidence"),
+            "primary_color": payload.get("primary_color", item.primary_color or None),
+            "primary_color_confidence": payload.get("primary_color_confidence"),
+            "secondary_color": payload.get("secondary_color", item.secondary_color or None),
+            "secondary_color_confidence": payload.get("secondary_color_confidence"),
+            "materials": payload.get("materials", list(item.ai_materials or [])),
+            "style_tags": payload.get("style_tags", list(item.ai_style_tags or [])[:3]),
+            "tags": payload.get("tags", [tag.tag for tag in item.tags]),
+            "confidence": payload.get("confidence", item.ai_confidence),
             "pending": bool(job_state and job_state.pending),
             "job": job_state.model_dump(by_alias=True) if job_state else None,
         }
@@ -389,3 +392,9 @@ def _build_ai_job_state(job: AIJob | None) -> AIJobState | None:
             "pending": pending,
         }
     )
+
+
+def _build_job_preview_payload(job: AIJob | None) -> dict[str, object]:
+    if job is None or not isinstance(job.result_payload, dict):
+        return {}
+    return dict(job.result_payload)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from sqlalchemy import and_, case, or_, select, update
@@ -16,6 +17,7 @@ from app.models.wardrobe import WardrobeItem
 LOGGER = logging.getLogger("app.services.ai_jobs")
 _MAX_ERROR_MESSAGE_LENGTH = 2000
 _DELETED_ITEM_ERROR = "Wardrobe item deleted before AI enrichment"
+AIJobResultPayload = Mapping[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,7 @@ def enqueue_item_job(db: Session, item: WardrobeItem, *, commit: bool = True) ->
         job.completed_at = None
         job.attempts = 0
         job.error_message = None
+        job.result_payload = None
         db.add(job)
 
     if commit:
@@ -105,6 +108,7 @@ def claim_next_job(
     job.started_at = now
     job.completed_at = None
     job.error_message = None
+    job.result_payload = None
     job.attempts += 1
     db.add(job)
     db.commit()
@@ -118,7 +122,13 @@ def claim_next_job(
     )
 
 
-def mark_job_completed(db: Session, job_id: uuid.UUID, *, commit: bool = True) -> AIJob | None:
+def mark_job_completed(
+    db: Session,
+    job_id: uuid.UUID,
+    *,
+    result_payload: AIJobResultPayload | None = None,
+    commit: bool = True,
+) -> AIJob | None:
     """Mark an AI job as completed."""
 
     job = db.get(AIJob, job_id)
@@ -128,6 +138,7 @@ def mark_job_completed(db: Session, job_id: uuid.UUID, *, commit: bool = True) -
     job.status = AIJobStatus.COMPLETED.value
     job.completed_at = dt.datetime.now(dt.UTC)
     job.error_message = None
+    job.result_payload = dict(result_payload) if result_payload is not None else None
     db.add(job)
     if commit:
         db.commit()
@@ -158,10 +169,12 @@ def mark_job_failed(
     if terminal:
         job.status = AIJobStatus.FAILED.value
         job.completed_at = dt.datetime.now(dt.UTC)
+        job.result_payload = None
     else:
         job.status = AIJobStatus.PENDING.value
         job.started_at = None
         job.completed_at = None
+        job.result_payload = None
     db.add(job)
     if commit:
         db.commit()
@@ -199,6 +212,7 @@ def _fail_deleted_item_jobs(db: Session, *, now: dt.datetime) -> None:
             status=AIJobStatus.FAILED.value,
             completed_at=now,
             error_message=_DELETED_ITEM_ERROR,
+            result_payload=None,
         )
     )
     db.flush()

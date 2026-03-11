@@ -113,11 +113,33 @@ def test_delete_marks_item_and_hides_from_listing(client, db_session):
 
 def test_ai_preview_endpoint_returns_predictions(client, db_session):
     item, _ = seed_items(db_session)
-    item.primary_color = "Camel"
-    item.secondary_color = "Tan"
-    item.ai_confidence = 0.82
+    item.category = "uncategorized"
+    item.subcategory = None
+    item.primary_color = None
+    item.secondary_color = None
+    item.ai_confidence = None
     db_session.add(item)
-    db_session.add(AIJob(item_id=item.id, status="completed", attempts=1))
+    db_session.add(
+        AIJob(
+            item_id=item.id,
+            status="completed",
+            attempts=1,
+            result_payload={
+                "category": "top",
+                "category_confidence": 0.82,
+                "subcategory": "t-shirt",
+                "subcategory_confidence": 0.71,
+                "primary_color": "Camel",
+                "primary_color_confidence": 0.69,
+                "secondary_color": "Tan",
+                "secondary_color_confidence": 0.52,
+                "materials": ["cotton"],
+                "style_tags": ["minimal"],
+                "tags": ["minimal", "cotton"],
+                "confidence": 0.82,
+            },
+        )
+    )
     db_session.commit()
 
     response = client.get(f"/items/{item.id}/ai-preview")
@@ -127,15 +149,16 @@ def test_ai_preview_endpoint_returns_predictions(client, db_session):
     assert payload["subcategory"] == "t-shirt"
     assert payload["primaryColor"] == "Camel"
     assert payload["secondaryColor"] == "Tan"
-    assert payload["materials"] == []
-    assert payload["styleTags"] == []
+    assert payload["materials"] == ["cotton"]
+    assert payload["styleTags"] == ["minimal"]
+    assert payload["tags"] == ["minimal", "cotton"]
     assert payload["confidence"] == 0.82
     assert payload["categoryConfidence"] == 0.82
+    assert payload["subcategoryConfidence"] == 0.71
+    assert payload["primaryColorConfidence"] == 0.69
+    assert payload["secondaryColorConfidence"] == 0.52
     assert payload["pending"] is False
     assert payload["job"]["status"] == "completed"
-    assert payload["primaryColorConfidence"] is None or isinstance(
-        payload["primaryColorConfidence"], float
-    )
 
 
 def test_ai_preview_endpoint_reports_pending_job_without_running_pipeline(client, db_session):

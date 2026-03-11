@@ -152,6 +152,34 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
     assert refreshed.ai_style_tags == ["heritage"]
 
 
+def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
+    payload = ai_tasks.build_ai_preview_payload(
+        _mock_pipeline_result(
+            primary="Camel",
+            secondary="Tan",
+            color_conf=0.82,
+            secondary_conf=0.74,
+            category="outerwear",
+            category_conf=0.92,
+            materials=[("leather", 0.88), ("wool", 0.81)],
+            style_tags=[("heritage", 0.84), ("minimal", 0.77)],
+            subcategory="coat",
+            subcategory_conf=0.91,
+        )
+    )
+
+    assert payload["category"] == "outerwear"
+    assert payload["subcategory"] == "coat"
+    assert payload["primary_color"] == "Camel"
+    assert payload["secondary_color"] == "Tan"
+    assert payload["primary_color_confidence"] == pytest.approx(0.82)
+    assert payload["secondary_color_confidence"] == pytest.approx(0.74)
+    assert payload["materials"] == ["leather", "wool"]
+    assert payload["style_tags"] == ["heritage", "minimal"]
+    assert payload["tags"] == ["leather", "heritage", "wool"]
+    assert payload["confidence"] == pytest.approx(0.92)
+
+
 def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypatch):
     storage = FakeStorageAdapter()
     _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)

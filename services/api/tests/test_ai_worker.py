@@ -130,6 +130,12 @@ def test_worker_processes_pending_job_and_marks_completed(db_session, tmp_path, 
     assert job.status == AIJobStatus.COMPLETED.value
     assert job.attempts == 1
     assert job.completed_at is not None
+    assert job.result_payload is not None
+    assert job.result_payload["category"] == "outerwear"
+    assert job.result_payload["subcategory"] == "coat"
+    assert job.result_payload["primary_color"] == "Camel"
+    assert job.result_payload["secondary_color"] == "Tan"
+    assert job.result_payload["tags"] == ["wool", "heritage"]
 
 
 def test_worker_retries_job_until_failure_limit(db_session, tmp_path, monkeypatch):

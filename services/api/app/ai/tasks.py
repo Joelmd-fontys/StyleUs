@@ -64,6 +64,42 @@ def select_top_tags(
     return ordered[:limit]
 
 
+def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
+    """Serialize the full AI suggestion set for durable preview responses."""
+
+    clip = result.clip
+    color_result = result.colors
+    materials = [name for name, _score in clip.get("materials", [])[:5]]
+    style_tags = [name for name, _score in clip.get("style_tags", [])[:5]]
+    tags = [name for name, _score in select_top_tags(clip, threshold=0.0, limit=3)]
+
+    payload = {
+        "category": clip.get("category"),
+        "category_confidence": clip.get("category_confidence"),
+        "subcategory": clip.get("subcategory"),
+        "subcategory_confidence": clip.get("subcategory_confidence"),
+        "primary_color": _normalize_preview_color(color_result.primary_color),
+        "primary_color_confidence": color_result.confidence,
+        "secondary_color": _normalize_preview_color(color_result.secondary_color),
+        "secondary_color_confidence": color_result.secondary_confidence,
+        "materials": materials,
+        "style_tags": style_tags,
+        "tags": tags,
+        "confidence": clip.get("category_confidence"),
+    }
+    LOGGER.info(
+        "ai.tasks.preview_payload_built",
+        extra={
+            "category": payload["category"],
+            "subcategory": payload["subcategory"],
+            "primary_color": payload["primary_color"],
+            "secondary_color": payload["secondary_color"],
+            "tags": payload["tags"],
+        },
+    )
+    return payload
+
+
 def classify_and_update_item(item_id: UUID) -> None:
     """Run classification for the given wardrobe item and persist predictions."""
     if not settings.ai_enable_classifier:
@@ -197,6 +233,15 @@ def _prepare_item_image(item: WardrobeItem) -> PreparedItemImage | None:
     if item.image_url:
         return _prepare_legacy_image(item.image_url)
     return None
+
+
+def _normalize_preview_color(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.lower() in {"unknown", "unspecified"}:
+        return None
+    return normalized
 
 
 def _prepare_legacy_image(image_url: str) -> PreparedItemImage | None:
@@ -430,12 +475,12 @@ def get_pipeline_preview(item: WardrobeItem) -> PipelineResult | None:
     if not item.image_object_path and not item.image_url:
         return None
 
-    image_path, cleanup_required = _prepare_item_image(item)
-    if image_path is None:
+    prepared_image = _prepare_item_image(item)
+    if prepared_image is None:
         return None
 
     try:
-        return pipeline.run(image_path)
+        return pipeline.run(prepared_image.path)
     except Exception as exc:  # pragma: no cover - defensive
         LOGGER.warning(
             "ai.tasks.preview_failed",
@@ -443,5 +488,5 @@ def get_pipeline_preview(item: WardrobeItem) -> PipelineResult | None:
         )
         return None
     finally:
-        if cleanup_required:
-            _safe_unlink(image_path)
+        if prepared_image.cleanup_required:
+            _safe_unlink(prepared_image.path)

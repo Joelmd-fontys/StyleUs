@@ -206,7 +206,7 @@ describe('UploadReviewPage', () => {
     });
   });
 
-  it('keeps the page interactive while pending results are still polling', async () => {
+  it('blocks interaction while pending results are still polling', async () => {
     useWardrobeStore.setState((state) => ({
       ...state,
       uploadReview: {
@@ -227,13 +227,19 @@ describe('UploadReviewPage', () => {
 
     renderPage();
 
-    expect(screen.queryByText(/Analyzing your item/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/AI suggestions are still processing/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeEnabled();
+    expect(screen.getByText(/Analyzing your item/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Reading image features|Estimating garment shape|Detecting color signals|Ranking category matches|Preparing suggestions/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText(/This usually takes a few seconds/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /accept predictions/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled();
   });
 
-  it('shows a longer-running warning when pending AI exceeds the expected window', async () => {
+  it('shows a longer-running loading message when pending AI exceeds the expected window', async () => {
     const delayedPendingAI = {
       ...mockPendingAI,
       job: {
@@ -263,7 +269,7 @@ describe('UploadReviewPage', () => {
 
     renderPage();
 
-    expect(screen.getByText(/taking longer than usual/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeEnabled();
+    expect(screen.getByText(/Still running the AI pipeline/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeDisabled();
   });
 });

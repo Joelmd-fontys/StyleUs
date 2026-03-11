@@ -7,7 +7,7 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -54,6 +54,7 @@ class AIJob(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
 
     item: Mapped[WardrobeItem] = relationship("WardrobeItem", back_populates="ai_job")
 

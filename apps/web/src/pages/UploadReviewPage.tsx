@@ -24,6 +24,13 @@ const toDisplayTags = (input: string): string[] =>
     .filter(Boolean);
 
 const LONG_RUNNING_PENDING_MS = 20_000;
+const AI_LOADING_STEPS = [
+  'Reading image features',
+  'Estimating garment shape',
+  'Detecting color signals',
+  'Ranking category matches',
+  'Preparing suggestions'
+] as const;
 
 const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
   if (!ai) {
@@ -65,6 +72,7 @@ const UploadReviewPage = (): ReactElement | null => {
     tagsInput: ''
   });
   const [isPolling, setIsPolling] = useState(false);
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
 
   const item = uploadReview?.item;
   const ai = uploadReview?.ai;
@@ -250,8 +258,23 @@ const UploadReviewPage = (): ReactElement | null => {
   const isInitialAnalyzing =
     uploadReview !== undefined &&
     (Boolean(uploadReview.loading && !uploadReview.ai) || (!uploadReview.ai && !uploadReview.error));
-  const showPendingNotice =
-    uploadReview !== undefined && !uploadReview.error && aiPending && !isInitialAnalyzing;
+  const isAwaitingPredictions = aiPending || isInitialAnalyzing;
+  const showBlockingOverlay =
+    uploadReview !== undefined && !uploadReview?.error && isAwaitingPredictions;
+  const loadingProgress =
+    18 + (loadingStepIndex / Math.max(AI_LOADING_STEPS.length - 1, 1)) * 64;
+  const loadingStage = AI_LOADING_STEPS[loadingStepIndex];
+
+  useEffect(() => {
+    if (!showBlockingOverlay) {
+      setLoadingStepIndex(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setLoadingStepIndex((current) => (current + 1) % AI_LOADING_STEPS.length);
+    }, 1400);
+    return () => window.clearInterval(interval);
+  }, [showBlockingOverlay]);
 
   const renderImagePreview = () => {
     const hasImage = Boolean(item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl);
@@ -378,20 +401,37 @@ const UploadReviewPage = (): ReactElement | null => {
 
       <div className="grid gap-8 rounded-2xl bg-white/90 p-6 shadow-sm backdrop-blur md:grid-cols-[320px,1fr]">
         <div>{renderImagePreview()}</div>
-        <div className="relative space-y-6" aria-busy={isInitialAnalyzing}>
-          {isInitialAnalyzing ? (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-white/85 backdrop-blur-sm">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
+        <div className="relative space-y-6" aria-busy={showBlockingOverlay}>
+          {showBlockingOverlay ? (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-white/92 px-8 text-center backdrop-blur-sm">
+              <div
+                className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white px-6 py-7 shadow-sm"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 shadow-sm">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-neutral-900">Analyzing your item</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.18em] text-neutral-500">
+                  {loadingStage}
+                </p>
+                <div className="mt-5 h-2 overflow-hidden rounded-full bg-neutral-200">
+                  <div
+                    className="h-full rounded-full bg-accent-500 transition-all duration-700 ease-out"
+                    style={{ width: `${loadingProgress}%` }}
+                  />
+                </div>
+                <p className="mt-3 text-xs text-neutral-500">
+                  {aiPendingLongerThanExpected
+                    ? 'Still running the AI pipeline.'
+                    : 'This usually takes a few seconds.'}
+                </p>
               </div>
-              <p className="mt-4 text-sm font-semibold text-neutral-800">Analyzing your item…</p>
-              <p className="mt-1 text-xs text-neutral-500">
-                We&apos;re preparing color and style suggestions.
-              </p>
             </div>
           ) : null}
 
-          <div className={cn('space-y-4', isInitialAnalyzing ? 'pointer-events-none opacity-40' : '')}>
+          <div className={cn('space-y-4', showBlockingOverlay ? 'pointer-events-none opacity-40' : '')}>
             {uploadReview?.error ? (
               <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-600">
                 {uploadReview.error}
@@ -400,19 +440,6 @@ const UploadReviewPage = (): ReactElement | null => {
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
                 AI suggestions could not be completed automatically. You can continue by editing the
                 item manually.
-              </div>
-            ) : showPendingNotice ? (
-              <div
-                className={cn(
-                  'rounded-lg p-4 text-sm',
-                  aiPendingLongerThanExpected
-                    ? 'border border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border border-sky-200 bg-sky-50 text-sky-700'
-                )}
-              >
-                {aiPendingLongerThanExpected
-                  ? 'AI suggestions are taking longer than usual. This page will keep refreshing automatically, and you can continue with manual edits while the worker finishes.'
-                  : 'AI suggestions are still processing. This page will keep refreshing automatically, and you can continue with manual edits if you do not want to wait.'}
               </div>
             ) : null}
 
@@ -565,7 +592,7 @@ const UploadReviewPage = (): ReactElement | null => {
                 type="button"
                 variant="secondary"
                 onClick={handleConfirmEdits}
-                disabled={uploadReview?.isConfirming}
+                disabled={isAwaitingPredictions || uploadReview?.isConfirming}
               >
                 Confirm changes
               </Button>
@@ -574,12 +601,17 @@ const UploadReviewPage = (): ReactElement | null => {
                 type="button"
                 variant="secondary"
                 onClick={() => setMode('edit')}
-                disabled={Boolean(uploadReview?.loading && !uploadReview?.ai)}
+                disabled={isAwaitingPredictions || Boolean(uploadReview?.loading && !uploadReview?.ai)}
               >
                 Edit & Confirm
               </Button>
             )}
-            <Button type="button" variant="ghost" onClick={handleCancel}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancel}
+              disabled={isAwaitingPredictions}
+            >
               Cancel
             </Button>
           </div>
