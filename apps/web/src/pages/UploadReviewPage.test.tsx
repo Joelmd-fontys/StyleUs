@@ -21,6 +21,7 @@ const mockItem: WardrobeItem = {
   thumbUrl: '/image.jpg',
   mediumUrl: '/image.jpg',
   category: 'shoes',
+  subcategory: 'sneakers',
   color: 'Black',
   primaryColor: 'Black',
   secondaryColor: 'Gray',
@@ -33,13 +34,29 @@ const mockItem: WardrobeItem = {
 
 const mockAI = {
   category: 'shoes',
+  subcategory: 'sneakers',
   primaryColor: 'black',
   secondaryColor: 'gray',
+  materials: ['mesh'],
+  styleTags: ['streetwear'],
   tags: ['streetwear', 'leather'],
   confidence: 0.84,
   categoryConfidence: 0.84,
+  subcategoryConfidence: 0.73,
   primaryColorConfidence: 0.7,
   secondaryColorConfidence: 0.4
+};
+
+const mockPendingAI = {
+  ...mockAI,
+  pending: true,
+  job: {
+    id: 'job-1',
+    status: 'running',
+    attempts: 1,
+    createdAt: new Date().toISOString(),
+    pending: true
+  }
 };
 
 const baseState = useWardrobeStore.getState();
@@ -92,6 +109,7 @@ describe('UploadReviewPage', () => {
       mockItem.id,
       expect.objectContaining({
         category: 'shoes',
+        subcategory: 'sneakers',
         primaryColor: 'black',
         secondaryColor: 'gray',
         brand: 'Mock'
@@ -136,10 +154,13 @@ describe('UploadReviewPage', () => {
     const primaryColorInput = screen.getByLabelText(/primary color/i) as HTMLInputElement;
     fireEvent.change(primaryColorInput, { target: { value: 'Midnight Blue' } });
 
+    const subcategorySelect = screen.getByLabelText(/subcategory/i) as HTMLSelectElement;
+    fireEvent.change(subcategorySelect, { target: { value: 'boots' } });
+
     const brandInput = screen.getByPlaceholderText(/e\.g\./i);
     fireEvent.change(brandInput, { target: { value: 'Edited Brand' } });
 
-    const tagsInput = screen.getByPlaceholderText(/streetwear, leather/i);
+    const tagsInput = screen.getByLabelText(/tags/i);
     fireEvent.change(tagsInput, { target: { value: 'edited, custom' } });
 
     fireEvent.click(screen.getByRole('button', { name: /confirm changes/i }));
@@ -148,6 +169,7 @@ describe('UploadReviewPage', () => {
     expect(saveItemMock).toHaveBeenCalledWith(
       mockItem.id,
       expect.objectContaining({
+        subcategory: 'boots',
         primaryColor: 'Midnight Blue',
         tags: ['edited', 'custom'],
         brand: 'Edited Brand'
@@ -182,5 +204,66 @@ describe('UploadReviewPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/Analyzing your item/i)).toBeInTheDocument();
     });
+  });
+
+  it('keeps the page interactive while pending results are still polling', async () => {
+    useWardrobeStore.setState((state) => ({
+      ...state,
+      uploadReview: {
+        item: { ...mockItem, aiJob: mockPendingAI.job },
+        ai: mockPendingAI,
+        loading: false,
+        isConfirming: false,
+        error: undefined
+      },
+      fetchUploadReviewAI: vi.fn().mockResolvedValue(undefined),
+      hydrateUploadReview: vi.fn().mockResolvedValue(undefined),
+      saveItem: vi.fn().mockResolvedValue(mockItem),
+      deleteItem: vi.fn().mockResolvedValue(true),
+      clearUploadReview: vi.fn(),
+      loadItems: vi.fn().mockResolvedValue(undefined),
+      showFlashMessage: vi.fn()
+    }));
+
+    renderPage();
+
+    expect(screen.queryByText(/Analyzing your item/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/AI suggestions are still processing/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /accept predictions/i })).toBeDisabled();
+  });
+
+  it('shows a longer-running warning when pending AI exceeds the expected window', async () => {
+    const delayedPendingAI = {
+      ...mockPendingAI,
+      job: {
+        ...mockPendingAI.job,
+        createdAt: new Date(Date.now() - 60_000).toISOString(),
+        startedAt: new Date(Date.now() - 55_000).toISOString()
+      }
+    };
+
+    useWardrobeStore.setState((state) => ({
+      ...state,
+      uploadReview: {
+        item: { ...mockItem, aiJob: delayedPendingAI.job },
+        ai: delayedPendingAI,
+        loading: false,
+        isConfirming: false,
+        error: undefined
+      },
+      fetchUploadReviewAI: vi.fn().mockResolvedValue(undefined),
+      hydrateUploadReview: vi.fn().mockResolvedValue(undefined),
+      saveItem: vi.fn().mockResolvedValue(mockItem),
+      deleteItem: vi.fn().mockResolvedValue(true),
+      clearUploadReview: vi.fn(),
+      loadItems: vi.fn().mockResolvedValue(undefined),
+      showFlashMessage: vi.fn()
+    }));
+
+    renderPage();
+
+    expect(screen.getByText(/taking longer than usual/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeEnabled();
   });
 });

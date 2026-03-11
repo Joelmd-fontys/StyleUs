@@ -1,3 +1,3 @@
 """Business service layer."""
 
-__all__ = ["items", "uploads", "search"]
+__all__ = ["ai_jobs", "items", "uploads", "search"]

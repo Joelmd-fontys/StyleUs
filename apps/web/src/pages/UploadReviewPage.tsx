@@ -3,24 +3,46 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../components/Button';
 import { useWardrobeStore } from '../store/wardrobe';
 import { cn } from '../lib/utils';
-import { WardrobeCategory } from '../domain/types';
-import { resolveApiUrl } from '../lib/config';
+import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
+import { getSubcategories, toDisplayLabel, UPLOAD_REVIEW_CATEGORY_OPTIONS } from '../domain/labels';
+import { type AIPreviewResponse } from '../domain/contracts';
+import { resolveMediaUrl } from '../lib/media';
 
 interface UploadReviewForm {
   category: WardrobeCategory;
+  subcategory: WardrobeSubcategory | '';
   brand: string;
   primaryColor: string;
   secondaryColor: string;
   tagsInput: string;
 }
 
-const categoryOptions: WardrobeCategory[] = ['top', 'bottom', 'outerwear', 'shoes', 'accessory', 'uncategorized'];
-
 const toDisplayTags = (input: string): string[] =>
   input
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
+
+const LONG_RUNNING_PENDING_MS = 20_000;
+
+const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
+  if (!ai) {
+    return [];
+  }
+  if (ai.tags && ai.tags.length > 0) {
+    return ai.tags.slice(0, 3);
+  }
+  const combined = [...(ai.materials ?? []), ...(ai.styleTags ?? [])];
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  combined.forEach((tag) => {
+    if (!seen.has(tag)) {
+      seen.add(tag);
+      unique.push(tag);
+    }
+  });
+  return unique.slice(0, 3);
+};
 
 const UploadReviewPage = (): ReactElement | null => {
   const { id: itemId } = useParams<{ id: string }>();
@@ -36,6 +58,7 @@ const UploadReviewPage = (): ReactElement | null => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [form, setForm] = useState<UploadReviewForm>({
     category: 'uncategorized',
+    subcategory: '',
     brand: '',
     primaryColor: '',
     secondaryColor: '',
@@ -45,15 +68,44 @@ const UploadReviewPage = (): ReactElement | null => {
 
   const item = uploadReview?.item;
   const ai = uploadReview?.ai;
+  const aiPending = Boolean(ai?.pending ?? item?.aiJob?.pending);
+  const aiFailed = ai?.job?.status === 'failed';
+  const pendingStartedAt =
+    ai?.job?.startedAt ?? ai?.job?.createdAt ?? item?.aiJob?.startedAt ?? item?.aiJob?.createdAt;
+  const pendingDurationMs = pendingStartedAt ? Date.now() - Date.parse(pendingStartedAt) : 0;
+  const aiPendingLongerThanExpected =
+    aiPending && Number.isFinite(pendingDurationMs) && pendingDurationMs >= LONG_RUNNING_PENDING_MS;
+  const aiTagSuggestions = useMemo(() => toTopAITags(ai), [ai]);
+  const resolvedSubcategory =
+    (ai?.subcategory as WardrobeSubcategory | undefined) ??
+    (item?.subcategory as WardrobeSubcategory | undefined) ??
+    null;
+  const availableSubcategories = useMemo(() => getSubcategories(form.category), [form.category]);
+  useEffect(() => {
+    if (form.subcategory && !availableSubcategories.includes(form.subcategory as WardrobeSubcategory)) {
+      setForm((prev) => ({ ...prev, subcategory: '' }));
+    }
+  }, [availableSubcategories, form.subcategory]);
   const confidenceMetrics = useMemo(() => {
     const format = (value?: number | null) =>
       typeof value === 'number' && !Number.isNaN(value) ? Math.round(value * 100) : null;
     return [
-      { label: 'Category', value: format(ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null) },
+      {
+        label: 'Category',
+        value: format(ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null)
+      },
+      { label: 'Subcategory', value: format(ai?.subcategoryConfidence ?? null) },
       { label: 'Primary color', value: format(ai?.primaryColorConfidence) },
       { label: 'Secondary color', value: format(ai?.secondaryColorConfidence) }
     ];
-  }, [ai?.categoryConfidence, ai?.confidence, ai?.primaryColorConfidence, ai?.secondaryColorConfidence, item?.aiConfidence]);
+  }, [
+    ai?.categoryConfidence,
+    ai?.confidence,
+    ai?.primaryColorConfidence,
+    ai?.secondaryColorConfidence,
+    ai?.subcategoryConfidence,
+    item?.aiConfidence
+  ]);
 
   useEffect(() => {
     if (!itemId) {
@@ -76,31 +128,37 @@ const UploadReviewPage = (): ReactElement | null => {
       (ai?.category as WardrobeCategory | undefined) ??
       (item.category as WardrobeCategory) ??
       'uncategorized';
+    const baseSubcategory = ((ai?.subcategory as WardrobeSubcategory | undefined) ??
+      (item.subcategory as WardrobeSubcategory | undefined) ??
+      '') as WardrobeSubcategory | '';
     const basePrimary = ai?.primaryColor ?? item.primaryColor ?? item.color ?? '';
     const baseSecondary = ai?.secondaryColor ?? item.secondaryColor ?? '';
     const baseBrand = item.brand ?? '';
-    const baseTags = ai?.tags?.length ? ai.tags : item.tags ?? [];
+    const baseTags = aiTagSuggestions.length ? aiTagSuggestions : (item.tags ?? []);
 
     setForm({
       category: baseCategory,
+      subcategory: baseSubcategory,
       brand: baseBrand,
       primaryColor: basePrimary ?? '',
       secondaryColor: baseSecondary ?? '',
       tagsInput: baseTags.join(', ')
     });
-  }, [ai?.category, ai?.primaryColor, ai?.secondaryColor, ai?.tags, item]);
+  }, [ai?.category, ai?.primaryColor, ai?.secondaryColor, ai?.subcategory, aiTagSuggestions, item]);
 
   useEffect(() => {
     if (!uploadReview || uploadReview.error) {
       setIsPolling(false);
       return;
     }
-    const awaitingPrediction = !uploadReview.ai && !uploadReview.loading;
+    const awaitingPrediction =
+      Boolean(uploadReview.ai?.pending ?? uploadReview.item?.aiJob?.pending) ||
+      (!uploadReview.ai && !uploadReview.loading);
     if (awaitingPrediction && !isPolling) {
       setIsPolling(true);
       return;
     }
-    if (uploadReview.ai && isPolling) {
+    if (!awaitingPrediction && isPolling) {
       setIsPolling(false);
     }
   }, [uploadReview, isPolling]);
@@ -116,16 +174,10 @@ const UploadReviewPage = (): ReactElement | null => {
       }
     };
     refresh();
-    const interval = window.setInterval(refresh, 2500);
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) {
-        setIsPolling(false);
-      }
-    }, 20000);
+    const interval = window.setInterval(refresh, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      window.clearTimeout(timeout);
     };
   }, [isPolling, itemId, fetchAIPreview]);
 
@@ -133,18 +185,19 @@ const UploadReviewPage = (): ReactElement | null => {
     if (!item || !itemId) {
       return;
     }
-    if (!ai) {
+    if (!ai || aiPending) {
       showFlashMessage('AI predictions are still processing. Please retry shortly.', 'error');
       return;
     }
     const normalizedBrand = form.brand.trim();
     const payload = {
       category: (ai.category as WardrobeCategory) ?? item.category,
+      subcategory: (ai.subcategory as WardrobeSubcategory | undefined) ?? item.subcategory ?? null,
       color: ai.primaryColor ?? item.primaryColor ?? item.color,
       primaryColor: ai.primaryColor ?? null,
       secondaryColor: ai.secondaryColor ?? null,
       brand: normalizedBrand.length ? normalizedBrand : null,
-      tags: ai.tags?.length ? ai.tags : item.tags
+      tags: aiTagSuggestions.length ? aiTagSuggestions : item.tags
     };
     const updated = await saveItem(itemId, payload);
     if (updated) {
@@ -165,6 +218,7 @@ const UploadReviewPage = (): ReactElement | null => {
     const normalizedBrand = form.brand.trim();
     const payload = {
       category: form.category,
+      subcategory: form.subcategory || item.subcategory || null,
       color: form.primaryColor || item.color,
       primaryColor: form.primaryColor || null,
       secondaryColor: form.secondaryColor || null,
@@ -193,26 +247,23 @@ const UploadReviewPage = (): ReactElement | null => {
     navigate('/wardrobe');
   };
 
-  const isAnalyzing =
-    uploadReview !== undefined && (uploadReview.loading || (!uploadReview.ai && !uploadReview.error));
+  const isInitialAnalyzing =
+    uploadReview !== undefined &&
+    (Boolean(uploadReview.loading && !uploadReview.ai) || (!uploadReview.ai && !uploadReview.error));
+  const showPendingNotice =
+    uploadReview !== undefined && !uploadReview.error && aiPending && !isInitialAnalyzing;
 
   const renderImagePreview = () => {
-    const source = item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl ?? null;
-    if (!source) {
+    const hasImage = Boolean(item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl);
+    if (!hasImage) {
       return (
         <div className="flex h-72 w-full items-center justify-center rounded-xl bg-neutral-100 text-sm text-neutral-500">
           No image available
         </div>
       );
     }
-    const resolvedSource = source.startsWith('http') ? source : resolveApiUrl(source);
-    return (
-      <img
-        src={resolvedSource}
-        alt="Uploaded item"
-        className="h-72 w-full rounded-xl object-cover shadow-sm"
-      />
-    );
+    const source = resolveMediaUrl(item?.imageUrl, item?.mediumUrl, item?.thumbUrl);
+    return <img src={source} alt="Uploaded item" className="h-72 w-full rounded-xl object-cover shadow-sm" />;
   };
 
   const renderColorSwatch = (label: string, value: string, fallbackText: string) => {
@@ -221,7 +272,10 @@ const UploadReviewPage = (): ReactElement | null => {
     const isValidColor = value && value.trim().length > 0;
     return (
       <div>
-        <label className="text-sm font-medium text-neutral-700" htmlFor={mode === 'edit' ? inputId : undefined}>
+        <label
+          className="text-sm font-medium text-neutral-700"
+          htmlFor={mode === 'edit' ? inputId : undefined}
+        >
           {label}
         </label>
         <div className="mt-2 flex items-center gap-3">
@@ -253,16 +307,24 @@ const UploadReviewPage = (): ReactElement | null => {
   };
 
   const renderTagList = () => {
-    const tags = mode === 'edit' ? toDisplayTags(form.tagsInput) : ai?.tags?.length ? ai.tags : item?.tags ?? [];
+    const tags =
+      mode === 'edit'
+        ? toDisplayTags(form.tagsInput)
+        : aiTagSuggestions.length
+          ? aiTagSuggestions
+          : (item?.tags ?? []);
     if (mode === 'edit') {
       return (
         <div>
-          <label className="text-sm font-medium text-neutral-700">Tags</label>
+          <label className="text-sm font-medium text-neutral-700" htmlFor="review-tags">
+            Tags
+          </label>
           <input
+            id="review-tags"
             type="text"
             value={form.tagsInput}
             onChange={(event) => setForm((prev) => ({ ...prev, tagsInput: event.target.value }))}
-            placeholder="streetwear, leather"
+            placeholder="cotton, streetwear"
             className="mt-2 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none"
           />
           <p className="mt-1 text-xs text-neutral-500">Separate tags with commas.</p>
@@ -270,7 +332,7 @@ const UploadReviewPage = (): ReactElement | null => {
       );
     }
     if (!tags.length) {
-      return <p className="text-sm text-neutral-500">No tags predicted yet.</p>;
+      return <p className="text-sm text-neutral-500">No AI tags predicted yet.</p>;
     }
     return (
       <div className="flex flex-wrap gap-2">
@@ -316,29 +378,56 @@ const UploadReviewPage = (): ReactElement | null => {
 
       <div className="grid gap-8 rounded-2xl bg-white/90 p-6 shadow-sm backdrop-blur md:grid-cols-[320px,1fr]">
         <div>{renderImagePreview()}</div>
-        <div className="relative space-y-6" aria-busy={isAnalyzing}>
-          {isAnalyzing ? (
+        <div className="relative space-y-6" aria-busy={isInitialAnalyzing}>
+          {isInitialAnalyzing ? (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-white/85 backdrop-blur-sm">
               <div className="flex h-16 w-16 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
               </div>
               <p className="mt-4 text-sm font-semibold text-neutral-800">Analyzing your item…</p>
-              <p className="mt-1 text-xs text-neutral-500">We&apos;re preparing color and style suggestions.</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                We&apos;re preparing color and style suggestions.
+              </p>
             </div>
           ) : null}
 
-          <div className={cn('space-y-4', isAnalyzing ? 'pointer-events-none opacity-40' : '')}>
+          <div className={cn('space-y-4', isInitialAnalyzing ? 'pointer-events-none opacity-40' : '')}>
             {uploadReview?.error ? (
               <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-600">
                 {uploadReview.error}
+              </div>
+            ) : aiFailed ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                AI suggestions could not be completed automatically. You can continue by editing the
+                item manually.
+              </div>
+            ) : showPendingNotice ? (
+              <div
+                className={cn(
+                  'rounded-lg p-4 text-sm',
+                  aiPendingLongerThanExpected
+                    ? 'border border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border border-sky-200 bg-sky-50 text-sky-700'
+                )}
+              >
+                {aiPendingLongerThanExpected
+                  ? 'AI suggestions are taking longer than usual. This page will keep refreshing automatically, and you can continue with manual edits while the worker finishes.'
+                  : 'AI suggestions are still processing. This page will keep refreshing automatically, and you can continue with manual edits if you do not want to wait.'}
               </div>
             ) : null}
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm font-medium text-neutral-700">Category</p>
+                {mode === 'edit' ? (
+                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-category">
+                    Category
+                  </label>
+                ) : (
+                  <p className="text-sm font-medium text-neutral-700">Category</p>
+                )}
                 {mode === 'edit' ? (
                   <select
+                    id="review-category"
                     value={form.category}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -348,9 +437,9 @@ const UploadReviewPage = (): ReactElement | null => {
                     }
                     className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none"
                   >
-                    {categoryOptions.map((option) => (
+                    {UPLOAD_REVIEW_CATEGORY_OPTIONS.map((option) => (
                       <option key={option} value={option}>
-                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                        {toDisplayLabel(option)}
                       </option>
                     ))}
                   </select>
@@ -361,13 +450,48 @@ const UploadReviewPage = (): ReactElement | null => {
                 )}
               </div>
               <div>
-                <p className="text-sm font-medium text-neutral-700">Brand</p>
+                {mode === 'edit' ? (
+                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-subcategory">
+                    Subcategory
+                  </label>
+                ) : (
+                  <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                )}
+                {mode === 'edit' ? (
+                  <select
+                    id="review-subcategory"
+                    value={form.subcategory}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        subcategory: event.target.value as WardrobeSubcategory | ''
+                      }))
+                    }
+                    disabled={!availableSubcategories.length}
+                    className="mt-2 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50 md:w-56"
+                  >
+                    <option value="">Select a subcategory</option>
+                    {availableSubcategories.map((option) => (
+                      <option key={option} value={option}>
+                        {toDisplayLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-1 text-sm text-neutral-700">
+                    {resolvedSubcategory ? toDisplayLabel(resolvedSubcategory) : 'Not set'}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-sm font-medium text-neutral-700" htmlFor="review-brand">
+                  Brand
+                </label>
                 <input
+                  id="review-brand"
                   type="text"
                   value={form.brand}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, brand: event.target.value }))
-                  }
+                  onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
                   placeholder="e.g. Nike"
                   className={brandInputClasses}
                   aria-invalid={brandNeedsAttention}
@@ -413,10 +537,10 @@ const UploadReviewPage = (): ReactElement | null => {
                           value === null
                             ? 'bg-neutral-300'
                             : value >= 70
-                            ? 'bg-emerald-500'
-                            : value >= 40
-                            ? 'bg-amber-500'
-                            : 'bg-neutral-400'
+                              ? 'bg-emerald-500'
+                              : value >= 40
+                                ? 'bg-amber-500'
+                                : 'bg-neutral-400'
                         )}
                         style={{ width: value !== null ? `${value}%` : '10%' }}
                       />
@@ -432,7 +556,7 @@ const UploadReviewPage = (): ReactElement | null => {
               type="button"
               variant="primary"
               onClick={handleAccept}
-              disabled={!ai || uploadReview?.isConfirming}
+              disabled={!ai || aiPending || uploadReview?.isConfirming}
             >
               Accept predictions
             </Button>
@@ -450,7 +574,7 @@ const UploadReviewPage = (): ReactElement | null => {
                 type="button"
                 variant="secondary"
                 onClick={() => setMode('edit')}
-                disabled={uploadReview?.loading}
+                disabled={Boolean(uploadReview?.loading && !uploadReview?.ai)}
               >
                 Edit & Confirm
               </Button>

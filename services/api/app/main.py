@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api import get_api_router
 from app.core.config import Settings, get_settings
@@ -18,14 +18,22 @@ from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
 
 
-def _maybe_run_seed(settings: Settings) -> None:
-    if settings.app_env != "local":
+def _maybe_run_migrations(settings: Settings) -> None:
+    if not settings.run_migrations_on_start:
+        logger.info("startup.migrations_skipped", extra={"app_env": settings.app_env})
         return
-    if not settings.seed_on_start:
+    logger.info("startup.migrations_started", extra={"app_env": settings.app_env})
+    ensure_schema()
+
+
+def _maybe_run_seed(settings: Settings) -> None:
+    if not settings.run_seed_on_start:
+        logger.info("startup.seed_skipped", extra={"app_env": settings.app_env})
         return
     try:
         from app.seed.runner import run_seed
 
+        logger.info("startup.seed_started", extra={"app_env": settings.app_env})
         run_seed(settings=settings)
     except Exception:  # pragma: no cover - defensive guard
         logger.exception("seed.failed")
@@ -35,8 +43,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        await anyio.to_thread.run_sync(ensure_schema)
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         yield
 
@@ -49,10 +57,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    media_root = settings.media_root_path
-    media_root.mkdir(parents=True, exist_ok=True)
-    app.mount(settings.media_url_path, StaticFiles(directory=media_root), name="media")
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]

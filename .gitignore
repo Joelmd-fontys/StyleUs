@@ -23,15 +23,23 @@ __pycache__/
 .eggs/
 .venv/
 venv/
-.env
-.env.*
-!.env.example
 .mypy_cache/
 pytest_cache/
 .ipynb_checkpoints/
 services/api/media/
+.env
+.env.*
+!.env.example
 
 # Tooling
 .idea/
 .vscode/
 coverage/
+apps/web/.env.example
+services/api/.env.example
+.env.example
+apps/web/.env.example
+services/api/.env.example
+apps/web/.env.example
+.env.example
+apps/web/.env.example

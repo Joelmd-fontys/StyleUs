@@ -8,6 +8,7 @@ import {
   PresignItemResponse
 } from '../domain/contracts';
 import { resolveApiUrl } from './config';
+import { getAccessToken, getSupabaseClient } from './supabase';
 
 export interface ItemFilters {
   category?: string;
@@ -28,6 +29,18 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
   }
 
   return (await response.json()) as T;
+};
+
+const buildHeaders = async (headers: HeadersInit = {}): Promise<HeadersInit> => {
+  const token = await getAccessToken();
+  if (!token) {
+    return headers;
+  }
+
+  return {
+    ...headers,
+    Authorization: `Bearer ${token}`
+  };
 };
 
 export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsResponse> => {
@@ -51,7 +64,7 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
   const requestUrl = params.toString() ? `${url}?${params.toString()}` : url;
 
   const response = await fetch(requestUrl, {
-    headers: { Accept: 'application/json' }
+    headers: await buildHeaders({ Accept: 'application/json' })
   });
 
   return handleResponse<GetItemsResponse>(response);
@@ -59,7 +72,7 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
 
 export const getItem = async (id: string): Promise<GetItemResponse> => {
   const response = await fetch(resolveApiUrl(`/items/${id}`), {
-    headers: { Accept: 'application/json' }
+    headers: await buildHeaders({ Accept: 'application/json' })
   });
   return handleResponse<GetItemResponse>(response);
 };
@@ -67,13 +80,15 @@ export const getItem = async (id: string): Promise<GetItemResponse> => {
 export const createPresign = async (body: {
   contentType: string;
   fileName: string;
+  fileSize: number;
 }): Promise<PresignItemResponse> => {
   const response = await fetch(resolveApiUrl('/items/presign'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: await buildHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
     body: JSON.stringify({
       contentType: body.contentType,
-      fileName: body.fileName
+      fileName: body.fileName,
+      fileSize: body.fileSize
     })
   });
 
@@ -83,21 +98,44 @@ export const createPresign = async (body: {
 interface UploadOptions {
   isLocal?: boolean;
   fileName?: string;
+  objectKey?: string;
+  uploadToken?: string;
+  bucket?: string;
 }
 
 /**
- * Upload a file to either a presigned S3 URL or the local API sink.
+ * Upload a file through either a Supabase signed upload token or a local mock endpoint.
  */
 export const uploadFile = async (url: string, file: File, options: UploadOptions = {}): Promise<void> => {
-  const { isLocal = false, fileName } = options;
+  const { isLocal = false, fileName, objectKey, uploadToken, bucket } = options;
+
+  if (uploadToken && objectKey && bucket) {
+    const client = getSupabaseClient();
+    if (!client) {
+      throw new Error('Supabase Storage is not configured in the web client.');
+    }
+
+    const { error } = await client.storage.from(bucket).uploadToSignedUrl(objectKey, uploadToken, file, {
+      contentType: file.type,
+      upsert: false
+    });
+
+    if (error) {
+      throw error;
+    }
+    return;
+  }
+
   const targetUrl = isLocal ? resolveApiUrl(url) : url;
-  const headers: Record<string, string> = {
+  const baseHeaders: Record<string, string> = {
     'Content-Type': file.type
   };
 
   if (isLocal) {
-    headers['X-File-Name'] = fileName ?? file.name;
+    baseHeaders['X-File-Name'] = fileName ?? file.name;
   }
+
+  const headers = isLocal ? await buildHeaders(baseHeaders) : baseHeaders;
 
   const response = await fetch(targetUrl, {
     method: 'PUT',
@@ -113,10 +151,10 @@ export const uploadFile = async (url: string, file: File, options: UploadOptions
 export const patchItem = async (id: string, body: PatchItemRequest): Promise<PatchItemResponse> => {
   const response = await fetch(resolveApiUrl(`/items/${id}`), {
     method: 'PATCH',
-    headers: {
+    headers: await buildHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json'
-    },
+    }),
     body: JSON.stringify(body)
   });
 
@@ -126,22 +164,19 @@ export const patchItem = async (id: string, body: PatchItemRequest): Promise<Pat
 export const deleteItem = async (id: string): Promise<void> => {
   const response = await fetch(resolveApiUrl(`/items/${id}`), {
     method: 'DELETE',
-    headers: { Accept: 'application/json' }
+    headers: await buildHeaders({ Accept: 'application/json' })
   });
 
   await handleResponse<void>(response);
 };
 
-export const completeUpload = async (
-  id: string,
-  body: CompleteUploadRequest
-): Promise<GetItemResponse> => {
+export const completeUpload = async (id: string, body: CompleteUploadRequest): Promise<GetItemResponse> => {
   const response = await fetch(resolveApiUrl(`/items/${id}/complete-upload`), {
     method: 'POST',
-    headers: {
+    headers: await buildHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json'
-    },
+    }),
     body: JSON.stringify(body)
   });
 
@@ -150,7 +185,7 @@ export const completeUpload = async (
 
 export const getItemAIPreview = async (id: string): Promise<AIPreviewResponse> => {
   const response = await fetch(resolveApiUrl(`/items/${id}/ai-preview`), {
-    headers: { Accept: 'application/json' }
+    headers: await buildHeaders({ Accept: 'application/json' })
   });
 
   return handleResponse<AIPreviewResponse>(response);

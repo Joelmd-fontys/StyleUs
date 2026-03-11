@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import AuthGate from './auth/AuthGate';
 import AppShell from './components/AppShell';
 import Dashboard from './pages/Dashboard';
 import ItemDetail from './pages/ItemDetail';
@@ -10,7 +11,14 @@ import UploadReviewPage from './pages/UploadReviewPage';
 const App = () => {
   return (
     <Routes>
-      <Route path="/" element={<AppShell />}>
+      <Route
+        path="/"
+        element={
+          <AuthGate>
+            <AppShell />
+          </AuthGate>
+        }
+      >
         <Route index element={<Dashboard />} />
         <Route path="wardrobe" element={<Wardrobe />} />
         <Route path="items/:id" element={<ItemDetail />} />

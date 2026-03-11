@@ -1,31 +1,39 @@
-PYTHON ?= python3
 VENV ?= .venv
 MESSAGE ?= update
 COMPOSE_FILE := $(CURDIR)/docker-compose.yml
 
-.PHONY: setup run migrate upgrade lint typecheck test seed reset-seed db-up db-down
+ifeq ($(wildcard $(VENV)/bin/python),)
+PYTHON ?= python3
+else
+PYTHON ?= $(VENV)/bin/python
+endif
+
+.PHONY: setup run worker migrate upgrade lint typecheck test seed reset-seed db-up db-down
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e .[dev]
 
 run:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	$(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+worker:
+	$(PYTHON) -m app.worker
 
 migrate:
-	alembic revision --autogenerate -m "$(MESSAGE)"
+	$(PYTHON) -m alembic revision --autogenerate -m "$(MESSAGE)"
 
 upgrade:
-	alembic upgrade head
+	$(PYTHON) -m alembic upgrade head
 
 lint:
-	ruff check .
+	$(PYTHON) -m ruff check .
 
 typecheck:
-	mypy app
+	$(PYTHON) -m mypy app
 
 test:
-	pytest -q
+	$(PYTHON) -m pytest -q
 
 seed:
 	$(PYTHON) -m app.seed.runner

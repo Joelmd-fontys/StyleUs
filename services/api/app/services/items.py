@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
-from app.ai import tasks as ai_tasks
+from app.core.config import Settings
+from app.models.ai_job import AIJob, AIJobStatus
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import ImageMetadata, ItemAIPreview, ItemDetail
+from app.schemas.items import AIJobState, ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
+from app.utils import storage as storage_utils
+
+_EMPTY_CATEGORY_VALUES = {"", "uncategorized"}
+LOGGER = logging.getLogger("app.services.items")
 
 
 def create_placeholder_item(db: Session, user_id: uuid.UUID) -> WardrobeItem:
@@ -48,7 +54,7 @@ def list_items(
     stmt: Select[tuple[WardrobeItem]] = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id)
-        .options(selectinload(WardrobeItem.tags))
+        .options(selectinload(WardrobeItem.tags), selectinload(WardrobeItem.ai_job))
     )
 
     if not include_deleted:
@@ -59,7 +65,6 @@ def list_items(
 
     if query:
         stmt = apply_search_filters(stmt, query)
-        stmt = stmt.distinct()
 
     if created_since:
         stmt = stmt.where(WardrobeItem.created_at > created_since)
@@ -67,7 +72,7 @@ def list_items(
     stmt = stmt.order_by(WardrobeItem.created_at.desc()).limit(limit).offset(offset)
 
     result = db.execute(stmt)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 def get_item(
@@ -81,7 +86,7 @@ def get_item(
     stmt = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id)
-        .options(selectinload(WardrobeItem.tags))
+        .options(selectinload(WardrobeItem.tags), selectinload(WardrobeItem.ai_job))
     )
     if not include_deleted:
         stmt = stmt.where(WardrobeItem.deleted_at.is_(None))
@@ -94,16 +99,22 @@ def update_item(
     item: WardrobeItem,
     *,
     category: str | None = None,
+    subcategory: str | None = None,
     color: str | None = None,
     brand: str | None = None,
     tags: list[str] | None = None,
     primary_color: str | None = None,
     secondary_color: str | None = None,
+    ai_materials: list[str] | None = None,
+    ai_style_tags: list[str] | None = None,
     ai_confidence: float | None = None,
+    commit: bool = True,
 ) -> WardrobeItem:
     """Persist field updates and normalized tag values for an item."""
     if category is not None:
         item.category = category
+    if subcategory is not None:
+        item.subcategory = subcategory
     if color is not None:
         item.color = color
     if brand is not None:
@@ -112,6 +123,10 @@ def update_item(
         item.primary_color = primary_color
     if secondary_color is not None:
         item.secondary_color = secondary_color
+    if ai_materials is not None:
+        item.ai_materials = ai_materials
+    if ai_style_tags is not None:
+        item.ai_style_tags = ai_style_tags
     if ai_confidence is not None:
         item.ai_confidence = ai_confidence
 
@@ -124,8 +139,11 @@ def update_item(
             item.tags.append(ItemTag(tag=tag))
 
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
     return item
 
 
@@ -133,7 +151,16 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
     """Soft delete an item by marking its deletion timestamp."""
 
     if item.deleted_at is None:
-        item.deleted_at = datetime.datetime.now(tz=datetime.UTC)
+        now = datetime.datetime.now(tz=datetime.UTC)
+        item.deleted_at = now
+        if item.ai_job and item.ai_job.status in {
+            AIJobStatus.PENDING.value,
+            AIJobStatus.RUNNING.value,
+        }:
+            item.ai_job.status = AIJobStatus.FAILED.value
+            item.ai_job.completed_at = now
+            item.ai_job.error_message = "Wardrobe item deleted before AI enrichment"
+            db.add(item.ai_job)
         db.add(item)
         db.commit()
 
@@ -141,16 +168,20 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
 def complete_upload(
     db: Session,
     item: WardrobeItem,
-    image_url: str | None,
+    image_object_path: str | None,
     *,
-    thumb_url: str | None = None,
-    medium_url: str | None = None,
+    thumb_object_path: str | None = None,
+    medium_object_path: str | None = None,
     metadata: ImageMetadata | None = None,
+    commit: bool = True,
 ) -> WardrobeItem:
-    """Store the image URL on an item once uploads finish."""
-    item.image_url = image_url
-    item.image_thumb_url = thumb_url
-    item.image_medium_url = medium_url
+    """Store image object paths on an item once uploads finish."""
+    item.image_object_path = image_object_path
+    item.image_thumb_object_path = thumb_object_path
+    item.image_medium_object_path = medium_object_path
+    item.image_url = None
+    item.image_thumb_url = None
+    item.image_medium_url = None
 
     if metadata is not None:
         item.image_width = metadata.width
@@ -160,15 +191,122 @@ def complete_upload(
         item.image_checksum = metadata.checksum
 
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
     return item
 
 
-def to_item_detail(item: WardrobeItem) -> ItemDetail:
+def build_signed_media_urls(
+    settings: Settings,
+    items: Sequence[WardrobeItem],
+) -> dict[str, str]:
+    """Resolve temporary signed URLs for all private media paths referenced by the items."""
+    object_paths = collect_media_object_paths(items)
+    if not object_paths:
+        return {}
+    try:
+        return storage_utils.get_storage_adapter(settings).create_signed_urls(object_paths)
+    except storage_utils.SupabaseStorageError as exc:
+        LOGGER.warning("items.sign_media_failed", extra={"error": str(exc)})
+        return {}
+
+
+def collect_media_object_paths(items: Sequence[WardrobeItem]) -> list[str]:
+    """Collect distinct media object paths referenced by the provided items."""
+    paths: list[str] = []
+    for item in items:
+        for path in (
+            item.image_object_path,
+            item.image_medium_object_path,
+            item.image_thumb_object_path,
+        ):
+            if path:
+                paths.append(path)
+    return list(dict.fromkeys(paths))
+
+
+def to_item_detail(
+    item: WardrobeItem,
+    *,
+    signed_urls: Mapping[str, str] | None = None,
+) -> ItemDetail:
     """Convert an ORM object into a Pydantic response model."""
-    metadata: ImageMetadata | None = None
-    if any(
+    metadata = _build_image_metadata(item)
+    ai_block = _build_item_ai_attributes(item)
+    image_url, medium_url, thumb_url = _resolve_image_urls(item, signed_urls=signed_urls)
+
+    return ItemDetail.model_validate(
+        {
+            "id": item.id,
+            "category": item.category,
+            "subcategory": item.subcategory,
+            "color": item.color,
+            "brand": item.brand,
+            "primary_color": item.primary_color,
+            "secondary_color": item.secondary_color,
+            "image_url": image_url,
+            "thumb_url": thumb_url,
+            "medium_url": medium_url,
+            "created_at": item.created_at,
+            "tags": [tag.tag for tag in item.tags],
+            "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
+            "ai_confidence": item.ai_confidence,
+            "ai": ai_block.model_dump(by_alias=True) if ai_block else None,
+            "ai_job": _build_ai_job_state(item.ai_job),
+        }
+    )
+
+
+def _resolve_image_urls(
+    item: WardrobeItem,
+    *,
+    signed_urls: Mapping[str, str] | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    signed_urls = signed_urls or {}
+    image_url = signed_urls.get(item.image_object_path or "") if item.image_object_path else None
+    medium_url = (
+        signed_urls.get(item.image_medium_object_path or "")
+        if item.image_medium_object_path
+        else None
+    )
+    thumb_url = (
+        signed_urls.get(item.image_thumb_object_path or "")
+        if item.image_thumb_object_path
+        else None
+    )
+    return (
+        image_url or item.image_url,
+        medium_url or item.image_medium_url,
+        thumb_url or item.image_thumb_url,
+    )
+
+
+def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
+    """Build an AI preview payload from persisted item and job state."""
+    return _build_base_ai_preview(item)
+
+
+def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
+    """Guarantee the backing user row exists before creating child objects."""
+    user = db.get(User, user_id)
+    if user is None:
+        user = User(id=user_id, email=f"user-{user_id}@styleus.invalid")
+        db.add(user)
+        db.flush()
+    return user
+
+
+def _normalized_item_category(item: WardrobeItem) -> str | None:
+    if item.category in _EMPTY_CATEGORY_VALUES:
+        return None
+    return item.category
+
+
+def _build_image_metadata(item: WardrobeItem) -> ImageMetadata | None:
+    if not any(
         value is not None
         for value in (
             item.image_width,
@@ -178,80 +316,76 @@ def to_item_detail(item: WardrobeItem) -> ItemDetail:
             item.image_checksum,
         )
     ):
-        metadata = ImageMetadata(
-            width=item.image_width,
-            height=item.image_height,
-            bytes=item.image_bytes,
-            mime_type=item.image_mime_type,
-            checksum=item.image_checksum,
-        )
+        return None
 
-    return ItemDetail.model_validate(
+    return ImageMetadata.model_validate(
         {
-            "id": item.id,
-            "category": item.category,
-            "color": item.color,
-            "brand": item.brand,
-            "primary_color": item.primary_color,
-            "secondary_color": item.secondary_color,
-            "image_url": item.image_url,
-            "thumb_url": item.image_thumb_url,
-            "medium_url": item.image_medium_url,
-            "created_at": item.created_at,
-            "tags": [tag.tag for tag in item.tags],
-            "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
-            "ai_confidence": item.ai_confidence,
+            "width": item.image_width,
+            "height": item.image_height,
+            "bytes": item.image_bytes,
+            "mime_type": item.image_mime_type,
+            "checksum": item.image_checksum,
         }
     )
 
 
-def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
-    """Build an AI preview payload using the latest item data."""
-    preview = ItemAIPreview(
-        category=item.category if item.category not in {"", "uncategorized"} else None,
-        category_confidence=item.ai_confidence,
-        primary_color=item.primary_color or None,
-        secondary_color=item.secondary_color or None,
-        tags=[tag.tag for tag in item.tags],
-        confidence=item.ai_confidence,
+def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
+    if not any(
+        value
+        for value in (
+            item.ai_confidence,
+            item.ai_materials,
+            item.ai_style_tags,
+            item.subcategory,
+        )
+    ):
+        return None
+
+    return ItemAIAttributes.model_validate(
+        {
+            "category": _normalized_item_category(item),
+            "subcategory": item.subcategory,
+            "materials": item.ai_materials or [],
+            "style_tags": (item.ai_style_tags or [])[:3],
+            "confidence": item.ai_confidence,
+        }
     )
 
-    pipeline_result = ai_tasks.get_pipeline_preview(item)
-    if pipeline_result is None:
-        return preview
 
-    clip = pipeline_result.clip
-    preview.category = clip.get("category") or preview.category
-    preview.category_confidence = clip.get("category_confidence") or preview.category_confidence
-
-    color_result = pipeline_result.colors
-    if color_result.primary_color:
-        preview.primary_color = color_result.primary_color
-        preview.primary_color_confidence = color_result.confidence
-    if color_result.secondary_color:
-        preview.secondary_color = color_result.secondary_color
-        preview.secondary_color_confidence = color_result.secondary_confidence
-
-    suggested_tags: list[tuple[str, float]] = []
-    for name, score in clip.get("materials", [])[:3]:
-        suggested_tags.append((name, float(score)))
-    for name, score in clip.get("styles", [])[:3]:
-        if all(existing != name for existing, _ in suggested_tags):
-            suggested_tags.append((name, float(score)))
-
-    if suggested_tags:
-        ordered = sorted(suggested_tags, key=lambda entry: entry[1], reverse=True)
-        preview.tags = [name for name, _ in ordered]
-
-    preview.confidence = clip.get("category_confidence", preview.confidence)
-    return preview
+def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
+    job_state = _build_ai_job_state(item.ai_job)
+    return ItemAIPreview.model_validate(
+        {
+            "category": _normalized_item_category(item),
+            "category_confidence": item.ai_confidence,
+            "subcategory": item.subcategory,
+            "subcategory_confidence": None,
+            "primary_color": item.primary_color or None,
+            "secondary_color": item.secondary_color or None,
+            "materials": list(item.ai_materials or []),
+            "style_tags": list(item.ai_style_tags or [])[:3],
+            "tags": [tag.tag for tag in item.tags],
+            "confidence": item.ai_confidence,
+            "pending": bool(job_state and job_state.pending),
+            "job": job_state.model_dump(by_alias=True) if job_state else None,
+        }
+    )
 
 
-def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
-    """Guarantee the backing user row exists before creating child objects."""
-    user = db.get(User, user_id)
-    if user is None:
-        user = User(id=user_id, email=f"user-{user_id}@example.com")
-        db.add(user)
-        db.flush()
-    return user
+def _build_ai_job_state(job: AIJob | None) -> AIJobState | None:
+    if job is None:
+        return None
+
+    pending = job.status in {AIJobStatus.PENDING.value, AIJobStatus.RUNNING.value}
+    return AIJobState.model_validate(
+        {
+            "id": job.id,
+            "status": job.status,
+            "attempts": job.attempts,
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "completed_at": job.completed_at,
+            "error_message": job.error_message,
+            "pending": pending,
+        }
+    )

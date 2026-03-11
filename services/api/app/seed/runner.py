@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import shutil
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import DEFAULT_USER_ID
 from app.core.config import Settings, get_settings
 from app.core.logging import logger
 from app.db.session import SessionLocal
@@ -22,14 +21,15 @@ from app.seed.utils import (
     SeedSource,
     SeedSourceError,
     load_seed_sources,
-    media_directory,
     read_image_bytes,
     validate_image,
 )
 from app.services import items as items_service
 from app.services import uploads as uploads_service
-from app.utils import s3 as s3_utils
-from app.utils.images import ProcessedImage, process_image_bytes, save_image_bytes
+from app.services.users import sync_authenticated_user
+from app.services.uploads import UploadFinalizationResult
+from app.utils import storage as storage_utils
+from app.utils.images import ProcessedImage, process_image_bytes
 
 
 @dataclass(slots=True)
@@ -62,6 +62,7 @@ def run_seed(
     """Populate the wardrobe with curated starter items if the seed has not run yet."""
 
     settings = settings or get_settings()
+    seed_user_id = _require_local_seed_user(settings)
     seed_key = seed_key or settings.seed_key
     limit = limit or settings.seed_limit
 
@@ -79,7 +80,12 @@ def run_seed(
             summary.skipped += 1
             return summary
 
-        succeeded = _seed_sources(session, settings, sources, summary)
+        sync_authenticated_user(
+            session,
+            user_id=seed_user_id,
+            email=settings.local_auth_email,
+        )
+        succeeded = _seed_sources(session, settings, seed_user_id, sources, summary)
         if succeeded and summary.failed == 0:
             session.merge(SeedRun(key=seed_key, applied_at=datetime.datetime.now(datetime.UTC)))
             session.commit()
@@ -95,6 +101,7 @@ def reset_seed(
     """Remove seeded items and clear the seed marker so the dataset can be re-applied."""
 
     settings = settings or get_settings()
+    seed_user_id = _require_local_seed_user(settings)
     seed_key = seed_key or settings.seed_key
     summary = SeedSummary()
 
@@ -105,7 +112,7 @@ def reset_seed(
         checksums = _collect_source_checksums(sources)
         items = session.scalars(
             select(WardrobeItem).where(
-                WardrobeItem.user_id == DEFAULT_USER_ID,
+                WardrobeItem.user_id == seed_user_id,
                 WardrobeItem.image_checksum.in_(checksums),
             )
         ).all()
@@ -129,6 +136,7 @@ def reset_seed(
 def _seed_sources(
     session: Session,
     settings: Settings,
+    seed_user_id: uuid.UUID,
     sources: list[SeedSource],
     summary: SeedSummary,
 ) -> bool:
@@ -140,30 +148,26 @@ def _seed_sources(
             validate_image(data, original_content_type, source.slug)
             processed = process_image_bytes(data, original_content_type)
 
-            if _item_exists(session, processed.checksum):
+            if _item_exists(session, seed_user_id, processed.checksum):
                 summary.skipped += 1
                 continue
 
-            file_name = f"{source.slug}.jpg"
-            item, object_key = _create_placeholder_with_upload(
+            item = _create_placeholder_item(
                 session,
-                settings,
-                file_name,
-                processed,
+                seed_user_id,
             )
             uploads_result = _finalize_upload(
                 settings,
+                seed_user_id,
                 item.id,
-                object_key,
-                file_name,
                 processed,
             )
             items_service.complete_upload(
                 session,
                 item,
-                uploads_result.image_url,
-                thumb_url=uploads_result.thumb_url,
-                medium_url=uploads_result.medium_url,
+                uploads_result.image_object_path,
+                thumb_object_path=uploads_result.thumb_object_path,
+                medium_object_path=uploads_result.medium_object_path,
                 metadata=uploads_result.metadata,
             )
             items_service.update_item(
@@ -200,88 +204,78 @@ def _collect_source_checksums(sources: list[SeedSource]) -> set[str]:
     return checksums
 
 
-def _create_placeholder_with_upload(
+def _create_placeholder_item(
     session: Session,
-    settings: Settings,
-    file_name: str,
-    processed: ProcessedImage,
-) -> tuple[WardrobeItem, str | None]:
-    content_type = processed.mime_type
-    item, _upload_url, object_key = uploads_service.create_presigned_upload(
-        session,
-        settings,
-        user_id=DEFAULT_USER_ID,
-        file_name=file_name,
-        content_type=content_type,
-    )
-    if settings.is_s3_enabled:
-        assert object_key is not None  # for type checker
-        if not settings.aws_region or not settings.s3_bucket_name:
-            raise SeedSourceError("S3 configuration missing for seeding")
-        s3_utils.upload_bytes(
-            bucket=settings.s3_bucket_name,
-            key=object_key,
-            region=settings.aws_region,
-            data=processed.original_bytes,
-            content_type=content_type,
-        )
-    return item, object_key
+    seed_user_id: uuid.UUID,
+) -> WardrobeItem:
+    return items_service.create_placeholder_item(session, seed_user_id)
 
 
 def _finalize_upload(
     settings: Settings,
-    item_id,
-    object_key: str | None,
-    file_name: str,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
     processed: ProcessedImage,
-):
-    if settings.is_s3_enabled:
-        if not object_key:
-            raise SeedSourceError("Missing S3 object key for seeding")
-        return uploads_service.finalize_s3_upload(
-            settings,
-            item_id=item_id,
-            object_key=object_key,
-        )
+) -> UploadFinalizationResult:
+    storage = storage_utils.get_storage_adapter(settings)
+    orig_key, medium_key, thumb_key = uploads_service.build_variant_object_keys(
+        user_id=user_id,
+        item_id=item_id,
+    )
+    storage.upload_bytes(orig_key, data=processed.original_bytes, content_type="image/jpeg")
+    storage.upload_bytes(medium_key, data=processed.medium_bytes, content_type="image/jpeg")
+    storage.upload_bytes(thumb_key, data=processed.thumb_bytes, content_type="image/jpeg")
 
-    media_dir = settings.media_root_path / str(item_id)
-    shutil.rmtree(media_dir, ignore_errors=True)
-    save_image_bytes(media_dir / "orig.jpg", processed.original_bytes)
-    save_image_bytes(media_dir / "medium.jpg", processed.medium_bytes)
-    save_image_bytes(media_dir / "thumb.jpg", processed.thumb_bytes)
-
-    metadata = ImageMetadata(
-        width=processed.width,
-        height=processed.height,
-        bytes=processed.bytes,
-        mime_type=processed.mime_type,
-        checksum=processed.checksum,
+    metadata = ImageMetadata.model_validate(
+        {
+            "width": processed.width,
+            "height": processed.height,
+            "bytes": processed.size_bytes,
+            "mime_type": processed.mime_type,
+            "checksum": processed.checksum,
+        }
     )
 
-    base_url = f"{settings.media_url_path.rstrip('/')}/{item_id}"
     return uploads_service.UploadFinalizationResult(
-        image_url=f"{base_url}/orig.jpg",
-        medium_url=f"{base_url}/medium.jpg",
-        thumb_url=f"{base_url}/thumb.jpg",
+        image_object_path=orig_key,
+        medium_object_path=medium_key,
+        thumb_object_path=thumb_key,
         metadata=metadata,
     )
 
 
-def _item_exists(session: Session, checksum: str) -> bool:
+def _item_exists(session: Session, seed_user_id: uuid.UUID, checksum: str) -> bool:
     return session.scalar(
         select(WardrobeItem.id).where(
-            WardrobeItem.user_id == DEFAULT_USER_ID,
+            WardrobeItem.user_id == seed_user_id,
             WardrobeItem.image_checksum == checksum,
         )
     ) is not None
 
 
+def _require_local_seed_user(settings: Settings) -> uuid.UUID:
+    if not settings.is_local_env:
+        raise ValueError(
+            "Seeding is only supported when APP_ENV=local because it relies on the "
+            "local development user identity"
+        )
+    return settings.local_auth_user_id
+
+
 def _remove_media(settings: Settings, item: WardrobeItem) -> None:
     if not item.id:
         return
-    media_dir = media_directory(settings.media_root_path, str(item.id))
-    if media_dir.exists():
-        shutil.rmtree(media_dir, ignore_errors=True)
+    object_paths = [
+        path
+        for path in (
+            item.image_object_path,
+            item.image_medium_object_path,
+            item.image_thumb_object_path,
+        )
+        if path
+    ]
+    if object_paths:
+        storage_utils.get_storage_adapter(settings).delete_objects(object_paths)
 
 
 def main() -> None:

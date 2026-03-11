@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__: str = "users"  # type: ignore[assignment]
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)

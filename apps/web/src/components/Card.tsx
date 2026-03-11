@@ -11,10 +11,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
   ({ className, title, description, actions, children, ...props }, ref) => (
     <section
       ref={ref}
-      className={cn(
-        'rounded-xl border border-neutral-200 bg-white/90 shadow-sm backdrop-blur-sm',
-        className
-      )}
+      className={cn('rounded-xl border border-neutral-200 bg-white/90 shadow-sm backdrop-blur-sm', className)}
       {...props}
     >
       {(title || description || actions) && (

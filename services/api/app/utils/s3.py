@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Any, cast
 
 import boto3
 from botocore.exceptions import ClientError
 
 
 @lru_cache(maxsize=1)
-def get_s3_client(region: str):
+def get_s3_client(region: str) -> Any:
     return boto3.client("s3", region_name=region)
 
 
@@ -20,20 +21,23 @@ def generate_presigned_put_url(
     content_type: str,
     region: str,
     expires_in: int = 600,
-) -> str:
+    ) -> str:
     client = get_s3_client(region)
-    return client.generate_presigned_url(
-        ClientMethod="put_object",
-        Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
-        ExpiresIn=expires_in,
+    return cast(
+        str,
+        client.generate_presigned_url(
+            ClientMethod="put_object",
+            Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
+            ExpiresIn=expires_in,
+        ),
     )
 
 
-def head_object(*, bucket: str, key: str, region: str) -> dict | None:
+def head_object(*, bucket: str, key: str, region: str) -> dict[str, Any] | None:
     """Fetch object metadata from S3, returning None when the object is missing."""
     client = get_s3_client(region)
     try:
-        return client.head_object(Bucket=bucket, Key=key)
+        return cast(dict[str, Any], client.head_object(Bucket=bucket, Key=key))
     except ClientError as exc:  # pragma: no cover - boto specific noise
         if exc.response["Error"]["Code"] == "404":
             return None

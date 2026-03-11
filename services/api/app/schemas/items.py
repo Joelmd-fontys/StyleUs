@@ -21,17 +21,21 @@ class ImageMetadata(CamelModel):
 class PresignRequest(CamelModel):
     content_type: str = Field(alias="contentType")
     file_name: str = Field(alias="fileName")
+    file_size: int = Field(alias="fileSize")
 
 
 class PresignResponse(CamelModel):
     upload_url: str = Field(alias="uploadUrl")
     item_id: uuid.UUID = Field(alias="itemId")
     object_key: str | None = Field(default=None, alias="objectKey")
+    upload_token: str | None = Field(default=None, alias="uploadToken")
+    bucket: str | None = None
 
 
 class ItemBase(CamelModel):
     id: uuid.UUID
     category: str
+    subcategory: str | None = None
     color: str
     brand: str | None = None
     primary_color: str | None = Field(default=None, alias="primaryColor")
@@ -44,12 +48,34 @@ class ItemBase(CamelModel):
     ai_confidence: float | None = Field(default=None, alias="aiConfidence")
 
 
+class ItemAIAttributes(CamelModel):
+    category: str | None = None
+    subcategory: str | None = None
+    materials: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list, alias="styleTags")
+    confidence: float | None = Field(default=None, alias="confidence")
+
+
+class AIJobState(CamelModel):
+    id: uuid.UUID
+    status: str
+    attempts: int
+    created_at: datetime.datetime = Field(alias="createdAt")
+    started_at: datetime.datetime | None = Field(default=None, alias="startedAt")
+    completed_at: datetime.datetime | None = Field(default=None, alias="completedAt")
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    pending: bool = False
+
+
 class ItemDetail(ItemBase):
     tags: list[str]
+    ai: ItemAIAttributes | None = None
+    ai_job: AIJobState | None = Field(default=None, alias="aiJob")
 
 
 class ItemUpdate(CamelModel):
     category: str | None = None
+    subcategory: str | None = None
     color: str | None = None
     brand: str | None = None
     tags: list[str] | None = None
@@ -66,9 +92,18 @@ class CompleteUploadRequest(CamelModel):
 class ItemAIPreview(CamelModel):
     category: str | None = None
     category_confidence: float | None = Field(default=None, alias="categoryConfidence")
+    subcategory: str | None = None
+    subcategory_confidence: float | None = Field(
+        default=None,
+        alias="subcategoryConfidence",
+    )
     primary_color: str | None = Field(default=None, alias="primaryColor")
     primary_color_confidence: float | None = Field(default=None, alias="primaryColorConfidence")
     secondary_color: str | None = Field(default=None, alias="secondaryColor")
     secondary_color_confidence: float | None = Field(default=None, alias="secondaryColorConfidence")
+    materials: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list, alias="styleTags")
     tags: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, alias="confidence")
+    pending: bool = False
+    job: AIJobState | None = None

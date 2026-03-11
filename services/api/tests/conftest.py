@@ -10,12 +10,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 os.environ.setdefault("APP_ENV", "local")
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/postgres")
-os.environ.setdefault("AWS_REGION", "us-east-1")
-os.environ.setdefault("S3_BUCKET_NAME", "test-bucket")
+os.environ.setdefault("SUPABASE_URL", "https://styleus-test.supabase.co")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key")
+os.environ.setdefault("SUPABASE_STORAGE_BUCKET", "wardrobe-images")
+os.environ.setdefault("LOCAL_AUTH_BYPASS", "true")
 os.environ.setdefault("APP_VERSION", "0.1.0")
-os.environ.setdefault("SEED_ON_START", "false")
+os.environ.setdefault("RUN_MIGRATIONS_ON_START", "false")
+os.environ.setdefault("RUN_SEED_ON_START", "false")
 
 from app.api.deps import get_db  # noqa: E402
+from app.core.auth import clear_auth_cache  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -25,7 +29,7 @@ engine = create_engine(os.environ["DATABASE_URL"], future=True, pool_pre_ping=Tr
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def setup_database() -> Generator[None, None, None]:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -33,7 +37,7 @@ def setup_database() -> Generator[None, None, None]:
 
 
 @pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
+def db_session(setup_database: None) -> Generator[Session, None, None]:
     connection = engine.connect()
     transaction = connection.begin()
     session = TestingSessionLocal(bind=connection)
@@ -64,5 +68,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 @pytest.fixture(autouse=True)
 def reset_settings_cache() -> Generator[None, None, None]:
     get_settings.cache_clear()
+    clear_auth_cache()
     yield
     get_settings.cache_clear()
+    clear_auth_cache()

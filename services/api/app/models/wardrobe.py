@@ -6,18 +6,19 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.types import GUID
 
 if TYPE_CHECKING:
+    from app.models.ai_job import AIJob
     from app.models.user import User
 
 
 class WardrobeItem(Base):
-    __tablename__ = "wardrobe_items"
+    __tablename__: str = "wardrobe_items"  # type: ignore[assignment]
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -25,6 +26,9 @@ class WardrobeItem(Base):
         ForeignKey("users.id"),
         nullable=False,
     )
+    image_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_thumb_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_medium_object_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_thumb_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_medium_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -44,6 +48,9 @@ class WardrobeItem(Base):
     brand: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
     primary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
     secondary_color: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
+    subcategory: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
+    ai_materials: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    ai_style_tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -54,6 +61,13 @@ class WardrobeItem(Base):
     ai_confidence: Mapped[float | None] = mapped_column(nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="items")
+    ai_job: Mapped[AIJob | None] = relationship(
+        "AIJob",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="selectin",
+    )
     tags: Mapped[list[ItemTag]] = relationship(
         "ItemTag",
         back_populates="item",
@@ -63,7 +77,7 @@ class WardrobeItem(Base):
 
 
 class ItemTag(Base):
-    __tablename__ = "item_tags"
+    __tablename__: str = "item_tags"  # type: ignore[assignment]
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     item_id: Mapped[uuid.UUID] = mapped_column(

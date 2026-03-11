@@ -10,14 +10,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary:
-    'bg-accent-600 text-white shadow-sm hover:bg-accent-700 focus-visible:outline-accent-600',
+  primary: 'bg-accent-600 text-white shadow-sm hover:bg-accent-700 focus-visible:outline-accent-600',
   secondary:
     'bg-neutral-100 text-neutral-900 shadow-sm hover:bg-neutral-200 focus-visible:outline-neutral-400',
-  ghost:
-    'text-neutral-700 hover:bg-neutral-100 focus-visible:outline-neutral-400',
-  danger:
-    'bg-danger-500 text-white shadow-sm hover:bg-danger-600 focus-visible:outline-danger-500'
+  ghost: 'text-neutral-700 hover:bg-neutral-100 focus-visible:outline-neutral-400',
+  danger: 'bg-danger-500 text-white shadow-sm hover:bg-danger-600 focus-visible:outline-danger-500'
 };
 
 const sizeStyles: Record<ButtonSize, string> = {

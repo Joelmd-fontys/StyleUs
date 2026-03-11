@@ -12,6 +12,7 @@ export const wardrobeCategorySchema = z.enum([
 
 export const wardrobeItemEditSchema = z.object({
   category: wardrobeCategorySchema,
+  subcategory: z.string().trim().min(1, 'Subcategory must not be empty').or(z.null()).optional(),
   color: z.string().trim().min(1, 'Color is required'),
   brand: z
     .string()
@@ -20,10 +21,7 @@ export const wardrobeItemEditSchema = z.object({
     .optional()
     .or(z.literal(''))
     .transform((value) => (value === '' ? undefined : value)),
-  tags: z
-    .array(z.string().trim().min(1, 'Tag cannot be empty'))
-    .optional()
-    .default([])
+  tags: z.array(z.string().trim().min(1, 'Tag cannot be empty')).optional().default([])
 });
 
 export type WardrobeItemEditInput = z.infer<typeof wardrobeItemEditSchema>;

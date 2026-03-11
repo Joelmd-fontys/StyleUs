@@ -1,239 +1,314 @@
 # StyleUs API Service
 
-FastAPI backend for StyleUs wardrobe management. The service uses PostgreSQL, SQLAlchemy, and Alembic with a small service layer and presigned S3 uploads.
+The API owns wardrobe persistence, private Supabase Storage upload finalization, and AI enrichment. It remains the business-logic boundary for the app in both local development and the planned production architecture.
 
-## Requirements
+## Stack
 
-- Python 3.11
-- PostgreSQL 14+ (Docker recipe below)
-- AWS credentials capable of generating S3 presigned URLs (mocked in tests)
+- FastAPI
+- SQLAlchemy 2
+- Alembic
+- PostgreSQL
+- PyJWT with Supabase JWKS verification
+- Pillow / NumPy / scikit-learn
+- `open-clip-torch` with optional ONNX inference
+- Postgres-backed AI worker
 
-### Environment Variables
+## Service structure
+
+- `app/main.py` - app creation, middleware, CORS, startup tasks
+- `app/worker.py` - standalone AI worker entrypoint
+- `app/api/routers` - health, version, item, and upload routes
+- `app/services/ai_jobs.py` - durable AI job queue helpers and claim/retry logic
+- `app/services/items.py` - wardrobe CRUD and response shaping
+- `app/services/uploads.py` - signed-upload creation, private variant persistence, and upload finalization
+- `app/utils/storage.py` - Supabase Storage REST adapter for signed reads, signed uploads, and object operations
+- `app/ai` - CLIP heads, color extraction, segmentation, shared pipeline, and item enrichment logic
+- `app/models` - SQLAlchemy models
+- `app/seed` - deterministic seed dataset and runner
+
+## Environment model
+
+The backend explicitly supports:
+
+- `APP_ENV=local`
+- `APP_ENV=staging`
+- `APP_ENV=production`
+
+Local development reads from `services/api/.env`.
+
+Staging and production should read from Render-managed environment variables. The backend remains Python/FastAPI in all environments; only the hosting and connected services change later.
+
+### Database hosting
+
+The backend data layer remains unchanged:
+
+- SQLAlchemy is still the runtime ORM layer.
+- Alembic is still the schema source of truth.
+- `DATABASE_URL` is still the only database connection input.
+
+What changes is where Postgres is hosted:
+
+- local development defaults to Docker Postgres
+- staging and production can point `DATABASE_URL` at Supabase Postgres
+
+The settings layer normalizes `postgres://` and `postgresql://` URLs to the `postgresql+psycopg://` SQLAlchemy dialect automatically, so Supabase-provided connection strings can be pasted directly.
+
+Hosted connection guidance for this phase:
+
+- use a direct Supabase connection when possible
+- Supavisor session pooling is also acceptable
+- keep `sslmode=require` on hosted connections
+- do not use transaction-pool mode for the API or Alembic in this phase
+
+### Authentication
+
+The backend now expects Supabase Auth bearer tokens in hosted environments.
+
+- the frontend signs in with Supabase
+- the frontend sends `Authorization: Bearer <token>` to the API
+- FastAPI validates asymmetric Supabase tokens against the project JWKS endpoint
+- legacy shared-secret tokens can fall back to `GET /auth/v1/user` when `SUPABASE_PUBLISHABLE_KEY` (or legacy `SUPABASE_ANON_KEY`) is set
+- the token `sub` becomes the application user ID
+- the API keeps business authorization and user-scoped queries in Python
+
+Local development still supports an explicit bypass:
+
+- `LOCAL_AUTH_BYPASS=true` allows the old single local user flow
+- this bypass is only valid when `APP_ENV=local`
+- the configured local identity (`LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL`) is also local-only and is reused by the seed commands
+- `staging` and `production` must use real bearer tokens
+
+### Startup safety
+
+Startup-only convenience behavior is now config-gated:
+
+- `RUN_MIGRATIONS_ON_START`
+- `RUN_SEED_ON_START`
+
+Default behavior:
+
+- `local` -> migrations and seed are enabled by default
+- `staging` / `production` -> both are disabled by default
+
+This means local `make run` and `./dev.sh` remain convenient, while hosted environments do not mutate schema or seed data unless explicitly configured to do so.
+
+`RUN_SEED_ON_START` replaces the older `SEED_ON_START` name. The legacy name is still accepted for compatibility, but the new flag is the canonical one.
+
+## Current runtime flow
+
+### Upload
+
+1. `POST /items/presign`
+2. A placeholder item is created in Postgres.
+3. The client uploads the source image directly to a private Supabase Storage object using the signed upload target.
+4. `POST /items/{item_id}/complete-upload`
+5. The API downloads the private source object, generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores private object paths plus metadata, and enqueues an `ai_jobs` row.
+6. The worker polls `ai_jobs`, claims work with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to the item.
+
+### AI enrichment
+
+The worker-driven enrichment flow now looks like this:
+
+- `POST /items/{item_id}/complete-upload` inserts or reuses a durable `ai_jobs` row with `pending` status.
+- `app/worker.py` preloads the predictor once at startup, continuously polls the queue, and safely claims one row at a time.
+- `app/ai/tasks.py` still owns the shared enrichment logic and writes back colors, category, subcategory, materials, style tags, top tags, and confidence when thresholds are met.
+- The worker prefers the normalized `medium.jpg` variant for inference when it exists, which avoids downloading oversized originals for every job.
+- Timing logs now report job claim latency, image fetch duration, preprocessing, inference, DB write, and total job duration.
+- Job rows track `pending`, `running`, `completed`, and `failed` plus `attempts`, timestamps, and the latest error message.
+- Running jobs that become stale are claimable again after `AI_JOB_STALE_AFTER_SECONDS`, which makes the worker restart-safe.
+- Failed attempts are requeued until `AI_JOB_MAX_ATTEMPTS` is reached, then the job is marked `failed`.
+- If a job takes longer than usual, check worker logs for `worker.warmup_started`, `worker.job_claimed`, `ai.tasks.image_fetch_started`, `ai.tasks.image_fetched`, and `ai.pipeline.timings` to see whether the delay is startup warmup, storage fetch, or inference.
+
+### AI preview
+
+`GET /items/{id}/ai-preview` returns a preview payload based on:
+
+- persisted AI fields already stored on the item, plus
+- the current queue state for the item's AI job.
+
+If the worker has not finished yet, the preview returns `pending: true` and job metadata so the UI can keep polling without running inference in the API process.
+
+## Routes
+
+- `GET /health`
+- `GET /version`
+- `GET /items`
+- `GET /items/{item_id}`
+- `GET /items/{item_id}/ai-preview`
+- `PATCH /items/{item_id}`
+- `DELETE /items/{item_id}`
+- `POST /items/presign`
+- `PUT /items/uploads/{item_id}` legacy route that now returns `410 Gone`
+- `POST /items/{item_id}/complete-upload`
+
+## Environment variables
+
+Copy `.env.example` to `.env` before running locally.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `APP_ENV` | `local`, `staging`, or `production` | `local` |
-| `APP_VERSION` | Version string surfaced by `/health` & `/version` | `0.1.0` |
-| `API_KEY` | Required in staging/production for `X-API-Key` auth | _unset_ |
-| `DATABASE_URL` | SQLAlchemy connection string | _required_ |
-| `AWS_REGION` | AWS region for S3 client | _required_ |
-| `S3_BUCKET_NAME` | Bucket for wardrobe uploads | _required_ |
-| `CORS_ORIGINS` | CSV of allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
-| `UPLOAD_MODE` | `s3` or `local`; defaults to `s3` when AWS vars present | _auto_ |
-| `MEDIA_ROOT` | Directory for locally stored uploads | `./media` |
-| `MEDIA_URL_PATH` | Public URL prefix for local media | `/media` |
-| `MEDIA_MAX_UPLOAD_SIZE` | Max upload size in bytes | `15728640` |
-| `SEED_ON_START` | Auto-run curated seed (defaults on in local env) | `true` (local) |
-| `SEED_LIMIT` | Max number of seed items applied per run | `25` |
-| `SEED_KEY` | Identifier stored in `seeds` table for idempotency | `local-seed-v1` |
+| `APP_ENV` | `local`, `staging`, `production` | required |
+| `APP_VERSION` | value returned by `/health` and `/version` | `0.1.0` |
+| `DATABASE_URL` | SQLAlchemy/Postgres connection string; local Docker or Supabase-hosted | required |
+| `SUPABASE_URL` | Supabase project URL used for auth verification and Storage API calls | required in hosted envs; optional for local boot |
+| `SUPABASE_SERVICE_ROLE_KEY` | private backend key used for Supabase Storage operations | required in hosted envs and for local live uploads |
+| `SUPABASE_STORAGE_BUCKET` | private bucket name for uploaded wardrobe media | required in hosted envs and for local live uploads |
+| `SUPABASE_HTTP_TIMEOUT_SECONDS` | outbound timeout for Supabase Storage requests made by the API and worker | `15` |
+| `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_ANON_KEY` | optional public key used only for legacy shared-secret token verification | _(unset)_ |
+| `SUPABASE_JWT_AUDIENCE` | expected access-token audience | `authenticated` |
+| `LOCAL_AUTH_BYPASS` | allow the local-only guest workflow without bearer tokens | `true` in local, otherwise `false` |
+| `LOCAL_AUTH_USER_ID` / `LOCAL_AUTH_EMAIL` | explicit local bypass identity | local developer defaults |
+| `CORS_ORIGINS` | comma-separated allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
+| `MEDIA_MAX_UPLOAD_SIZE` | upload ceiling in bytes | `15728640` |
+| `SUPABASE_SIGNED_URL_TTL_SECONDS` | signed read URL lifetime returned in item payloads | `3600` |
+| `MEDIA_ROOT` | local scratch/cache directory still used by image/AI helpers | `./media` |
+| `RUN_MIGRATIONS_ON_START` | run Alembic migrations during app startup | `true` in local, otherwise `false` |
+| `RUN_SEED_ON_START` | apply deterministic seed data during app startup | `true` in local, otherwise `false` |
+| `AI_ENABLE_CLASSIFIER` | enable background classification | `true` |
+| `AI_DEVICE` | model device, usually `cpu` locally | `cpu` |
+| `AI_CONFIDENCE_THRESHOLD` | write threshold for category/material/style updates | `0.6` |
+| `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | write threshold for subcategory updates | `0.5` |
+| `AI_COLOR_USE_MASK` | enable foreground masking before color clustering | `true` |
+| `AI_COLOR_MASK_METHOD` | `grabcut` or `heuristic` | `grabcut` |
+| `AI_COLOR_MIN_FOREGROUND_PIXELS` | minimum masked pixel count before unmasked fallback | `3000` |
+| `AI_COLOR_TOPK` | number of colors retained from clustering | `2` |
+| `AI_ONNX` / `AI_ONNX_MODEL_PATH` | optional ONNX inference path | `false` / unset |
+| `AI_JOB_MAX_ATTEMPTS` | retry budget before a job is marked `failed` | `3` |
+| `AI_JOB_POLL_INTERVAL_SECONDS` | worker sleep interval when no jobs are claimable | `0.5` |
+| `AI_JOB_STALE_AFTER_SECONDS` | age after which a `running` job can be reclaimed | `300` |
+| `SEED_LIMIT` / `SEED_KEY` | deterministic seed controls | `25` / `local-seed-v1` |
 
-Copy `.env.example` to `.env` for a ready-to-run local configuration.
+## Supabase Storage setup
 
-The application fails fast in staging/production if any required variable is missing.
+The API now assumes a private Supabase Storage bucket.
 
-## Local Development
+Minimum dashboard configuration:
 
-1. Start PostgreSQL (example using Docker):
-   ```bash
-   docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres postgres:16
-   ```
-2. Copy `.env.example` to `.env` (or another filename) and tweak as needed. Example:
-   ```env
-   APP_ENV=local
-   DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/postgres
-   AWS_REGION=us-east-1
-   S3_BUCKET_NAME=styleus-dev
-   CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-   MEDIA_ROOT=./media
-   MEDIA_URL_PATH=/media
-   API_KEY=
-   ```
-3. Install dependencies:
-   ```bash
-   make setup
-   ```
-4. Launch the API (migrations run automatically on startup):
-   ```bash
-   make run
-   ```
-   If you want to apply migrations manually ahead of time, run `make upgrade`.
-   Local requests bypass the `X-API-Key` guard. In staging/production, set `API_KEY` and send the header `X-API-Key: <value>` from the frontend.
-   If `AWS_REGION` and `S3_BUCKET_NAME` are unset the service automatically switches to local upload mode and persists files beneath `MEDIA_ROOT`.
+1. Create the bucket named by `SUPABASE_STORAGE_BUCKET`.
+2. Keep the bucket private.
+3. Set the bucket file size limit to match `MEDIA_MAX_UPLOAD_SIZE`.
+4. Restrict allowed MIME types to `image/jpeg`, `image/png`, and `image/webp`.
+5. Store `SUPABASE_SERVICE_ROLE_KEY` only on the backend.
 
-### One-command setup with Docker Compose
+Security model:
 
-Alternatively, spin up Postgres and the API (with migrations) in one shot:
+- the browser never receives the service-role key
+- the API issues short-lived signed upload targets
+- item payloads expose only signed read URLs, not permanent public URLs
+- AI/seed/server-side flows use direct authenticated Storage access from the backend
 
-```bash
-docker compose up --build
-```
-
-The compose file exposes the API on `http://localhost:8000` and persists database data in a named `pgdata` volume. Override configuration via environment variables passed to `docker compose`, e.g. `AWS_REGION=us-west-2 docker compose up`.
-
-## Database (PostgreSQL + Docker)
-
-1. Ensure Docker Desktop (or the Docker daemon) is running.
-2. Start the database service:
-   ```bash
-   make db-up
-   ```
-   This launches a Postgres 16 container named `styleus-db` on `localhost:5432`.
-3. Apply database migrations:
-   ```bash
-   alembic upgrade head
-   ```
-4. Start the API (in another terminal):
-   ```bash
-   make run
-   ```
-5. When you are done developing, stop the database:
-   ```bash
-   make db-down
-   ```
-
-You can inspect tables at any point with:
+## Local development
 
 ```bash
-docker exec -it styleus-db psql -U postgres -d postgres -c "\\dt"
+cd services/api
+cp .env.example .env
+make setup
+make db-up
+make upgrade
+cd ../..
+./dev.sh
 ```
 
-### Troubleshooting
+Default API URL: `http://127.0.0.1:8000`
 
-- **Port 5432 already in use** – Update the port mapping in `docker-compose.yml` (e.g. `"5433:5432"`) and change `DATABASE_URL` to `postgresql+psycopg://postgres:postgres@localhost:5433/postgres`.
-- **Container unhealthy** – Reset the database volume and container:
-  ```bash
-  docker rm -f styleus-db
-  docker volume rm styleus-pgdata
-  make db-up
-  ```
+`./dev.sh` now starts the API, the AI worker, and the frontend together. If you prefer separate processes, `make run` and `make worker` still work independently.
 
-## Useful Commands
+The copied example file includes placeholder Supabase Storage values. Replace them before exercising the live upload path.
 
-- `make migrate MESSAGE="short description"` – create a new Alembic revision.
-- `make upgrade` – apply migrations.
-- `make lint` – run Ruff.
-- `make typecheck` – run mypy (targets `app/`).
-- `make test` – execute pytest suite (uses SQLite + mocked AWS).
-- `make seed` – populate the local wardrobe with curated starter data.
-- `make reset-seed` – clear seeded items and allow reseeding.
+Useful commands:
 
-## Sample Requests
+- `make seed` - apply the deterministic seed dataset
+- `make reset-seed` - remove seeded items and their stored media objects
+- `make worker` - start the AI worker loop
+- `make lint`
+- `make typecheck`
+- `make test`
+
+`make seed` and `make reset-seed` are local-development commands. They now refuse to run unless `APP_ENV=local`, because the seed dataset attaches to the configured local auth identity.
+
+To test real auth locally:
+
+1. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in `services/api/.env`
+2. Set `LOCAL_AUTH_BYPASS=false`
+3. If your Supabase project still uses legacy shared-secret JWT signing, also set `SUPABASE_PUBLISHABLE_KEY`
+4. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env.local`
+5. Create the private Storage bucket in Supabase and align its size/MIME rules with `MEDIA_MAX_UPLOAD_SIZE`
+6. Sign in from the web app
+
+## Running against Supabase Postgres
+
+The backend does not need a different code path for Supabase. Point `DATABASE_URL` at a Supabase Postgres connection string and keep using the existing commands.
+
+Recommended migration flow against Supabase:
 
 ```bash
-curl http://localhost:8000/health
-
-curl http://localhost:8000/version
-
-curl -X POST http://localhost:8000/items/presign \
-  -H 'Content-Type: application/json' \
-  -d '{"contentType": "image/jpeg", "fileName": "top.jpg"}'
-
-curl "http://localhost:8000/items?category=top&q=nike"
-
-curl "http://localhost:8000/items?include_deleted=true"  # include soft-deleted rows (admin tooling)
-
-curl -X PATCH http://localhost:8000/items/<item-id> \
-  -H 'Content-Type: application/json' \
-  -d '{"brand": "Uniqlo", "color": "navy", "tags": ["minimal"]}'
-
-curl -X DELETE http://localhost:8000/items/<item-id>
-
-# Sample wardrobe payload (truncated)
-{
-  "id": "...",
-  "imageUrl": "https://bucket.s3.us-east-1.amazonaws.com/user/.../orig.jpg",
-  "thumbUrl": "https://bucket.s3.us-east-1.amazonaws.com/user/.../thumb.jpg",
-  "mediumUrl": "https://bucket.s3.us-east-1.amazonaws.com/user/.../medium.jpg",
-  "imageMetadata": {
-    "width": 2048,
-    "height": 1365,
-    "bytes": 325486,
-    "mimeType": "image/jpeg",
-    "checksum": "...sha256..."
-  },
-  "tags": ["minimal"]
-}
+cd services/api
+export APP_ENV=staging
+export DATABASE_URL='postgresql://postgres.<project-ref>:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require'
+export SUPABASE_URL='https://<project-ref>.supabase.co'
+export SUPABASE_SERVICE_ROLE_KEY='<service-role-key>'
+export SUPABASE_STORAGE_BUCKET='wardrobe-images'
+export RUN_MIGRATIONS_ON_START=false
+export RUN_SEED_ON_START=false
+make upgrade
+make run
 ```
 
-## Seeding the Local Wardrobe
+Notes:
 
-On first run the API seeds a curated dataset when `APP_ENV=local` and
-`SEED_ON_START=true`. The process is idempotent—the applied seed key is recorded
-in the `seeds` table so restarts do not duplicate rows. Use `make seed` to run
-the pipeline manually or `make reset-seed` to clear the marker and generated
-media before reseeding. Configuration lives in `app/seed/seed_sources.yaml`.
+- `make upgrade` remains the canonical schema migration path.
+- The app will normalize the Supabase URL to the correct SQLAlchemy psycopg driver automatically.
+- Use the same `DATABASE_URL` for Alembic and the API process.
+- Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
 
-## Docker
+## Platform boundary
 
-For a simple container build:
+### Local today
 
-```bash
-docker build -t styleus-api .
-docker run --rm -p 8000:8000 --env-file .env styleus-api
-```
+- API runs on the host.
+- Postgres runs in Docker.
+- Uploaded media lives in a private Supabase Storage bucket.
+- Auth can use either:
+  - explicit local bypass, or
+  - real Supabase bearer tokens when configured locally
 
-## Testing
+### Target hosted shape
 
-Tests run against SQLite with AWS calls mocked via lightweight stubs:
+- Render web service -> FastAPI API
+- Render worker -> AI worker runtime using the same Postgres queue
+- Supabase Postgres -> supported hosted database target in this phase
+- Supabase Auth -> implemented for bearer-token validation in this phase
+- Supabase Storage -> implemented in this phase for private uploads and signed reads
 
-```bash
-make test
-```
+The API remains the only component that should own:
 
-### Uploads in local development
+- business CRUD
+- upload finalization
+- AI prediction persistence
+- user-scoped authorization rules
 
-When `APP_ENV=local`, the `/items/presign` endpoint returns an upload URL that targets the API itself (`PUT /items/uploads/{itemId}`) so the frontend can stream files without real S3 credentials. In staging/production the service falls back to presigned S3 URLs and requires valid AWS configuration.
+The frontend should only know public API and public auth configuration. Database credentials, storage credentials, and server-side secrets remain backend-only.
 
-### Local AI v1 (color + CLIP multi-head)
+## Deployment notes for later phases
 
-After a successful upload completion the API runs a background classifier that predicts the clothing category, the dominant color (when the field was left `unspecified`), and a handful of descriptive tags. The pipeline prefers a local CLIP (ViT-B/32, `open-clip-torch`) model on CPU and gracefully falls back to a deterministic color/keyword heuristic if the model cannot be loaded. Embeddings are cached under `<MEDIA_ROOT>/.emb_cache/<sha256>.npy` so repeat inferences reuse work. Predictions only fill empty fields (and merge with existing tags) so user edits remain authoritative—brand stays user-controlled. Set `AI_ENABLE_CLASSIFIER=false` to disable the background job entirely. The first CLIP run may download weights and cache them locally; the heuristic fallback remains available even without the model.
+This repository is now documented for the target platform split, but the following are still future work:
 
-Key environment variables:
+- staging and production rollout
 
-- `AI_CONFIDENCE_THRESHOLD` (default `0.6`) – minimum probability required before auto-writing category/colors/tags.
-- `AI_COLOR_TOPK` (default `2`) – number of dominant colors to store (`primary_color`, optional `secondary_color`).
-- `AI_ONNX` / `AI_ONNX_MODEL_PATH` – enable an ONNX-exported CLIP encoder (falls back to torch if unavailable).
+## Docker and Postgres
 
-## Upload Modes
+- `docker-compose.yml` starts Postgres only.
+- Normal development runs the API on the host, not in Docker.
+- The database container is named `styleus-db`.
+- Data is persisted in the `styleus-pgdata` Docker volume.
 
-- **S3 mode** (default when `AWS_REGION` and `S3_BUCKET_NAME` are present): uploads are presigned to S3 and the final `image_url` is constructed from the bucket/region unless the client supplies an explicit URL.
-- **Local mode** (default when S3 variables are absent): uploads stream directly to the API, are written under `MEDIA_ROOT/<item_id>/{orig,medium,thumb}.jpg`, and are exposed via `MEDIA_URL_PATH`.
+## Testing notes
 
-Every completed upload extracts metadata (width, height, bytes, mime type, checksum) and publishes jpeg variants for thumbnail and medium sizes. These appear on the wardrobe item JSON as `imageUrl`, `mediumUrl`, `thumbUrl`, and `imageMetadata`.
+- Backend tests run with pytest.
+- The current test configuration expects a Postgres database reachable via `DATABASE_URL`; the default test setup points at `postgresql+psycopg://postgres:postgres@localhost:5432/postgres`.
+- Supabase Storage interactions are mocked in unit tests.
 
-## Local Seeding
+See also:
 
-The API can auto-populate a development database with 30 curated wardrobe
-entries bundled under `app/seed/`. By default this runs on the first startup in
-`APP_ENV=local`; disable by setting `SEED_ON_START=false`. Manual control is
-available via `make seed` / `make reset-seed`, and the dataset configuration is
-documented in `app/seed/README.md`.
-
-### Local upload walkthrough
-
-```bash
-# 1. Request an upload slot (returns /items/uploads/<id>)
-curl -s -X POST :8000/items/presign \
-  -H "Content-Type: application/json" \
-  -d '{"contentType":"image/jpeg","fileName":"top.jpg"}'
-
-# 2. Upload the file directly to the API
-curl -s -X PUT :8000/items/uploads/<itemId> \
-  -H "Content-Type: image/jpeg" \
-  -H "X-File-Name: top.jpg" \
-  --data-binary @top.jpg
-
-# 3. Finalise the upload so the record stores the served URL
-curl -s -X POST :8000/items/<itemId>/complete-upload \
-  -H "Content-Type: application/json" \
-  -d '{"fileName":"top.jpg"}'
-```
-
-## Post-Implementation Sanity Checklist
-
-- `docker run -p 5432:5432 postgres:16`
-- `make setup && make upgrade && make run`
-- `curl :8000/health`
-- `curl -X POST :8000/items/presign -H 'Content-Type: application/json' -d '{"contentType":"image/jpeg","fileName":"t.jpg"}'`
-- `curl :8000/items?category=top&q=nike`
-- `pytest -q`
+- [../../docs/config/environments.md](../../docs/config/environments.md)
+- [../../docs/architecture/deployment.md](../../docs/architecture/deployment.md)

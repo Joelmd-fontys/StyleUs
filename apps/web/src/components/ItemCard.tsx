@@ -12,17 +12,15 @@ interface ItemCardProps {
   onSelect?: (id: string) => void;
 }
 
-const ItemCardComponent = ({
-  item,
-  isSelected = false,
-  onSelect
-}: ItemCardProps) => {
+const ItemCardComponent = ({ item, isSelected = false, onSelect }: ItemCardProps) => {
   const [statsForNerds] = useStatsPreference();
   const imageSrc = resolveMediaUrl(item.mediumUrl, item.imageUrl, item.thumbUrl);
   const primaryColor = item.primaryColor?.trim() || item.color?.trim() || '';
   const secondaryColor = item.secondaryColor?.trim() || '';
   const hasPrimaryColor = primaryColor.length > 0;
   const hasSecondaryColor = secondaryColor.length > 0;
+  const subcategory = item.subcategory ?? item.ai?.subcategory ?? null;
+  const subcategoryLabel = subcategory ? subcategory.replace(/\b\w/g, (char) => char.toUpperCase()) : null;
 
   const handleActivate = () => {
     onSelect?.(item.id);
@@ -43,9 +41,7 @@ const ItemCardComponent = ({
       onKeyDown={handleKeyDown}
       className={cn(
         'group relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-all hover:-translate-y-1 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600',
-        isSelected
-          ? 'border-accent-600/80 ring-2 ring-accent-600/30'
-          : 'border-neutral-200/80'
+        isSelected ? 'border-accent-600/80 ring-2 ring-accent-600/30' : 'border-neutral-200/80'
       )}
       aria-current={isSelected ? 'page' : undefined}
     >
@@ -63,6 +59,7 @@ const ItemCardComponent = ({
           <span>{item.category}</span>
           {statsForNerds ? <span>{formatUtcDate(item.createdAt)}</span> : null}
         </div>
+        <p className="text-[11px] uppercase tracking-wide text-neutral-400">{subcategoryLabel ?? '—'}</p>
         <p className="text-sm font-semibold text-neutral-900">{item.brand ?? 'Unbranded'}</p>
         <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-neutral-500">
           <div className="flex items-center gap-2">

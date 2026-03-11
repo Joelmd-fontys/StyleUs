@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactElement, useEffect, useState } from 'react';
 import Button from './Button';
 import { WardrobeCategory } from '../domain/types';
+import { FILTER_CATEGORY_OPTIONS } from '../domain/labels';
 import { cn } from '../lib/utils';
 
 interface FiltersProps {
@@ -10,16 +11,6 @@ interface FiltersProps {
   onReset?: () => void;
   className?: string;
 }
-
-const categoryOptions: ReadonlyArray<{ label: string; value?: WardrobeCategory }> = [
-  { label: 'All', value: undefined },
-  { label: 'Tops', value: 'top' },
-  { label: 'Bottoms', value: 'bottom' },
-  { label: 'Outerwear', value: 'outerwear' },
-  { label: 'Shoes', value: 'shoes' },
-  { label: 'Accessories', value: 'accessory' },
-  { label: 'Uncategorized', value: 'uncategorized' }
-];
 
 const Filters = ({ category, q, onChange, onReset, className }: FiltersProps): ReactElement => {
   const [searchValue, setSearchValue] = useState(q ?? '');
@@ -63,7 +54,7 @@ const Filters = ({ category, q, onChange, onReset, className }: FiltersProps): R
           }}
           className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-600/20 md:w-48"
         >
-          {categoryOptions.map((option) => (
+          {FILTER_CATEGORY_OPTIONS.map((option) => (
             <option key={option.label} value={option.value ?? ''}>
               {option.label}
             </option>

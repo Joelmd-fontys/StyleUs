@@ -1,11 +1,5 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
-import {
-  deleteItem as deleteItemRequest,
-  getItem,
-  getItems,
-  getItemAIPreview,
-  patchItem
-} from '../lib/api';
+import { deleteItem as deleteItemRequest, getItem, getItems, getItemAIPreview, patchItem } from '../lib/api';
 import { USE_LIVE_API_ITEMS } from '../lib/config';
 import { logger } from '../lib/logger';
 import { WardrobeItem, WardrobeCategory } from '../domain/types';
@@ -66,6 +60,23 @@ interface WardrobeState {
 }
 
 export type WardrobeStore = UseBoundStore<StoreApi<WardrobeState>>;
+
+const deriveAIPreviewFromItem = (item: WardrobeItem): AIPreviewResponse => ({
+  category: item.ai?.category ?? item.category,
+  subcategory: item.ai?.subcategory ?? item.subcategory ?? null,
+  categoryConfidence: item.ai?.confidence ?? item.aiConfidence ?? null,
+  subcategoryConfidence: null,
+  primaryColor: item.primaryColor ?? null,
+  primaryColorConfidence: null,
+  secondaryColor: item.secondaryColor ?? null,
+  secondaryColorConfidence: null,
+  materials: item.ai?.materials ?? [],
+  styleTags: (item.ai?.styleTags ?? []).slice(0, 3),
+  tags: item.tags,
+  confidence: item.ai?.confidence ?? item.aiConfidence ?? null,
+  pending: item.aiJob?.pending ?? false,
+  job: item.aiJob ?? null
+});
 
 export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) => ({
   items: [],
@@ -141,7 +152,8 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
           tags: payload.tags ?? existing.tags,
           brand: payload.brand ?? existing.brand,
           color: payload.color ?? existing.color,
-          category: payload.category ?? existing.category
+          category: payload.category ?? existing.category,
+          subcategory: payload.subcategory ?? existing.subcategory
         });
       }
       get().replaceItem(id, updated);
@@ -152,16 +164,7 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
           uploadReview: {
             ...currentReview,
             item: updated,
-            ai: {
-              category: updated.category,
-              primaryColor: updated.primaryColor ?? null,
-              secondaryColor: updated.secondaryColor ?? null,
-              tags: updated.tags,
-              confidence: updated.aiConfidence ?? null,
-              categoryConfidence: updated.aiConfidence ?? null,
-              primaryColorConfidence: null,
-              secondaryColorConfidence: null
-            },
+            ai: deriveAIPreviewFromItem(updated),
             loading: false,
             isConfirming: false,
             error: undefined
@@ -198,8 +201,7 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
       logger.itemDeleted({ id });
       return true;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to delete item';
+      const message = error instanceof Error ? error.message : 'Unable to delete item';
       set({
         items: previousItems,
         selectedItemId: previousSelected,
@@ -226,6 +228,13 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
         ? {
             uploadReview: {
               ...state.uploadReview,
+              item:
+                ai?.job && state.uploadReview.item
+                  ? {
+                      ...state.uploadReview.item,
+                      aiJob: ai.job
+                    }
+                  : state.uploadReview.item,
               ai,
               loading: false,
               error: undefined
@@ -271,16 +280,7 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
             ? {
                 uploadReview: {
                   ...state.uploadReview,
-              ai: {
-                category: item.category,
-                primaryColor: item.primaryColor ?? null,
-                secondaryColor: item.secondaryColor ?? null,
-                tags: item.tags,
-                confidence: item.aiConfidence ?? null,
-                categoryConfidence: item.aiConfidence ?? null,
-                primaryColorConfidence: null,
-                secondaryColorConfidence: null
-              },
+                  ai: deriveAIPreviewFromItem(item),
                   loading: false,
                   error: undefined
                 }

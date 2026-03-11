@@ -141,6 +141,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
         const body = (await request.json()) as Partial<{
           fileName: string;
           contentType: string;
+          fileSize: number;
         }>;
         const itemId =
           typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -177,10 +178,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
         const itemId = params.itemId as string;
         const pending = pendingUploads.get(itemId);
         if (!pending || !pending.uploaded) {
-          return HttpResponse.json(
-            { message: 'Upload not ready for completion' },
-            { status: 400 }
-          );
+          return HttpResponse.json({ message: 'Upload not ready for completion' }, { status: 400 });
         }
 
         const body = (await request.json()) as Partial<{ imageUrl: string }>;
