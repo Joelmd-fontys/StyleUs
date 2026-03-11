@@ -1,148 +1,99 @@
 # Environment Model
 
-StyleUs now treats environment handling as a first-class concern across the web app and API.
+StyleUs uses three runtime tiers:
 
-## Environment tiers
+| Environment | Frontend | Backend | Defaults |
+| --- | --- | --- | --- |
+| `local` | Vite dev server | FastAPI on the developer machine | migrations `on`, seed `on` |
+| `staging` | Vercel preview or staging | Render web service | migrations `off`, seed `off` |
+| `production` | Vercel production | Render web service | migrations `off`, seed `off` |
 
-| Environment | Purpose | Frontend runtime | Backend runtime | Startup defaults |
-| --- | --- | --- | --- | --- |
-| `local` | developer workstations | Vite dev server | FastAPI on host machine | migrations `on`, seed `on` |
-| `staging` | pre-production verification | Vercel preview or staging project | Render web service | migrations `off`, seed `off` |
-| `production` | public deployment | Vercel production project | Render web service | migrations `off`, seed `off` |
-
-## Local files vs hosted secrets
-
-Local development uses checked-in examples copied into local files:
+## Local files
 
 - `apps/web/.env.example` -> `apps/web/.env.local`
 - `services/api/.env.example` -> `services/api/.env`
 
-Hosted environments should use platform-managed configuration:
+Hosted environments should use platform-managed secrets:
 
-- Vercel environment variables for `apps/web`
-- Render environment variables for `services/api`
-- Supabase project configuration for database, auth, and storage
-
-Do not commit staging or production secrets into the repository.
+- Vercel for the web app
+- Render for the API and worker
+- Supabase for database, auth, and storage infrastructure
 
 ## Frontend variables
 
-These variables are browser-visible and must remain safe to expose publicly.
+These values are browser-visible:
 
-| Variable | Used now | Intended owner | Notes |
-| --- | --- | --- | --- |
-| `VITE_APP_ENV` | yes | Vercel / local `.env.local` | `local`, `staging`, `production` |
-| `VITE_API_BASE_URL` | yes | Vercel / local `.env.local` | base URL for FastAPI; defaults to localhost only in `local` |
-| `VITE_SUPABASE_URL` | yes | Vercel / local `.env.local` | public Supabase project URL for browser auth and direct signed uploads |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | yes | Vercel / local `.env.local` | preferred public browser key for Supabase Auth |
-| `VITE_SUPABASE_ANON_KEY` | yes | Vercel / local `.env.local` | public fallback key name still accepted for compatibility |
-| `VITE_USE_LIVE_API_ITEMS` | yes | local `.env.local` | local development toggle for MSW vs live API |
-| `VITE_USE_LIVE_API_UPLOAD` | yes | local `.env.local` | local development toggle for uploads |
+- `VITE_APP_ENV`
+- `VITE_API_BASE_URL`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_ANON_KEY` as a legacy alias
+- `VITE_USE_LIVE_API_ITEMS`
+- `VITE_USE_LIVE_API_UPLOAD`
 
-Notes:
+Rules:
 
-- The two `VITE_USE_LIVE_API_*` flags are local-development controls. They are not expected to matter in production.
-- If both Supabase frontend variables are present and live API mode is enabled, the SPA requires a real Supabase session before it renders the app shell.
-- If they are absent in `local`, the SPA stays in explicit guest mode and relies on the API's local auth bypass.
+- the `VITE_USE_LIVE_API_*` flags are local-development toggles
+- if `VITE_SUPABASE_URL` and a public browser key are missing, the frontend falls back to local guest mode
+- hosted environments should always provide the public Supabase values
 
 ## Backend variables
 
-These variables are server-side and must remain private.
+Core:
 
-| Variable | Used now | Intended owner | Notes |
-| --- | --- | --- | --- |
-| `APP_ENV` | yes | Render / local `.env` | `local`, `staging`, `production` |
-| `APP_VERSION` | yes | Render / local `.env` | surfaced by health/version endpoints |
-| `DATABASE_URL` | yes | Render / local `.env` | local Docker Postgres in `local`; Supabase Postgres in hosted envs |
-| `SUPABASE_URL` | yes | Render / local `.env` | Supabase project URL used for auth verification and Storage API calls |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | Render / local `.env` | backend-only key for private Storage operations |
-| `SUPABASE_STORAGE_BUCKET` | yes | Render / local `.env` | private bucket for wardrobe uploads and variants |
-| `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_ANON_KEY` | optional | Render / local `.env` | only needed for legacy shared-secret Supabase JWT verification |
-| `SUPABASE_JWT_AUDIENCE` | yes | Render / local `.env` | expected access-token audience, normally `authenticated` |
-| `LOCAL_AUTH_BYPASS` | yes | local `.env` | explicit local-only auth bypass; invalid in hosted envs |
-| `LOCAL_AUTH_USER_ID` / `LOCAL_AUTH_EMAIL` | yes | local `.env` | identity used when local bypass is enabled |
-| `CORS_ORIGINS` | yes | Render / local `.env` | comma-separated origins |
-| `MEDIA_MAX_UPLOAD_SIZE` | yes | Render / local `.env` | upload cap |
-| `SUPABASE_SIGNED_URL_TTL_SECONDS` | optional | Render / local `.env` | signed-read TTL for `imageUrl`, `mediumUrl`, and `thumbUrl` |
-| `MEDIA_ROOT` | yes | local `.env` / Render | local scratch/cache directory still used by image and AI helpers |
-| `RUN_MIGRATIONS_ON_START` | yes | Render / local `.env` | default `true` in local, `false` otherwise |
-| `RUN_SEED_ON_START` | yes | local `.env` / Render | default `true` in local, `false` otherwise |
-| `AI_*` | yes | Render / local `.env` | current classifier and color pipeline knobs |
-| `SEED_LIMIT` / `SEED_KEY` | yes | local `.env` / Render | deterministic seed controls |
+- `APP_ENV`
+- `APP_VERSION`
+- `DATABASE_URL`
+- `CORS_ORIGINS`
 
-`SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`, but new environments should use the new name.
+Auth and storage:
 
-Auth rules:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET`
+- `SUPABASE_JWT_AUDIENCE`
+- `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY` only for legacy shared-secret verification
+- `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL` for local-only bypass mode
 
-- `APP_ENV` is required. The backend no longer defaults to `local` when it is missing.
-- `staging` and `production` require `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`.
-- `local` can boot without the Storage variables, but live uploads and signed image reads will not work until they are set.
-- `SUPABASE_PUBLISHABLE_KEY` is only required when the Supabase project still uses legacy shared-secret JWT signing.
-- `LOCAL_AUTH_BYPASS` is only valid in `local`.
-- `LOCAL_AUTH_USER_ID` and `LOCAL_AUTH_EMAIL` are only used in `local`, including the deterministic seed workflow.
-- All business data access still goes through FastAPI, even though the browser now authenticates directly with Supabase.
+Media, startup, and worker:
 
-## Database strategy
+- `MEDIA_ROOT`
+- `MEDIA_MAX_UPLOAD_SIZE`
+- `SUPABASE_SIGNED_URL_TTL_SECONDS`
+- `SUPABASE_HTTP_TIMEOUT_SECONDS`
+- `RUN_MIGRATIONS_ON_START`
+- `RUN_SEED_ON_START`
+- `AI_ENABLE_CLASSIFIER`
+- `AI_DEVICE`
+- `AI_CONFIDENCE_THRESHOLD`
+- `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`
+- `AI_COLOR_USE_MASK`
+- `AI_COLOR_MASK_METHOD`
+- `AI_COLOR_MIN_FOREGROUND_PIXELS`
+- `AI_COLOR_TOPK`
+- `AI_ONNX`
+- `AI_ONNX_MODEL_PATH`
+- `AI_JOB_MAX_ATTEMPTS`
+- `AI_JOB_POLL_INTERVAL_SECONDS`
+- `AI_JOB_STALE_AFTER_SECONDS`
+- `SEED_LIMIT`
+- `SEED_KEY`
 
-The backend still has a single database configuration input: `DATABASE_URL`.
+Rules:
 
-Supported usage in this phase:
+- `APP_ENV` is required
+- `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`
+- `staging` and `production` require `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`
+- `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`
+- `SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`
 
-- `local` -> Docker Postgres
-- `staging` / `production` -> Supabase Postgres
+## Database rule
 
-The backend continues to own all business data access through SQLAlchemy. Supabase is treated as the PostgreSQL host plus the private object store in this phase.
+`DATABASE_URL` is the only database setting. The backend continues to use SQLAlchemy and Alembic in every environment.
 
-### Connection-string guidance
+- `local` typically points to Docker Postgres
+- `staging` and `production` can point to Supabase Postgres
+- `postgres://` and `postgresql://` URLs are normalized to the psycopg SQLAlchemy dialect
+- hosted connections should keep `sslmode=require`
 
-- Prefer `postgresql+psycopg://...` when writing URLs manually.
-- `postgres://...` and `postgresql://...` are accepted and normalized automatically.
-- Use `sslmode=require` for hosted Supabase connections.
-- For the API service and Alembic, use either:
-  - a direct Supabase database connection, or
-  - Supavisor session pooling
-- Do not use transaction pooling for the FastAPI app or Alembic in this phase.
-
-### Migration rule
-
-Alembic remains the only schema migration path. Running migrations against Supabase still means:
-
-```bash
-cd services/api
-export DATABASE_URL='...'
-make upgrade
-```
-
-No Supabase-specific schema tool is introduced in this repository.
-
-## Startup rules
-
-The backend startup lifecycle now follows these rules:
-
-- Local may auto-run migrations and seed data for convenience.
-- Staging and production do not auto-run migrations by default.
-- Staging and production do not auto-seed by default.
-- Any hosted startup mutation must be an explicit decision through env configuration.
-
-This keeps local development ergonomic while preventing unsafe startup side effects in hosted environments.
-
-The deterministic seed commands are also local-only. They reuse the configured local auth identity and now fail if `APP_ENV` is not `local`.
-
-## Platform ownership
-
-| Concern | Platform |
-| --- | --- |
-| Frontend static hosting | Vercel |
-| Frontend public env vars | Vercel |
-| FastAPI runtime | Render |
-| Worker runtime | Render |
-| Database | Supabase |
-| Auth | Supabase |
-| Storage | Supabase |
-| Backend private secrets | Render |
-
-## What remains for later phases
-
-This document only establishes the environment model. It does not implement:
-
-- deployment rollout
+Alembic remains the only schema migration path.

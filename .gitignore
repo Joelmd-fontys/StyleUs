@@ -3,11 +3,9 @@
 .AppleDouble
 .LSOverride
 
-# Node.js
+# JavaScript
+/package-lock.json
 node_modules/
-yarn.lock
-package-lock.json
-pnpm-lock.yaml
 .npm/
 .cache/
 dist/
@@ -24,25 +22,21 @@ __pycache__/
 .venv/
 venv/
 .mypy_cache/
-pytest_cache/
+.pytest_cache/
+.ruff_cache/
 .ipynb_checkpoints/
+
+# Local runtime data
 services/api/media/
+
+# Environment files
 .env
 .env.*
 !.env.example
+!apps/web/.env.example
+!services/api/.env.example
 
 # Tooling
 .idea/
 .vscode/
 coverage/
-apps/web/.env.example
-services/api/.env.example
-.env.example
-apps/web/.env.example
-services/api/.env.example
-apps/web/.env.example
-.env.example
-apps/web/.env.example
-.env.example
-apps/web/.env.example
-services/api/.env.example

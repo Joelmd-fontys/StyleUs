@@ -1,121 +1,58 @@
 # Deployment Architecture
 
-This document describes the intended production platform split for StyleUs. It is a planning and repository-foundation document for the migration path; it does not mean every hosted integration is already implemented.
+StyleUs is structured for a simple hosted split:
 
-## Target platform layout
+- frontend on Vercel
+- API on Render
+- worker on Render
+- Postgres, Auth, and Storage on Supabase
 
-```text
-Browser
--> Frontend SPA (Vercel)
--> FastAPI API (Render web service)
--> Supabase Postgres
+## Responsibilities
 
-Browser
--> direct public frontend configuration from Vercel
+Vercel:
 
-FastAPI API
--> Supabase Postgres
--> Supabase Storage
--> Supabase Auth token validation
+- serves the built SPA
+- owns public browser env vars
+- exposes only browser-safe values such as `VITE_APP_ENV`, `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-FastAPI API
--> Render worker enqueue boundary
+Render web service:
 
-Render worker
--> background AI processing via ai_jobs queue
-```
+- runs FastAPI
+- owns backend secrets and private env vars
+- finalizes uploads, serves signed media URLs, and handles all business logic
 
-## Platform responsibilities
+Render worker:
 
-### Vercel
+- runs `app/worker.py`
+- polls `ai_jobs`
+- writes AI predictions back to items
 
-Owns:
+Supabase:
 
-- static hosting for the React/Vite frontend
-- public frontend environment variables
-- preview and production frontend deployments
-
-Should expose only browser-safe variables such as:
-
-- `VITE_APP_ENV`
-- `VITE_API_BASE_URL`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-### Render web service
-
-Owns:
-
-- FastAPI runtime
-- backend private environment variables
-- API request handling
-- upload finalization
-- business logic and item persistence
-
-Should own private variables such as:
-
-- `DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_JWT_AUDIENCE`
-- storage credentials
-- AI pipeline configuration
-
-### Render worker
-
-Owns:
-
-- durable background job processing
-- AI enrichment outside the request lifecycle
-- writes back item predictions after polling Postgres
-
-The repository now includes the worker runtime and queue model. Provisioning the actual hosted Render worker service is still a later deployment step.
-
-### Supabase
-
-Planned target owner for:
-
-- PostgreSQL database
-- authentication
-- storage
-
-The repository should prepare for Supabase as infrastructure, but business data access and authorization logic still stay in the Python backend.
+- hosts Postgres
+- issues auth tokens
+- stores private uploaded media
 
 ## Boundary rules
 
-### What the frontend may know directly
+The frontend may know:
 
 - API base URL
-- public app environment
-- later, public Supabase client configuration for auth/session bootstrap
+- public Supabase URL
+- public Supabase browser key
+- local mock flags during development
 
-### What must stay backend-only
+The frontend must not know:
 
-- database credentials
-- service-role or admin keys
+- `DATABASE_URL`
+- service-role keys
 - storage write credentials
-- internal AI configuration
-- migration and seeding controls
+- worker configuration
+- migration or seed controls
 
-### What remains local-only today
+## Local versus hosted
 
-- Docker-managed Postgres for local development
-- local upload mode and local media serving
-- automatic startup migrations and startup seeding by default
-- MSW toggles for mock API behavior
+- `local` uses Docker Postgres, optional auth bypass, and startup convenience defaults
+- `staging` and `production` should use platform-managed env vars and leave startup mutation disabled by default
 
-## Current state vs later phases
-
-Implemented now:
-
-- frontend and backend are explicitly environment-aware
-- startup mutation is config-gated
-- docs reflect the Vercel + Render + Supabase target split
-- the backend can now point `DATABASE_URL` at Supabase Postgres while keeping SQLAlchemy and Alembic unchanged
-- the frontend can sign in with Supabase Auth and send bearer tokens to FastAPI
-- FastAPI validates Supabase JWTs and maps `sub` to the application user ID
-- Supabase Storage-backed upload finalization plus a Postgres-backed `ai_jobs` worker flow are implemented
-- the API now enqueues AI work and the dedicated worker performs enrichment asynchronously
-
-Later phases will implement:
-
-- actual hosted deployment rollout
+The deployment target is documented here so the repository stays aligned before infrastructure automation is added.

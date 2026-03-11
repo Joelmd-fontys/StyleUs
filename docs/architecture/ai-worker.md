@@ -1,74 +1,39 @@
-# AI Worker Architecture
+# AI Worker
 
-Phase 5 moves AI enrichment out of the FastAPI request lifecycle and into a dedicated worker process backed by Postgres.
+The API queues enrichment work and the worker executes it. Heavy inference never runs in the request-response path.
 
 ## Flow
 
-```text
-Frontend
--> FastAPI API
--> Supabase Postgres (items + ai_jobs)
-<- AI worker polling ai_jobs
-```
+1. `POST /items/{item_id}/complete-upload` finalizes image variants and inserts or reuses one `ai_jobs` row.
+2. `app/worker.py` warms the pipeline once at startup and continuously polls for claimable jobs.
+3. The worker claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`.
+4. The worker downloads the normalized image, runs the AI pipeline, updates the item, and stores the preview payload on the job.
+5. `GET /items/{item_id}/ai-preview` returns persisted predictions and the current job state.
 
-1. The frontend uploads media and calls `POST /items/{item_id}/complete-upload`.
-2. The API finalizes image variants, persists item metadata, and inserts or reuses an `ai_jobs` row.
-3. The worker polls Postgres for claimable jobs.
-4. The worker claims one row with `SELECT ... FOR UPDATE SKIP LOCKED`.
-5. The worker preloads shared model state once, downloads the normalized inference image, and runs the existing AI pipeline.
-6. The worker updates the wardrobe item and marks the job `completed`, or requeues / fails it.
+## Queue behavior
 
-## Job table
+- one durable job per item
+- statuses: `pending`, `running`, `completed`, `failed`
+- each claim increments `attempts`
+- failures retry until `AI_JOB_MAX_ATTEMPTS`
+- stale `running` jobs become claimable again after `AI_JOB_STALE_AFTER_SECONDS`
 
-`ai_jobs` currently stores one durable enrichment job per item:
+This makes the worker restart-safe without changing the user-visible API.
 
-- `id`
-- `item_id`
-- `status`
-- `created_at`
-- `started_at`
-- `completed_at`
-- `attempts`
-- `error_message`
+## Logs to watch
 
-Statuses:
+- `worker.warmup_started`
+- `worker.job_claimed`
+- `ai.tasks.image_fetch_started`
+- `ai.tasks.image_fetched`
+- `ai.pipeline.timings`
+- `worker.job_completed`
+- `worker.job_failed`
 
-- `pending`
-- `running`
-- `completed`
-- `failed`
-
-## Retry and restart behavior
-
-- Each claim increments `attempts`.
-- Failures are requeued until `AI_JOB_MAX_ATTEMPTS` is reached.
-- Once the retry budget is exhausted, the worker marks the row `failed`.
-- `running` rows older than `AI_JOB_STALE_AFTER_SECONDS` are claimable again, which makes the worker restart-safe after crashes or forced restarts.
-- Item writes remain idempotent because enrichment only fills empty or placeholder-like fields and merges tags conservatively.
-- Worker logs include claim latency, image fetch, preprocessing, inference, DB write, and total job duration.
-
-## Preview behavior
-
-`GET /items/{item_id}/ai-preview` no longer runs synchronous inference. It returns:
-
-- persisted AI fields already written to the item
-- `pending: true|false`
-- the current job metadata
-
-The frontend can poll this endpoint until the worker finishes.
-
-## Local runtime
-
-Run the API and worker separately:
+## Local run
 
 ```bash
-make run
-make worker
-```
-
-Or from `services/api`:
-
-```bash
+cd services/api
 make run
 make worker
 ```
