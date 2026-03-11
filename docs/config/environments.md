@@ -135,7 +135,7 @@ The deterministic seed commands are also local-only. They reuse the configured l
 | Frontend static hosting | Vercel |
 | Frontend public env vars | Vercel |
 | FastAPI runtime | Render |
-| Future worker runtime | Render |
+| Worker runtime | Render |
 | Database | Supabase |
 | Auth | Supabase |
 | Storage | Supabase |
@@ -145,5 +145,4 @@ The deterministic seed commands are also local-only. They reuse the configured l
 
 This document only establishes the environment model. It does not implement:
 
-- worker processes
 - deployment rollout

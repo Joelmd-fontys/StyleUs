@@ -160,7 +160,7 @@ def get_colors(image_path: str) -> ColorResult:
 
     try:
         with Image.open(image_path) as img:
-            image = _center_crop(img.convert("RGB"))
+            image = img.convert("RGB").copy()
     except Exception as exc:
         LOGGER.warning("ai.color.image_load_failed", extra={"error": str(exc)})
         return ColorResult(
@@ -169,6 +169,13 @@ def get_colors(image_path: str) -> ColorResult:
             confidence=0.0,
             secondary_confidence=None,
         )
+    return get_colors_from_image(image)
+
+
+def get_colors_from_image(image: Image.Image) -> ColorResult:
+    """Return primary/secondary colors from a preloaded image."""
+
+    image = _center_crop(image.convert("RGB"))
 
     mask_method: MaskMethod = (
         settings.ai_color_mask_method

@@ -22,8 +22,12 @@ from app.utils import storage as storage_utils
 class FakeStorageAdapter:
     def __init__(self) -> None:
         self.objects: dict[str, storage_utils.DownloadedObject] = {}
+        self.downloaded_paths: list[str] = []
 
     def download_object(self, object_path: str) -> storage_utils.DownloadedObject:
+        self.downloaded_paths.append(object_path)
+        if object_path not in self.objects:
+            raise storage_utils.SupabaseStorageNotFoundError(object_path)
         return self.objects[object_path]
 
 
@@ -294,3 +298,55 @@ def test_classify_and_update_item_skips_deleted(db_session, tmp_path, monkeypatc
     assert refreshed.category == "unknown"
     # pipeline should never be invoked
     assert invoked is False
+
+
+def test_run_item_enrichment_falls_back_to_original_when_medium_is_unavailable(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    storage = FakeStorageAdapter()
+    _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)
+    item_id = uuid.uuid4()
+    orig_path = f"users/{DEFAULT_USER_ID}/{item_id}/orig.jpg"
+    medium_path = f"users/{DEFAULT_USER_ID}/{item_id}/medium.jpg"
+    item = WardrobeItem(
+        id=item_id,
+        user_id=DEFAULT_USER_ID,
+        category="unknown",
+        color="unspecified",
+        brand=None,
+        image_object_path=orig_path,
+        image_medium_object_path=medium_path,
+        image_checksum="b" * 64,
+    )
+    db_session.add(item)
+    db_session.commit()
+
+    storage.objects[orig_path] = storage_utils.DownloadedObject(
+        object_path=orig_path,
+        data=_create_image_bytes(),
+        content_type="image/jpeg",
+        size=0,
+    )
+
+    pipeline_result = _mock_pipeline_result(
+        primary="Camel",
+        secondary="Tan",
+        color_conf=0.82,
+        secondary_conf=0.74,
+        category="outerwear",
+        category_conf=0.92,
+        materials=[("leather", 0.88)],
+        style_tags=[("heritage", 0.81)],
+        subcategory="coat",
+        subcategory_conf=0.91,
+    )
+    monkeypatch.setattr(ai_tasks.pipeline, "run", lambda path: pipeline_result)
+
+    ai_tasks.run_item_enrichment(db_session, item_id)
+
+    refreshed = db_session.get(WardrobeItem, item_id)
+    assert refreshed is not None
+    assert refreshed.category == "outerwear"
+    assert storage.downloaded_paths == [medium_path, orig_path]

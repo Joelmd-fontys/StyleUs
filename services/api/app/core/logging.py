@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from typing import Any
 
 request_id_ctx_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+_STANDARD_LOG_RECORD_KEYS = frozenset(logging.makeLogRecord({}).__dict__.keys())
 
 
 class RequestIdFilter(logging.Filter):
@@ -40,6 +41,12 @@ class JsonFormatter(logging.Formatter):
             payload["status_code"] = record.status_code  # type: ignore[attr-defined]
         if getattr(record, "latency_ms", None) is not None:
             payload["latency_ms"] = record.latency_ms  # type: ignore[attr-defined]
+        for key, value in record.__dict__.items():
+            if key in _STANDARD_LOG_RECORD_KEYS or key in payload or key.startswith("_"):
+                continue
+            if value is None:
+                continue
+            payload[key] = value
 
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
@@ -63,12 +70,20 @@ def configure_logging() -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+    app_logger = logging.getLogger("app")
+    app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False
+
     # Ensure uvicorn and fastapi loggers align with our formatting.
     logging.getLogger("uvicorn.access").handlers = []
     logging.getLogger("uvicorn").handlers = [handler]
     logging.getLogger("uvicorn.error").handlers = [handler]
     logging.getLogger("uvicorn.access").addHandler(handler)
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+    logging.getLogger("uvicorn").propagate = False
+    logging.getLogger("uvicorn.error").propagate = False
+    logging.getLogger("uvicorn.access").propagate = False
 
     return logger
 

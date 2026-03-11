@@ -2,7 +2,7 @@
 
 ## What we use today
 - Frontend: React 18 + Vite + TypeScript with Tailwind for styling, React Router for navigation, Zustand for state, MSW for optional local mocks, Vitest + Testing Library for tests, and `tsc --noEmit` for type checks.
-- Backend: FastAPI + Uvicorn with SQLAlchemy 2.0 ORM, Alembic migrations, Pydantic settings, PostgreSQL (Docker via Compose) as the sole database, JSON logging, FastAPI `BackgroundTasks`, and a local-first AI pipeline (Pillow, NumPy, scikit-learn, optional open-clip/torch/ONNX) embedded in the API service.
+- Backend: FastAPI + Uvicorn with SQLAlchemy 2.0 ORM, Alembic migrations, Pydantic settings, PostgreSQL (Docker via Compose) as the sole database, JSON logging, a Postgres-backed AI worker, and a local-first AI pipeline (Pillow, NumPy, scikit-learn, optional open-clip/torch/ONNX) embedded in the API service.
 - Tooling: Ruff for Python linting, mypy for Python type checks, pytest for backend tests, service-level Make targets, and `.env.example` files per app. Static assets and local media are served from `services/api/media` and ignored by git.
 
 ## Redundant or overlapping pieces
@@ -19,7 +19,7 @@
 
 ## Standards to keep going forward
 - Database: PostgreSQL via Docker Compose for local dev.
-- Backend: FastAPI + SQLAlchemy + Alembic + Pydantic settings, JSON logging, BackgroundTasks for async work, and the embedded local-first AI pipeline (no external AI APIs).
+- Backend: FastAPI + SQLAlchemy + Alembic + Pydantic settings, JSON logging, a dedicated AI worker backed by Postgres polling, and the embedded local-first AI pipeline (no external AI APIs).
 - Frontend: React + Vite + TypeScript + Tailwind with React Router and Zustand; MSW for mocks when live API is disabled.
 - Testing: pytest for backend; Vitest + Testing Library for frontend (no parallel frameworks).
 - Lint/format: Ruff for Python; Prettier for frontend formatting with `tsc --noEmit` for type safety.

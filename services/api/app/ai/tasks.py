@@ -1,9 +1,11 @@
-"""Background tasks for AI-assisted wardrobe enrichment."""
+"""Shared AI enrichment helpers used by the worker."""
 
 from __future__ import annotations
 
+import time
 import logging
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
@@ -20,6 +22,29 @@ from app.services import items as items_service
 from app.utils import storage as storage_utils
 
 LOGGER = logging.getLogger("app.ai.tasks")
+
+
+class AIEnrichmentError(RuntimeError):
+    """Base error raised while preparing or running item enrichment."""
+
+    retryable = True
+
+
+class RetryableAIEnrichmentError(AIEnrichmentError):
+    retryable = True
+
+
+class NonRetryableAIEnrichmentError(AIEnrichmentError):
+    retryable = False
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedItemImage:
+    path: Path
+    cleanup_required: bool
+    source: str
+    fetch_duration_ms: float
+    bytes_size: int | None = None
 
 
 def select_top_tags(
@@ -46,72 +71,158 @@ def classify_and_update_item(item_id: UUID) -> None:
         return
 
     with SessionLocal() as session:
-        item = session.get(WardrobeItem, item_id)
-        if item is None:
-            LOGGER.debug("ai.tasks.missing_item", extra={"item_id": str(item_id)})
-            return
-        if item.deleted_at is not None:
-            LOGGER.debug("ai.tasks.skipped_deleted", extra={"item_id": str(item_id)})
-            return
-        if not item.image_object_path and not item.image_url:
-            LOGGER.debug("ai.tasks.skipped_no_image", extra={"item_id": str(item_id)})
-            return
-
-        image_path, cleanup_path = _prepare_item_image(item)
-        if image_path is None:
-            LOGGER.warning(
-                "ai.tasks.image_unavailable",
-                extra={
-                    "item_id": str(item_id),
-                    "image_object_path": item.image_object_path,
-                    "image_url": item.image_url,
-                },
-            )
-            return
-
         try:
-            pipeline_result = pipeline.run(image_path)
-        except Exception as exc:  # pragma: no cover - defensive
-            LOGGER.exception(
-                "ai.tasks.classification_failed",
+            run_item_enrichment(session, item_id)
+        except NonRetryableAIEnrichmentError as exc:
+            LOGGER.warning(
+                "ai.tasks.non_retryable_failure",
                 extra={"item_id": str(item_id), "error": str(exc)},
             )
-            if cleanup_path:
-                _safe_unlink(image_path)
-            return
-        finally:
-            if cleanup_path:
-                _safe_unlink(image_path)
+        except RetryableAIEnrichmentError as exc:
+            LOGGER.warning(
+                "ai.tasks.retryable_failure",
+                extra={"item_id": str(item_id), "error": str(exc)},
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.exception(
+                "ai.tasks.unexpected_failure",
+                extra={"item_id": str(item_id), "error": str(exc)},
+            )
 
-        LOGGER.debug(
-            "ai.tasks.prediction",
+
+def run_item_enrichment(
+    session: Session,
+    item_id: UUID,
+    *,
+    commit: bool = True,
+) -> PipelineResult:
+    """Run the shared AI pipeline for an item inside the provided session."""
+
+    total_started = time.perf_counter()
+    item = session.get(WardrobeItem, item_id)
+    if item is None:
+        raise NonRetryableAIEnrichmentError("Wardrobe item not found")
+    if item.deleted_at is not None:
+        raise NonRetryableAIEnrichmentError("Wardrobe item is deleted")
+    if not item.image_object_path and not item.image_url:
+        raise NonRetryableAIEnrichmentError("Wardrobe item has no image")
+
+    LOGGER.info(
+        "ai.tasks.image_fetch_started",
+        extra={
+            "item_id": str(item.id),
+            "preferred_source": (
+                "storage_medium"
+                if item.image_medium_object_path
+                else "storage_original"
+                if item.image_object_path
+                else "legacy"
+            ),
+        },
+    )
+    prepared_image = _prepare_item_image(item)
+    if prepared_image is None:
+        raise RetryableAIEnrichmentError("Wardrobe item image is unavailable")
+    LOGGER.info(
+        "ai.tasks.image_fetched",
+        extra={
+            "item_id": str(item.id),
+            "source": prepared_image.source,
+            "image_path": str(prepared_image.path),
+            "fetch_duration_ms": prepared_image.fetch_duration_ms,
+            "bytes_size": prepared_image.bytes_size,
+        },
+    )
+
+    LOGGER.info(
+        "ai.tasks.inference_started",
+        extra={"item_id": str(item.id), "image_path": str(prepared_image.path)},
+    )
+    try:
+        pipeline_result = pipeline.run(prepared_image.path)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise RetryableAIEnrichmentError(f"AI pipeline failed: {exc}") from exc
+    finally:
+        if prepared_image.cleanup_required:
+            _safe_unlink(prepared_image.path)
+
+    LOGGER.debug(
+        "ai.tasks.prediction",
+        extra={
+            "item_id": str(item.id),
+            "category": pipeline_result.clip.get("category"),
+            "subcategory": pipeline_result.clip.get("subcategory"),
+            "category_confidence": pipeline_result.clip.get("category_confidence"),
+            "subcategory_confidence": pipeline_result.clip.get("subcategory_confidence"),
+        },
+    )
+    db_write_started = time.perf_counter()
+    LOGGER.info("ai.tasks.db_update_started", extra={"item_id": str(item.id)})
+    updated_fields = _apply_classification(session, item, pipeline_result, commit=commit)
+    db_write_duration_ms = round((time.perf_counter() - db_write_started) * 1000, 2)
+    LOGGER.info(
+        "ai.tasks.db_updated",
+        extra={
+            "item_id": str(item.id),
+            "updated_fields": updated_fields,
+            "db_write_duration_ms": db_write_duration_ms,
+            "total_duration_ms": round((time.perf_counter() - total_started) * 1000, 2),
+        },
+    )
+    return pipeline_result
+
+
+def _prepare_item_image(item: WardrobeItem) -> PreparedItemImage | None:
+    storage_candidates: list[tuple[str, str]] = []
+    if item.image_medium_object_path:
+        storage_candidates.append((item.image_medium_object_path, "storage_medium"))
+    if item.image_object_path and item.image_object_path != item.image_medium_object_path:
+        storage_candidates.append((item.image_object_path, "storage_original"))
+    for object_path, source in storage_candidates:
+        prepared = _download_from_storage(
+            object_path,
+            source=source,
+            cache_key=item.image_checksum,
+        )
+        if prepared is not None:
+            return prepared
+        LOGGER.warning(
+            "ai.tasks.image_fetch_fallback",
             extra={
                 "item_id": str(item.id),
-                "category": pipeline_result.clip.get("category"),
-                "subcategory": pipeline_result.clip.get("subcategory"),
-                "category_confidence": pipeline_result.clip.get("category_confidence"),
-                "subcategory_confidence": pipeline_result.clip.get("subcategory_confidence"),
+                "object_path": object_path,
+                "source": source,
             },
         )
-        _apply_classification(session, item, pipeline_result)
-
-
-def _prepare_item_image(item: WardrobeItem) -> tuple[Path | None, bool]:
-    if item.image_object_path:
-        return _download_from_storage(item.image_object_path)
     if item.image_url:
         return _prepare_legacy_image(item.image_url)
-    return None, False
+    return None
 
 
-def _prepare_legacy_image(image_url: str) -> tuple[Path | None, bool]:
+def _prepare_legacy_image(image_url: str) -> PreparedItemImage | None:
     """Return a local path to the image and whether it should be cleaned up."""
     parsed = urlparse(image_url)
     if not parsed.scheme or parsed.scheme == "" or parsed.scheme == "file":
-        return _resolve_local_image(Path(parsed.path or image_url)), False
+        path = _resolve_local_image(Path(parsed.path or image_url))
+        if path is None:
+            return None
+        return PreparedItemImage(
+            path=path,
+            cleanup_required=False,
+            source="legacy_local",
+            fetch_duration_ms=0.0,
+        )
     if parsed.scheme in {"http", "https"}:
-        return _resolve_local_image(Path(parsed.path)), False
-    return None, False
+        path = _resolve_local_image(Path(parsed.path))
+        if path is None:
+            return None
+        return PreparedItemImage(
+            path=path,
+            cleanup_required=False,
+            source="legacy_http_local",
+            fetch_duration_ms=0.0,
+        )
+    return None
 
 
 def _resolve_local_image(path: Path) -> Path | None:
@@ -124,20 +235,37 @@ def _resolve_local_image(path: Path) -> Path | None:
     return None
 
 
-def _download_from_storage(object_path: str) -> tuple[Path | None, bool]:
+def _download_from_storage(
+    object_path: str,
+    *,
+    source: str,
+    cache_key: str | None = None,
+) -> PreparedItemImage | None:
     key = object_path.lstrip("/")
     if not key:
-        return None, False
+        return None
+    fetch_started = time.perf_counter()
     try:
         downloaded = storage_utils.get_storage_adapter(settings).download_object(key)
     except storage_utils.SupabaseStorageError as exc:  # pragma: no cover - defensive
         LOGGER.warning("ai.tasks.storage_download_failed", extra={"key": key, "error": str(exc)})
-        return None, False
+        return None
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="styleus_ai_"))
-    tmp_path = tmp_dir / Path(key).name
+    cache_prefix = (cache_key or "").strip().lower()
+    file_name = Path(key).name
+    if cache_prefix:
+        tmp_path = tmp_dir / f"{cache_prefix}_{file_name}"
+    else:
+        tmp_path = tmp_dir / file_name
     tmp_path.write_bytes(downloaded.data)
-    return tmp_path, True
+    return PreparedItemImage(
+        path=tmp_path,
+        cleanup_required=True,
+        source=source,
+        fetch_duration_ms=round((time.perf_counter() - fetch_started) * 1000, 2),
+        bytes_size=downloaded.size if downloaded.size else len(downloaded.data),
+    )
 
 
 def _safe_unlink(path: Path) -> None:
@@ -154,7 +282,9 @@ def _apply_classification(
     session: Session,
     item: WardrobeItem,
     result: PipelineResult,
-) -> None:
+    *,
+    commit: bool = True,
+) -> list[str]:
     update_kwargs: dict[str, object] = {}
     threshold = settings.ai_confidence_threshold
     subcategory_threshold = settings.ai_subcategory_confidence_threshold
@@ -255,6 +385,7 @@ def _apply_classification(
             ai_materials=cast(list[str] | None, update_kwargs.get("ai_materials")),
             ai_style_tags=cast(list[str] | None, update_kwargs.get("ai_style_tags")),
             ai_confidence=category_conf,
+            commit=commit,
         )
         LOGGER.info(
             "ai.tasks.updated_item",
@@ -276,15 +407,21 @@ def _apply_classification(
                 "confidence": category_conf,
             },
         )
+        return sorted(update_kwargs.keys())
     else:
         if item.ai_confidence != category_conf:
             item.ai_confidence = category_conf
             session.add(item)
-            session.commit()
+            if commit:
+                session.commit()
+            else:
+                session.flush()
+            return ["ai_confidence"]
         LOGGER.debug(
             "ai.tasks.no_update_needed",
             extra={"item_id": str(item.id)},
         )
+    return []
 
 
 def get_pipeline_preview(item: WardrobeItem) -> PipelineResult | None:

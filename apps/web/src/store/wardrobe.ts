@@ -73,7 +73,9 @@ const deriveAIPreviewFromItem = (item: WardrobeItem): AIPreviewResponse => ({
   materials: item.ai?.materials ?? [],
   styleTags: (item.ai?.styleTags ?? []).slice(0, 3),
   tags: item.tags,
-  confidence: item.ai?.confidence ?? item.aiConfidence ?? null
+  confidence: item.ai?.confidence ?? item.aiConfidence ?? null,
+  pending: item.aiJob?.pending ?? false,
+  job: item.aiJob ?? null
 });
 
 export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) => ({
@@ -226,6 +228,13 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
         ? {
             uploadReview: {
               ...state.uploadReview,
+              item:
+                ai?.job && state.uploadReview.item
+                  ? {
+                      ...state.uploadReview.item,
+                      aiJob: ai.job
+                    }
+                  : state.uploadReview.item,
               ai,
               loading: false,
               error: undefined

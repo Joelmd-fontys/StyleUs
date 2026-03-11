@@ -14,6 +14,17 @@ export type GetItemResponse = WardrobeItem;
 
 export type PatchItemResponse = WardrobeItem;
 
+export interface AIJobState {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | string;
+  attempts: number;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  errorMessage?: string | null;
+  pending?: boolean;
+}
+
 export interface PatchItemRequest {
   category: WardrobeItem['category'];
   subcategory?: WardrobeItem['subcategory'];
@@ -43,4 +54,6 @@ export interface AIPreviewResponse {
   styleTags?: string[];
   tags: string[];
   confidence?: number | null;
+  pending?: boolean;
+  job?: AIJobState | null;
 }

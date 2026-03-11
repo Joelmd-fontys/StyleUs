@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -46,11 +47,13 @@ class SupabaseStorageAdapter:
         service_role_key: str,
         bucket: str,
         signed_url_ttl_seconds: int = 3600,
+        request_timeout_seconds: float = 15.0,
     ) -> None:
         self.supabase_url = supabase_url.rstrip("/")
         self.service_role_key = service_role_key
         self.bucket = bucket
         self.signed_url_ttl_seconds = signed_url_ttl_seconds
+        self.request_timeout_seconds = request_timeout_seconds
         self.storage_api_url = f"{self.supabase_url}/storage/v1"
 
     def create_signed_upload_target(
@@ -220,7 +223,7 @@ class SupabaseStorageAdapter:
         url = path if path.startswith("http") else f"{self.storage_api_url}{path}"
         req = request.Request(url, data=data, headers=request_headers, method=method)
         try:
-            with urlopen(req) as response:
+            with urlopen(req, timeout=self.request_timeout_seconds) as response:
                 status_code = getattr(response, "status", response.getcode())
                 body = response.read()
                 if status_code not in expected_statuses:
@@ -236,7 +239,15 @@ class SupabaseStorageAdapter:
             message = self._decode_error_body(exc.read())
             raise SupabaseStorageError(message) from exc
         except error.URLError as exc:
+            if isinstance(exc.reason, socket.timeout):
+                raise SupabaseStorageError(
+                    f"Supabase Storage request timed out after {self.request_timeout_seconds:g}s"
+                ) from exc
             raise SupabaseStorageError(f"Unable to reach Supabase Storage: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise SupabaseStorageError(
+                f"Supabase Storage request timed out after {self.request_timeout_seconds:g}s"
+            ) from exc
 
     def _service_headers(self) -> dict[str, str]:
         return {
@@ -317,4 +328,5 @@ def get_storage_adapter(settings: Settings) -> SupabaseStorageAdapter:
         service_role_key=settings.supabase_service_role_key,
         bucket=settings.supabase_storage_bucket,
         signed_url_ttl_seconds=settings.supabase_signed_url_ttl_seconds,
+        request_timeout_seconds=settings.supabase_http_timeout_seconds,
     )

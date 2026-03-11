@@ -11,16 +11,18 @@ The API owns wardrobe persistence, private Supabase Storage upload finalization,
 - PyJWT with Supabase JWKS verification
 - Pillow / NumPy / scikit-learn
 - `open-clip-torch` with optional ONNX inference
-- FastAPI `BackgroundTasks`
+- Postgres-backed AI worker
 
 ## Service structure
 
 - `app/main.py` - app creation, middleware, CORS, startup tasks
+- `app/worker.py` - standalone AI worker entrypoint
 - `app/api/routers` - health, version, item, and upload routes
+- `app/services/ai_jobs.py` - durable AI job queue helpers and claim/retry logic
 - `app/services/items.py` - wardrobe CRUD and response shaping
 - `app/services/uploads.py` - signed-upload creation, private variant persistence, and upload finalization
 - `app/utils/storage.py` - Supabase Storage REST adapter for signed reads, signed uploads, and object operations
-- `app/ai` - CLIP heads, color extraction, segmentation, pipeline coordination, background task logic
+- `app/ai` - CLIP heads, color extraction, segmentation, shared pipeline, and item enrichment logic
 - `app/models` - SQLAlchemy models
 - `app/seed` - deterministic seed dataset and runner
 
@@ -100,25 +102,31 @@ This means local `make run` and `./dev.sh` remain convenient, while hosted envir
 2. A placeholder item is created in Postgres.
 3. The client uploads the source image directly to a private Supabase Storage object using the signed upload target.
 4. `POST /items/{item_id}/complete-upload`
-5. The API downloads the private source object, generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores private object paths plus metadata, and schedules AI classification.
+5. The API downloads the private source object, generates `orig.jpg`, `medium.jpg`, `thumb.jpg`, stores private object paths plus metadata, and enqueues an `ai_jobs` row.
+6. The worker polls `ai_jobs`, claims work with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to the item.
 
 ### AI enrichment
 
-The background task in `app/ai/tasks.py`:
+The worker-driven enrichment flow now looks like this:
 
-- downloads the finalized private image object from Supabase Storage when object-path fields are present;
-- runs the shared pipeline in `app/ai/pipeline.py`;
-- writes back colors, category, subcategory, materials, style tags, top tags, and confidence when thresholds are met;
-- avoids overwriting user-supplied data unless fields are still empty or placeholder-like.
+- `POST /items/{item_id}/complete-upload` inserts or reuses a durable `ai_jobs` row with `pending` status.
+- `app/worker.py` preloads the predictor once at startup, continuously polls the queue, and safely claims one row at a time.
+- `app/ai/tasks.py` still owns the shared enrichment logic and writes back colors, category, subcategory, materials, style tags, top tags, and confidence when thresholds are met.
+- The worker prefers the normalized `medium.jpg` variant for inference when it exists, which avoids downloading oversized originals for every job.
+- Timing logs now report job claim latency, image fetch duration, preprocessing, inference, DB write, and total job duration.
+- Job rows track `pending`, `running`, `completed`, and `failed` plus `attempts`, timestamps, and the latest error message.
+- Running jobs that become stale are claimable again after `AI_JOB_STALE_AFTER_SECONDS`, which makes the worker restart-safe.
+- Failed attempts are requeued until `AI_JOB_MAX_ATTEMPTS` is reached, then the job is marked `failed`.
+- If a job takes longer than usual, check worker logs for `worker.warmup_started`, `worker.job_claimed`, `ai.tasks.image_fetch_started`, `ai.tasks.image_fetched`, and `ai.pipeline.timings` to see whether the delay is startup warmup, storage fetch, or inference.
 
 ### AI preview
 
 `GET /items/{id}/ai-preview` returns a preview payload based on:
 
 - persisted AI fields already stored on the item, plus
-- a fresh non-persisted pipeline pass when the source image is available.
+- the current queue state for the item's AI job.
 
-That preview endpoint is still designed for the upload review UI. It is not yet backed by a separate job or prediction model.
+If the worker has not finished yet, the preview returns `pending: true` and job metadata so the UI can keep polling without running inference in the API process.
 
 ## Routes
 
@@ -145,6 +153,7 @@ Copy `.env.example` to `.env` before running locally.
 | `SUPABASE_URL` | Supabase project URL used for auth verification and Storage API calls | required in hosted envs; optional for local boot |
 | `SUPABASE_SERVICE_ROLE_KEY` | private backend key used for Supabase Storage operations | required in hosted envs and for local live uploads |
 | `SUPABASE_STORAGE_BUCKET` | private bucket name for uploaded wardrobe media | required in hosted envs and for local live uploads |
+| `SUPABASE_HTTP_TIMEOUT_SECONDS` | outbound timeout for Supabase Storage requests made by the API and worker | `15` |
 | `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_ANON_KEY` | optional public key used only for legacy shared-secret token verification | _(unset)_ |
 | `SUPABASE_JWT_AUDIENCE` | expected access-token audience | `authenticated` |
 | `LOCAL_AUTH_BYPASS` | allow the local-only guest workflow without bearer tokens | `true` in local, otherwise `false` |
@@ -164,6 +173,9 @@ Copy `.env.example` to `.env` before running locally.
 | `AI_COLOR_MIN_FOREGROUND_PIXELS` | minimum masked pixel count before unmasked fallback | `3000` |
 | `AI_COLOR_TOPK` | number of colors retained from clustering | `2` |
 | `AI_ONNX` / `AI_ONNX_MODEL_PATH` | optional ONNX inference path | `false` / unset |
+| `AI_JOB_MAX_ATTEMPTS` | retry budget before a job is marked `failed` | `3` |
+| `AI_JOB_POLL_INTERVAL_SECONDS` | worker sleep interval when no jobs are claimable | `0.5` |
+| `AI_JOB_STALE_AFTER_SECONDS` | age after which a `running` job can be reclaimed | `300` |
 | `SEED_LIMIT` / `SEED_KEY` | deterministic seed controls | `25` / `local-seed-v1` |
 
 ## Supabase Storage setup
@@ -193,10 +205,13 @@ cp .env.example .env
 make setup
 make db-up
 make upgrade
-make run
+cd ../..
+./dev.sh
 ```
 
 Default API URL: `http://127.0.0.1:8000`
+
+`./dev.sh` now starts the API, the AI worker, and the frontend together. If you prefer separate processes, `make run` and `make worker` still work independently.
 
 The copied example file includes placeholder Supabase Storage values. Replace them before exercising the live upload path.
 
@@ -204,6 +219,7 @@ Useful commands:
 
 - `make seed` - apply the deterministic seed dataset
 - `make reset-seed` - remove seeded items and their stored media objects
+- `make worker` - start the AI worker loop
 - `make lint`
 - `make typecheck`
 - `make test`
@@ -259,7 +275,7 @@ Notes:
 ### Target hosted shape
 
 - Render web service -> FastAPI API
-- Render worker -> future background worker, not implemented yet
+- Render worker -> AI worker runtime using the same Postgres queue
 - Supabase Postgres -> supported hosted database target in this phase
 - Supabase Auth -> implemented for bearer-token validation in this phase
 - Supabase Storage -> implemented in this phase for private uploads and signed reads
@@ -277,7 +293,6 @@ The frontend should only know public API and public auth configuration. Database
 
 This repository is now documented for the target platform split, but the following are still future work:
 
-- separate background worker runtime
 - staging and production rollout
 
 ## Docker and Postgres

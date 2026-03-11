@@ -18,6 +18,7 @@
 - Hosted auth now verifies asymmetric tokens via JWKS and can fall back to Supabase user-info verification for legacy shared-secret projects.
 - Uploads now go directly from the browser to private Supabase Storage through API-issued signed upload targets.
 - Wardrobe items now persist private storage object paths, while API responses translate them into temporary signed image URLs.
+- AI processing now runs through a durable Postgres-backed `ai_jobs` queue with a dedicated worker process.
 
 ## What was removed
 
@@ -27,7 +28,6 @@
 
 ## What remains potentially fragile
 
-- The worker split is still future work, so AI background execution still runs in the API process.
-- Hosted database rollout is documented, but actual staging/production deployment is still a later phase.
+- Hosted worker deployment is still a manual later phase even though the runtime now exists in the repo.
 - Supabase Storage now depends on manual dashboard configuration for the private bucket, MIME allow-list, and size limits.
 - The backend integration tests that exercise real DB behavior still depend on a reachable Postgres instance.

@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     )
     ai_color_topk: int = Field(default=2, alias="AI_COLOR_TOPK")
     ai_onnx_model_path: str | None = Field(default=None, alias="AI_ONNX_MODEL_PATH")
+    ai_job_max_attempts: int = Field(default=3, alias="AI_JOB_MAX_ATTEMPTS")
+    ai_job_poll_interval_seconds: float = Field(default=0.5, alias="AI_JOB_POLL_INTERVAL_SECONDS")
+    ai_job_stale_after_seconds: int = Field(default=300, alias="AI_JOB_STALE_AFTER_SECONDS")
+    supabase_http_timeout_seconds: float = Field(
+        default=15.0,
+        alias="SUPABASE_HTTP_TIMEOUT_SECONDS",
+    )
 
     @field_validator("cors_origins")
     @classmethod
@@ -168,6 +175,14 @@ class Settings(BaseSettings):
             self.ai_color_mask_method = "grabcut"
         if self.ai_color_min_foreground_pixels <= 0:
             self.ai_color_min_foreground_pixels = 3000
+        if self.ai_job_max_attempts <= 0:
+            self.ai_job_max_attempts = 3
+        if self.ai_job_poll_interval_seconds <= 0:
+            self.ai_job_poll_interval_seconds = 0.5
+        if self.ai_job_stale_after_seconds <= 0:
+            self.ai_job_stale_after_seconds = 300
+        if self.supabase_http_timeout_seconds <= 0:
+            self.supabase_http_timeout_seconds = 15.0
         if self.supabase_signed_url_ttl_seconds <= 0:
             self.supabase_signed_url_ttl_seconds = 3600
         return self

@@ -48,6 +48,17 @@ export interface ItemAIAttributes {
   confidence?: number | null;
 }
 
+export interface ItemAIJob {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | string;
+  attempts: number;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  errorMessage?: string | null;
+  pending?: boolean;
+}
+
 export interface ImageMetadata {
   width?: number | null;
   height?: number | null;
@@ -72,4 +83,5 @@ export interface WardrobeItem {
   imageMetadata?: ImageMetadata | null;
   aiConfidence?: number | null;
   ai?: ItemAIAttributes | null;
+  aiJob?: ItemAIJob | null;
 }

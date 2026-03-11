@@ -56,9 +56,21 @@ class ItemAIAttributes(CamelModel):
     confidence: float | None = Field(default=None, alias="confidence")
 
 
+class AIJobState(CamelModel):
+    id: uuid.UUID
+    status: str
+    attempts: int
+    created_at: datetime.datetime = Field(alias="createdAt")
+    started_at: datetime.datetime | None = Field(default=None, alias="startedAt")
+    completed_at: datetime.datetime | None = Field(default=None, alias="completedAt")
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    pending: bool = False
+
+
 class ItemDetail(ItemBase):
     tags: list[str]
     ai: ItemAIAttributes | None = None
+    ai_job: AIJobState | None = Field(default=None, alias="aiJob")
 
 
 class ItemUpdate(CamelModel):
@@ -93,3 +105,5 @@ class ItemAIPreview(CamelModel):
     style_tags: list[str] = Field(default_factory=list, alias="styleTags")
     tags: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, alias="confidence")
+    pending: bool = False
+    job: AIJobState | None = None

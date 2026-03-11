@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from app.core.config import Settings
 from app.core.errors import error_response
 from app.core.logging import logger
 from app.schemas.items import CompleteUploadRequest, ItemDetail, PresignRequest, PresignResponse
+from app.services import ai_jobs as ai_jobs_service
 from app.services import items as items_service
 from app.services import uploads as uploads_service
 from app.utils import storage as storage_utils
@@ -91,7 +92,6 @@ def complete_upload(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings_dependency),
-    background_tasks: BackgroundTasks,
 ) -> ItemDetail | JSONResponse:
     """Finalize an upload by persisting private storage paths for the wardrobe item."""
     item = items_service.get_item(db, user_id, item_id)
@@ -174,8 +174,16 @@ def complete_upload(
             thumb_object_path=result.thumb_object_path,
             medium_object_path=result.medium_object_path,
             metadata=result.metadata,
+            commit=False,
         )
+        if settings.ai_enable_classifier:
+            ai_jobs_service.enqueue_item_job(db, updated, commit=False)
+        db.commit()
+        refreshed = items_service.get_item(db, user_id, item_id)
+        if refreshed is not None:
+            updated = refreshed
     except Exception as exc:  # pragma: no cover - defensive
+        db.rollback()
         logger.exception(
             "upload.complete_persist_failed",
             extra={"item_id": str(item_id), "error": str(exc)},
@@ -184,10 +192,6 @@ def complete_upload(
         response = error_response("upload_error", "Unable to persist upload metadata", details)
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return response
-    if settings.ai_enable_classifier:
-        from app.ai.tasks import classify_and_update_item
-
-        background_tasks.add_task(classify_and_update_item, item.id)
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     logger.info(
         "upload.completed",

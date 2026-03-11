@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from PIL import Image
 
 from app.ai import color
 from app.ai.clip_heads import ClipPrediction, get_predictor
@@ -21,6 +24,7 @@ _EMB_CACHE_DIR = settings.media_root_path / ".emb_cache"
 _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _SUBCATEGORY_FALLBACK_CONFIDENCE = 0.55
+_PRECOMPUTED_CACHE_KEY_PATTERN = re.compile(r"^(?P<cache_key>[0-9a-f]{64})(?:[_-].+)?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,9 +83,17 @@ class PipelineResult:
     colors: color.ColorResult
     clip: ClipPrediction
     cached: bool
+    preprocessing_duration_ms: float = 0.0
+    color_duration_ms: float = 0.0
+    embedding_duration_ms: float = 0.0
+    prediction_duration_ms: float = 0.0
+    inference_duration_ms: float = 0.0
 
 
 def _hash_file(path: Path) -> str:
+    match = _PRECOMPUTED_CACHE_KEY_PATTERN.match(path.stem.lower())
+    if match:
+        return match.group("cache_key")
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -89,7 +101,12 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_embedding(image_path: Path, predictor: Any) -> tuple[np.ndarray, bool]:
+def _load_embedding(
+    image_path: Path,
+    predictor: Any,
+    *,
+    image: Image.Image | None = None,
+) -> tuple[np.ndarray, bool]:
     file_hash = _hash_file(image_path)
     cache_path = _EMB_CACHE_DIR / f"{file_hash}.npy"
 
@@ -100,12 +117,45 @@ def _load_embedding(image_path: Path, predictor: Any) -> tuple[np.ndarray, bool]
         except Exception:  # pragma: no cover - corrupted cache
             LOGGER.warning("ai.pipeline.cache_corrupt", extra={"path": str(cache_path)})
 
-    embedding = predictor.embed_image(image_path)
+    if image is not None and hasattr(predictor, "embed_pil_image"):
+        embedding = predictor.embed_pil_image(image)
+    else:
+        embedding = predictor.embed_image(image_path)
     try:
         np.save(cache_path, embedding)
     except Exception:  # pragma: no cover - filesystem issues
         LOGGER.warning("ai.pipeline.cache_write_failed", extra={"path": str(cache_path)})
     return embedding, False
+
+
+def warm_up() -> bool:
+    """Warm predictor state once at worker startup."""
+
+    started = time.perf_counter()
+    try:
+        get_predictor()
+    except RuntimeError as exc:
+        LOGGER.warning(
+            "ai.pipeline.warmup_unavailable",
+            extra={"error": str(exc), "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+        )
+        return False
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "ai.pipeline.warmup_failed",
+            extra={"error": str(exc), "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+        )
+        return False
+    LOGGER.info(
+        "ai.pipeline.warmup_completed",
+        extra={"duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+    )
+    return True
+
+
+def _load_source_image(image_path: Path) -> Image.Image:
+    with Image.open(image_path) as image:
+        return image.convert("RGB").copy()
 
 
 def _normalize_token(value: str | None) -> str:
@@ -237,12 +287,24 @@ def _heuristic_prediction(image_path: Path, colors: color.ColorResult) -> ClipPr
 
 
 def run(image_path: Path) -> PipelineResult:
-    color_result = color.get_colors(str(image_path))
+    preprocessing_started = time.perf_counter()
+    source_image = _load_source_image(image_path)
+    preprocessing_duration_ms = round((time.perf_counter() - preprocessing_started) * 1000, 2)
+
+    color_started = time.perf_counter()
+    color_result = color.get_colors_from_image(source_image)
+    color_duration_ms = round((time.perf_counter() - color_started) * 1000, 2)
     cached = False
+    embedding_duration_ms = 0.0
+    prediction_duration_ms = 0.0
     try:
         predictor = get_predictor()
-        embedding, cached = _load_embedding(image_path, predictor)
+        embedding_started = time.perf_counter()
+        embedding, cached = _load_embedding(image_path, predictor, image=source_image)
+        embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
+        prediction_started = time.perf_counter()
         clip_result = predictor.predict(embedding)
+        prediction_duration_ms = round((time.perf_counter() - prediction_started) * 1000, 2)
         _apply_subcategory_selection(
             clip_result,
             image_path=image_path,
@@ -267,4 +329,29 @@ def run(image_path: Path) -> PipelineResult:
         LOGGER.exception("ai.pipeline.clip_failed", extra={"error": str(exc)})
         clip_result = _heuristic_prediction(image_path, color_result)
         cached = False
-    return PipelineResult(colors=color_result, clip=clip_result, cached=cached)
+    inference_duration_ms = round(
+        color_duration_ms + embedding_duration_ms + prediction_duration_ms,
+        2,
+    )
+    LOGGER.info(
+        "ai.pipeline.timings",
+        extra={
+            "image_path": str(image_path),
+            "cached": cached,
+            "preprocessing_duration_ms": preprocessing_duration_ms,
+            "color_duration_ms": color_duration_ms,
+            "embedding_duration_ms": embedding_duration_ms,
+            "prediction_duration_ms": prediction_duration_ms,
+            "inference_duration_ms": inference_duration_ms,
+        },
+    )
+    return PipelineResult(
+        colors=color_result,
+        clip=clip_result,
+        cached=cached,
+        preprocessing_duration_ms=preprocessing_duration_ms,
+        color_duration_ms=color_duration_ms,
+        embedding_duration_ms=embedding_duration_ms,
+        prediction_duration_ms=prediction_duration_ms,
+        inference_duration_ms=inference_duration_ms,
+    )

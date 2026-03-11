@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.db.types import GUID
 
 if TYPE_CHECKING:
+    from app.models.ai_job import AIJob
     from app.models.user import User
 
 
@@ -60,6 +61,13 @@ class WardrobeItem(Base):
     ai_confidence: Mapped[float | None] = mapped_column(nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="items")
+    ai_job: Mapped[AIJob | None] = relationship(
+        "AIJob",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="selectin",
+    )
     tags: Mapped[list[ItemTag]] = relationship(
         "ItemTag",
         back_populates="item",

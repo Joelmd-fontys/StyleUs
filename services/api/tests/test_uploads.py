@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import DEFAULT_USER_ID, get_db
 from app.core.config import get_settings
 from app.main import create_app
+from app.models.ai_job import AIJob
 from app.models.wardrobe import WardrobeItem
 from app.utils import storage as storage_utils
 
@@ -171,9 +172,13 @@ def test_complete_upload_persists_object_paths_and_returns_signed_urls(
         body = complete.json()
         expected_prefix = f"users/{DEFAULT_USER_ID}/{item_id}"
 
-        assert body["imageUrl"] == f"https://signed.example/{expected_prefix}%2Forig.jpg"
-        assert body["mediumUrl"] == f"https://signed.example/{expected_prefix}%2Fmedium.jpg"
-        assert body["thumbUrl"] == f"https://signed.example/{expected_prefix}%2Fthumb.jpg"
+        encoded_prefix = expected_prefix.replace("/", "%2F")
+        assert body["imageUrl"] == f"https://signed.example/{encoded_prefix}%2Forig.jpg"
+        assert body["mediumUrl"] == f"https://signed.example/{encoded_prefix}%2Fmedium.jpg"
+        assert body["thumbUrl"] == f"https://signed.example/{encoded_prefix}%2Fthumb.jpg"
+        assert body["aiJob"]["status"] == "pending"
+        assert body["aiJob"]["pending"] is True
+        assert body["ai"] is None
 
         metadata = body["imageMetadata"]
         assert metadata["width"] == 64
@@ -197,6 +202,9 @@ def test_complete_upload_persists_object_paths_and_returns_signed_urls(
     assert stored.image_medium_object_path == f"{expected_prefix}/medium.jpg"
     assert stored.image_thumb_object_path == f"{expected_prefix}/thumb.jpg"
     assert stored.image_url is None
+    job = db_session.execute(select(AIJob).where(AIJob.item_id == item_id)).scalar_one()
+    assert job.status == "pending"
+    assert job.attempts == 0
 
 
 def test_legacy_binary_upload_sink_is_gone(db_session: Session) -> None:

@@ -15,14 +15,14 @@ Browser
 
 FastAPI API
 -> Supabase Postgres
--> Supabase Storage (later phase)
+-> Supabase Storage
 -> Supabase Auth token validation
 
 FastAPI API
--> Render worker enqueue boundary (later phase)
+-> Render worker enqueue boundary
 
 Render worker
--> background AI/image processing (later phase)
+-> background AI processing via ai_jobs queue
 ```
 
 ## Platform responsibilities
@@ -62,13 +62,13 @@ Should own private variables such as:
 
 ### Render worker
 
-Planned later. It will own:
+Owns:
 
 - durable background job processing
 - AI enrichment outside the request lifecycle
-- image-processing tasks that should not run inside the web process
+- writes back item predictions after polling Postgres
 
-This repository should be structured with that future split in mind, but the worker is not implemented in this phase.
+The repository now includes the worker runtime and queue model. Provisioning the actual hosted Render worker service is still a later deployment step.
 
 ### Supabase
 
@@ -113,9 +113,9 @@ Implemented now:
 - the backend can now point `DATABASE_URL` at Supabase Postgres while keeping SQLAlchemy and Alembic unchanged
 - the frontend can sign in with Supabase Auth and send bearer tokens to FastAPI
 - FastAPI validates Supabase JWTs and maps `sub` to the application user ID
+- Supabase Storage-backed upload finalization plus a Postgres-backed `ai_jobs` worker flow are implemented
+- the API now enqueues AI work and the dedicated worker performs enrichment asynchronously
 
 Later phases will implement:
 
-- Supabase Storage
-- Render worker runtime
 - actual hosted deployment rollout

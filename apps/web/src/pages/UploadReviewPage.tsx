@@ -23,6 +23,8 @@ const toDisplayTags = (input: string): string[] =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
+const LONG_RUNNING_PENDING_MS = 20_000;
+
 const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
   if (!ai) {
     return [];
@@ -66,6 +68,13 @@ const UploadReviewPage = (): ReactElement | null => {
 
   const item = uploadReview?.item;
   const ai = uploadReview?.ai;
+  const aiPending = Boolean(ai?.pending ?? item?.aiJob?.pending);
+  const aiFailed = ai?.job?.status === 'failed';
+  const pendingStartedAt =
+    ai?.job?.startedAt ?? ai?.job?.createdAt ?? item?.aiJob?.startedAt ?? item?.aiJob?.createdAt;
+  const pendingDurationMs = pendingStartedAt ? Date.now() - Date.parse(pendingStartedAt) : 0;
+  const aiPendingLongerThanExpected =
+    aiPending && Number.isFinite(pendingDurationMs) && pendingDurationMs >= LONG_RUNNING_PENDING_MS;
   const aiTagSuggestions = useMemo(() => toTopAITags(ai), [ai]);
   const resolvedSubcategory =
     (ai?.subcategory as WardrobeSubcategory | undefined) ??
@@ -142,12 +151,14 @@ const UploadReviewPage = (): ReactElement | null => {
       setIsPolling(false);
       return;
     }
-    const awaitingPrediction = !uploadReview.ai && !uploadReview.loading;
+    const awaitingPrediction =
+      Boolean(uploadReview.ai?.pending ?? uploadReview.item?.aiJob?.pending) ||
+      (!uploadReview.ai && !uploadReview.loading);
     if (awaitingPrediction && !isPolling) {
       setIsPolling(true);
       return;
     }
-    if (uploadReview.ai && isPolling) {
+    if (!awaitingPrediction && isPolling) {
       setIsPolling(false);
     }
   }, [uploadReview, isPolling]);
@@ -163,16 +174,10 @@ const UploadReviewPage = (): ReactElement | null => {
       }
     };
     refresh();
-    const interval = window.setInterval(refresh, 2500);
-    const timeout = window.setTimeout(() => {
-      if (!cancelled) {
-        setIsPolling(false);
-      }
-    }, 20000);
+    const interval = window.setInterval(refresh, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      window.clearTimeout(timeout);
     };
   }, [isPolling, itemId, fetchAIPreview]);
 
@@ -180,7 +185,7 @@ const UploadReviewPage = (): ReactElement | null => {
     if (!item || !itemId) {
       return;
     }
-    if (!ai) {
+    if (!ai || aiPending) {
       showFlashMessage('AI predictions are still processing. Please retry shortly.', 'error');
       return;
     }
@@ -242,8 +247,11 @@ const UploadReviewPage = (): ReactElement | null => {
     navigate('/wardrobe');
   };
 
-  const isAnalyzing =
-    uploadReview !== undefined && (uploadReview.loading || (!uploadReview.ai && !uploadReview.error));
+  const isInitialAnalyzing =
+    uploadReview !== undefined &&
+    (Boolean(uploadReview.loading && !uploadReview.ai) || (!uploadReview.ai && !uploadReview.error));
+  const showPendingNotice =
+    uploadReview !== undefined && !uploadReview.error && aiPending && !isInitialAnalyzing;
 
   const renderImagePreview = () => {
     const hasImage = Boolean(item?.imageUrl ?? item?.mediumUrl ?? item?.thumbUrl);
@@ -370,8 +378,8 @@ const UploadReviewPage = (): ReactElement | null => {
 
       <div className="grid gap-8 rounded-2xl bg-white/90 p-6 shadow-sm backdrop-blur md:grid-cols-[320px,1fr]">
         <div>{renderImagePreview()}</div>
-        <div className="relative space-y-6" aria-busy={isAnalyzing}>
-          {isAnalyzing ? (
+        <div className="relative space-y-6" aria-busy={isInitialAnalyzing}>
+          {isInitialAnalyzing ? (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-white/85 backdrop-blur-sm">
               <div className="flex h-16 w-16 items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
@@ -383,10 +391,28 @@ const UploadReviewPage = (): ReactElement | null => {
             </div>
           ) : null}
 
-          <div className={cn('space-y-4', isAnalyzing ? 'pointer-events-none opacity-40' : '')}>
+          <div className={cn('space-y-4', isInitialAnalyzing ? 'pointer-events-none opacity-40' : '')}>
             {uploadReview?.error ? (
               <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-600">
                 {uploadReview.error}
+              </div>
+            ) : aiFailed ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                AI suggestions could not be completed automatically. You can continue by editing the
+                item manually.
+              </div>
+            ) : showPendingNotice ? (
+              <div
+                className={cn(
+                  'rounded-lg p-4 text-sm',
+                  aiPendingLongerThanExpected
+                    ? 'border border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border border-sky-200 bg-sky-50 text-sky-700'
+                )}
+              >
+                {aiPendingLongerThanExpected
+                  ? 'AI suggestions are taking longer than usual. This page will keep refreshing automatically, and you can continue with manual edits while the worker finishes.'
+                  : 'AI suggestions are still processing. This page will keep refreshing automatically, and you can continue with manual edits if you do not want to wait.'}
               </div>
             ) : null}
 
@@ -530,7 +556,7 @@ const UploadReviewPage = (): ReactElement | null => {
               type="button"
               variant="primary"
               onClick={handleAccept}
-              disabled={!ai || uploadReview?.isConfirming}
+              disabled={!ai || aiPending || uploadReview?.isConfirming}
             >
               Accept predictions
             </Button>
@@ -548,7 +574,7 @@ const UploadReviewPage = (): ReactElement | null => {
                 type="button"
                 variant="secondary"
                 onClick={() => setMode('edit')}
-                disabled={uploadReview?.loading}
+                disabled={Boolean(uploadReview?.loading && !uploadReview?.ai)}
               >
                 Edit & Confirm
               </Button>

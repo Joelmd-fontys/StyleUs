@@ -8,7 +8,7 @@ else
 PYTHON ?= $(VENV)/bin/python
 endif
 
-.PHONY: setup run migrate upgrade lint typecheck test seed reset-seed db-up db-down
+.PHONY: setup run worker migrate upgrade lint typecheck test seed reset-seed db-up db-down
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -16,6 +16,9 @@ setup:
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+worker:
+	$(PYTHON) -m app.worker
 
 migrate:
 	$(PYTHON) -m alembic revision --autogenerate -m "$(MESSAGE)"

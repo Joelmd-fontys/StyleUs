@@ -134,9 +134,12 @@ class ClipPredictor:
         return text_features.to(self.device)
 
     def embed_image(self, image_path: Path) -> np.ndarray:
-        torch = self._torch
         with Image.open(image_path) as image:
-            pixel_tensor = self.preprocess(image.convert("RGB")).unsqueeze(0)
+            return self.embed_pil_image(image)
+
+    def embed_pil_image(self, image: Image.Image) -> np.ndarray:
+        torch = self._torch
+        pixel_tensor = self.preprocess(image.convert("RGB")).unsqueeze(0)
 
         if self.use_onnx and self.onnx_session is not None:
             try:

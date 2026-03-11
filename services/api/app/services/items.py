@@ -11,12 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
-from app.ai import tasks as ai_tasks
-from app.ai.pipeline import PipelineResult
 from app.core.config import Settings
+from app.models.ai_job import AIJob, AIJobStatus
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
+from app.schemas.items import AIJobState, ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
 from app.services.search import apply_search_filters
 from app.utils import storage as storage_utils
 
@@ -55,7 +54,7 @@ def list_items(
     stmt: Select[tuple[WardrobeItem]] = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id)
-        .options(selectinload(WardrobeItem.tags))
+        .options(selectinload(WardrobeItem.tags), selectinload(WardrobeItem.ai_job))
     )
 
     if not include_deleted:
@@ -66,7 +65,6 @@ def list_items(
 
     if query:
         stmt = apply_search_filters(stmt, query)
-        stmt = stmt.distinct()
 
     if created_since:
         stmt = stmt.where(WardrobeItem.created_at > created_since)
@@ -74,7 +72,7 @@ def list_items(
     stmt = stmt.order_by(WardrobeItem.created_at.desc()).limit(limit).offset(offset)
 
     result = db.execute(stmt)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 def get_item(
@@ -88,7 +86,7 @@ def get_item(
     stmt = (
         select(WardrobeItem)
         .where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id)
-        .options(selectinload(WardrobeItem.tags))
+        .options(selectinload(WardrobeItem.tags), selectinload(WardrobeItem.ai_job))
     )
     if not include_deleted:
         stmt = stmt.where(WardrobeItem.deleted_at.is_(None))
@@ -110,6 +108,7 @@ def update_item(
     ai_materials: list[str] | None = None,
     ai_style_tags: list[str] | None = None,
     ai_confidence: float | None = None,
+    commit: bool = True,
 ) -> WardrobeItem:
     """Persist field updates and normalized tag values for an item."""
     if category is not None:
@@ -140,8 +139,11 @@ def update_item(
             item.tags.append(ItemTag(tag=tag))
 
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
     return item
 
 
@@ -149,7 +151,16 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
     """Soft delete an item by marking its deletion timestamp."""
 
     if item.deleted_at is None:
-        item.deleted_at = datetime.datetime.now(tz=datetime.UTC)
+        now = datetime.datetime.now(tz=datetime.UTC)
+        item.deleted_at = now
+        if item.ai_job and item.ai_job.status in {
+            AIJobStatus.PENDING.value,
+            AIJobStatus.RUNNING.value,
+        }:
+            item.ai_job.status = AIJobStatus.FAILED.value
+            item.ai_job.completed_at = now
+            item.ai_job.error_message = "Wardrobe item deleted before AI enrichment"
+            db.add(item.ai_job)
         db.add(item)
         db.commit()
 
@@ -162,6 +173,7 @@ def complete_upload(
     thumb_object_path: str | None = None,
     medium_object_path: str | None = None,
     metadata: ImageMetadata | None = None,
+    commit: bool = True,
 ) -> WardrobeItem:
     """Store image object paths on an item once uploads finish."""
     item.image_object_path = image_object_path
@@ -179,8 +191,11 @@ def complete_upload(
         item.image_checksum = metadata.checksum
 
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    if commit:
+        db.commit()
+        db.refresh(item)
+    else:
+        db.flush()
     return item
 
 
@@ -240,6 +255,7 @@ def to_item_detail(
             "image_metadata": metadata.model_dump(by_alias=True) if metadata else None,
             "ai_confidence": item.ai_confidence,
             "ai": ai_block.model_dump(by_alias=True) if ai_block else None,
+            "ai_job": _build_ai_job_state(item.ai_job),
         }
     )
 
@@ -269,14 +285,8 @@ def _resolve_image_urls(
 
 
 def to_ai_preview(item: WardrobeItem) -> ItemAIPreview:
-    """Build an AI preview payload using the latest item data."""
-    preview = _build_base_ai_preview(item)
-
-    pipeline_result = ai_tasks.get_pipeline_preview(item)
-    if pipeline_result is None:
-        return preview
-
-    return _apply_pipeline_preview(preview, pipeline_result)
+    """Build an AI preview payload from persisted item and job state."""
+    return _build_base_ai_preview(item)
 
 
 def _ensure_user(db: Session, user_id: uuid.UUID) -> User:
@@ -343,11 +353,12 @@ def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
 
 
 def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
+    job_state = _build_ai_job_state(item.ai_job)
     return ItemAIPreview.model_validate(
         {
             "category": _normalized_item_category(item),
             "category_confidence": item.ai_confidence,
-            "subcategory": None,
+            "subcategory": item.subcategory,
             "subcategory_confidence": None,
             "primary_color": item.primary_color or None,
             "secondary_color": item.secondary_color or None,
@@ -355,58 +366,26 @@ def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
             "style_tags": list(item.ai_style_tags or [])[:3],
             "tags": [tag.tag for tag in item.tags],
             "confidence": item.ai_confidence,
+            "pending": bool(job_state and job_state.pending),
+            "job": job_state.model_dump(by_alias=True) if job_state else None,
         }
     )
 
 
-def _labels_above_threshold(
-    scored_labels: Sequence[tuple[str, float]],
-    *,
-    threshold: float,
-    limit: int,
-) -> list[str]:
-    return [
-        name
-        for name, score in sorted(scored_labels, key=lambda entry: entry[1], reverse=True)
-        if score >= threshold
-    ][:limit]
+def _build_ai_job_state(job: AIJob | None) -> AIJobState | None:
+    if job is None:
+        return None
 
-
-def _apply_pipeline_preview(
-    preview: ItemAIPreview,
-    pipeline_result: PipelineResult,
-) -> ItemAIPreview:
-    clip = pipeline_result.clip
-    preview.category = clip.get("category") or preview.category
-    preview.category_confidence = clip.get("category_confidence") or preview.category_confidence
-    preview.subcategory = clip.get("subcategory") or preview.subcategory
-    preview.subcategory_confidence = (
-        clip.get("subcategory_confidence") or preview.subcategory_confidence
+    pending = job.status in {AIJobStatus.PENDING.value, AIJobStatus.RUNNING.value}
+    return AIJobState.model_validate(
+        {
+            "id": job.id,
+            "status": job.status,
+            "attempts": job.attempts,
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "completed_at": job.completed_at,
+            "error_message": job.error_message,
+            "pending": pending,
+        }
     )
-
-    color_result = pipeline_result.colors
-    if color_result.primary_color:
-        preview.primary_color = color_result.primary_color
-        preview.primary_color_confidence = color_result.confidence
-    if color_result.secondary_color:
-        preview.secondary_color = color_result.secondary_color
-        preview.secondary_color_confidence = color_result.secondary_confidence
-
-    threshold = ai_tasks.settings.ai_confidence_threshold
-    preview.materials = _labels_above_threshold(
-        clip.get("materials", []),
-        threshold=threshold,
-        limit=5,
-    )
-    preview.style_tags = _labels_above_threshold(
-        clip.get("style_tags", []),
-        threshold=threshold,
-        limit=3,
-    )
-
-    suggested_tags = ai_tasks.select_top_tags(clip, threshold=threshold, limit=3)
-    if suggested_tags:
-        preview.tags = [name for name, _ in suggested_tags]
-
-    preview.confidence = clip.get("category_confidence", preview.confidence)
-    return preview

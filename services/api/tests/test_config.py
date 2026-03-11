@@ -148,3 +148,18 @@ def test_database_url_normalizes_postgres_scheme(monkeypatch):
         "postgresql+psycopg://postgres.example:secret@aws-0-eu-west-1.pooler.supabase.com:5432/"
         "postgres?sslmode=require"
     )
+
+
+def test_supabase_http_timeout_defaults_to_positive_value(monkeypatch):
+    _clear_startup_env(monkeypatch)
+    settings = Settings(
+        APP_ENV="local",
+        DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/postgres",
+        SUPABASE_URL="https://project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role-key",
+        SUPABASE_STORAGE_BUCKET="wardrobe-images",
+        SUPABASE_HTTP_TIMEOUT_SECONDS="0",
+        _env_file=None,
+    )
+
+    assert settings.supabase_http_timeout_seconds == 15.0
