@@ -9,7 +9,7 @@ import threading
 import time
 
 from app.ai import pipeline
-from app.ai.tasks import AIEnrichmentError, run_item_enrichment
+from app.ai.tasks import AIEnrichmentError, build_ai_preview_payload, run_item_enrichment
 from app.core.config import Settings, get_settings
 from app.core.logging import logger
 from app.db.session import SessionLocal
@@ -76,8 +76,14 @@ class AIWorker:
         )
         try:
             with SessionLocal() as session:
-                run_item_enrichment(session, lease.item_id, commit=False)
-                ai_jobs_service.mark_job_completed(session, lease.job_id, commit=False)
+                pipeline_result = run_item_enrichment(session, lease.item_id, commit=False)
+                preview_payload = build_ai_preview_payload(pipeline_result)
+                ai_jobs_service.mark_job_completed(
+                    session,
+                    lease.job_id,
+                    result_payload=preview_payload,
+                    commit=False,
+                )
                 session.commit()
         except AIEnrichmentError as exc:
             with SessionLocal() as session:
@@ -126,6 +132,11 @@ class AIWorker:
             extra={
                 "job_id": str(lease.job_id),
                 "item_id": str(lease.item_id),
+                "category": preview_payload.get("category"),
+                "subcategory": preview_payload.get("subcategory"),
+                "primary_color": preview_payload.get("primary_color"),
+                "secondary_color": preview_payload.get("secondary_color"),
+                "tags": preview_payload.get("tags"),
                 "total_duration_ms": round((time.perf_counter() - started) * 1000, 2),
             },
         )

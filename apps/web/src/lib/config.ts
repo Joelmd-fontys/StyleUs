@@ -13,9 +13,9 @@ const readAppEnv = (value: unknown): AppEnv => {
 };
 
 const readString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-const readSupabasePublicKey = (): string =>
-  readString(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
-  readString(import.meta.env.VITE_SUPABASE_ANON_KEY);
+const readSupabaseBrowserKey = (): string =>
+  readString(import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+  readString(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
 export const APP_ENV: AppEnv = readAppEnv(import.meta.env.VITE_APP_ENV);
 const defaultApiBase = APP_ENV === 'local' ? 'http://127.0.0.1:8000' : '';
@@ -24,7 +24,7 @@ export const API_BASE: string = rawBase;
 
 const normalizedBase: string = rawBase ? normalize(rawBase) : '';
 export const SUPABASE_URL: string = readString(import.meta.env.VITE_SUPABASE_URL);
-export const SUPABASE_ANON_KEY: string = readSupabasePublicKey();
+export const SUPABASE_ANON_KEY: string = readSupabaseBrowserKey();
 
 const readFlag = (value: unknown, fallback: boolean): boolean => {
   if (typeof value === 'string') {

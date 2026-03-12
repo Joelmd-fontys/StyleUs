@@ -23,6 +23,7 @@ class CamelModel(BaseModel):
 class HealthResponse(CamelModel):
     status: str
     version: str
+    database: str
 
 
 class VersionResponse(CamelModel):

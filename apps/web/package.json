@@ -30,7 +30,6 @@
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
-    "baseline-browser-mapping": "^2.9.14",
     "jsdom": "^24.0.0",
     "msw": "^2.2.6",
     "postcss": "^8.4.35",

@@ -14,6 +14,8 @@ from app.ai.segmentation import MaskMethod, build_foreground_mask, has_opencv
 from app.core.config import settings
 
 LOGGER = logging.getLogger("app.ai.color")
+_COLOR_WORKING_SIZE = 192
+_COLOR_MAX_CLUSTER_PIXELS = 12000
 
 _PALETTE_RGB: Sequence[tuple[str, tuple[int, int, int]]] = (
     ("black", (0, 0, 0)),
@@ -97,7 +99,7 @@ def _linear_to_lab(rgb: np.ndarray) -> np.ndarray:
 _PALETTE_LAB = np.stack(
     [
         _linear_to_lab(
-            np.array(rgb, dtype=np.float64)[None, :] / 255.0,
+            _srgb_to_linear(np.array(rgb, dtype=np.float64)[None, :] / 255.0),
         )[0]
         for _, rgb in _PALETTE_RGB
     ],
@@ -124,7 +126,10 @@ def _center_crop(image: Image.Image) -> Image.Image:
 def _prepare_pixels(
     image: Image.Image, *, mask: np.ndarray | None
 ) -> tuple[np.ndarray, int | None]:
-    resized = image.resize((256, 256))
+    resized = image.resize(
+        (_COLOR_WORKING_SIZE, _COLOR_WORKING_SIZE),
+        resample=Image.Resampling.BILINEAR,
+    )
     rgb_array = np.asarray(resized, dtype=np.float64) / 255.0
 
     masked_pixels: int | None = None
@@ -144,6 +149,15 @@ def _prepare_pixels(
 
     if rgb_array.size == 0:
         return np.empty((0, 3)), masked_pixels
+
+    if len(rgb_array) > _COLOR_MAX_CLUSTER_PIXELS:
+        sample_indices = np.linspace(
+            0,
+            len(rgb_array) - 1,
+            num=_COLOR_MAX_CLUSTER_PIXELS,
+            dtype=np.int64,
+        )
+        rgb_array = rgb_array[sample_indices]
 
     lab = _linear_to_lab(_srgb_to_linear(rgb_array))
     return lab, masked_pixels
@@ -228,7 +242,7 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
 
     kmeans = KMeans(
         n_clusters=min(5, len(lab_pixels)),
-        n_init=10,
+        n_init=6,
         random_state=0,
     )
     labels = kmeans.fit_predict(lab_pixels)

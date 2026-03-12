@@ -1,121 +1,79 @@
 # Deployment Architecture
 
-This document describes the intended production platform split for StyleUs. It is a planning and repository-foundation document for the migration path; it does not mean every hosted integration is already implemented.
+StyleUs deploys as four pieces:
 
-## Target platform layout
+- frontend on Vercel
+- API on a Render web service
+- AI worker on a Render background worker
+- Postgres, Auth, and Storage on Supabase
 
-```text
-Browser
--> Frontend SPA (Vercel)
--> FastAPI API (Render web service)
--> Supabase Postgres
+## Runtime boundaries
 
-Browser
--> direct public frontend configuration from Vercel
+Vercel frontend:
 
-FastAPI API
--> Supabase Postgres
--> Supabase Storage
--> Supabase Auth token validation
+- serves the Vite build from `apps/web/dist`
+- runs the browser-only auth client
+- uploads source images directly to Supabase Storage using signed upload tokens from the API
+- calls the Render API through `VITE_API_BASE_URL`
 
-FastAPI API
--> Render worker enqueue boundary
+Render API:
 
-Render worker
--> background AI processing via ai_jobs queue
-```
+- runs FastAPI from `services/api`
+- validates Supabase bearer tokens
+- creates presigned upload intents
+- finalizes uploads into private Storage paths
+- writes wardrobe items and AI jobs to Supabase Postgres
+- exposes `/health` for Render health checks
 
-## Platform responsibilities
+Render worker:
 
-### Vercel
+- runs `python -m app.worker`
+- reads and updates the same `ai_jobs` table as the API
+- downloads normalized item images from Supabase Storage
+- writes AI predictions back to Postgres
 
-Owns:
+Supabase:
 
-- static hosting for the React/Vite frontend
-- public frontend environment variables
-- preview and production frontend deployments
+- stores the Postgres database used by SQLAlchemy and Alembic
+- issues browser sessions and access tokens through Supabase Auth
+- stores original uploads plus `orig.jpg`, `medium.jpg`, and `thumb.jpg` variants in private Storage
 
-Should expose only browser-safe variables such as:
+## Request flow
 
-- `VITE_APP_ENV`
-- `VITE_API_BASE_URL`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+1. The user authenticates in the Vercel-hosted frontend through Supabase Auth.
+2. The frontend calls `POST /items/presign` on the Render API.
+3. The API creates the placeholder row and returns a signed upload target.
+4. The browser uploads the image directly to Supabase Storage.
+5. The frontend calls `POST /items/{item_id}/complete-upload`.
+6. The API validates the uploaded source image, writes derived variants, and enqueues an `ai_jobs` row.
+7. The Render worker polls the queue, processes the item, and stores predictions.
+8. The frontend polls `GET /items/{item_id}/ai-preview` until the review screen can show the result.
 
-### Render web service
+## Deployment files in this repo
 
-Owns:
-
-- FastAPI runtime
-- backend private environment variables
-- API request handling
-- upload finalization
-- business logic and item persistence
-
-Should own private variables such as:
-
-- `DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_JWT_AUDIENCE`
-- storage credentials
-- AI pipeline configuration
-
-### Render worker
-
-Owns:
-
-- durable background job processing
-- AI enrichment outside the request lifecycle
-- writes back item predictions after polling Postgres
-
-The repository now includes the worker runtime and queue model. Provisioning the actual hosted Render worker service is still a later deployment step.
-
-### Supabase
-
-Planned target owner for:
-
-- PostgreSQL database
-- authentication
-- storage
-
-The repository should prepare for Supabase as infrastructure, but business data access and authorization logic still stay in the Python backend.
+- `apps/web/vercel.json` - Vercel build output and SPA rewrites
+- `render.yaml` - Render web service and worker blueprint
+- `apps/web/.env.example` - frontend local env template using the hosted variable names
+- `services/api/.env.example` - backend and worker local env template using the hosted variable names
 
 ## Boundary rules
 
-### What the frontend may know directly
+The frontend may know:
 
-- API base URL
-- public app environment
-- later, public Supabase client configuration for auth/session bootstrap
+- `VITE_API_BASE_URL`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_APP_ENV`
 
-### What must stay backend-only
+The frontend must not know:
 
-- database credentials
-- service-role or admin keys
-- storage write credentials
-- internal AI configuration
-- migration and seeding controls
+- `DATABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- any Alembic or worker settings
 
-### What remains local-only today
+The API and worker own:
 
-- Docker-managed Postgres for local development
-- local upload mode and local media serving
-- automatic startup migrations and startup seeding by default
-- MSW toggles for mock API behavior
-
-## Current state vs later phases
-
-Implemented now:
-
-- frontend and backend are explicitly environment-aware
-- startup mutation is config-gated
-- docs reflect the Vercel + Render + Supabase target split
-- the backend can now point `DATABASE_URL` at Supabase Postgres while keeping SQLAlchemy and Alembic unchanged
-- the frontend can sign in with Supabase Auth and send bearer tokens to FastAPI
-- FastAPI validates Supabase JWTs and maps `sub` to the application user ID
-- Supabase Storage-backed upload finalization plus a Postgres-backed `ai_jobs` worker flow are implemented
-- the API now enqueues AI work and the dedicated worker performs enrichment asynchronously
-
-Later phases will implement:
-
-- actual hosted deployment rollout
+- all database access
+- all private Storage operations
+- all job queue state
+- all service-role credentials

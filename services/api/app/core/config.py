@@ -49,7 +49,10 @@ class Settings(BaseSettings):
         default="local-user@styleus.invalid",
         alias="LOCAL_AUTH_EMAIL",
     )
-    cors_origins: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
+    cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173",
+        alias="CORS_ORIGINS",
+    )
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
 
     media_root: str = Field(default="./media", alias="MEDIA_ROOT")
@@ -190,7 +193,7 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-        return origins or ["http://localhost:5173"]
+        return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     @property
     def is_secure_env(self) -> bool:

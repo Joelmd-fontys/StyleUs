@@ -294,6 +294,15 @@ def run(image_path: Path) -> PipelineResult:
     color_started = time.perf_counter()
     color_result = color.get_colors_from_image(source_image)
     color_duration_ms = round((time.perf_counter() - color_started) * 1000, 2)
+    LOGGER.info(
+        "ai.pipeline.color_prediction",
+        extra={
+            "primary_color": color_result.primary_color,
+            "primary_color_confidence": color_result.confidence,
+            "secondary_color": color_result.secondary_color,
+            "secondary_color_confidence": color_result.secondary_confidence,
+        },
+    )
     cached = False
     embedding_duration_ms = 0.0
     prediction_duration_ms = 0.0
@@ -310,8 +319,8 @@ def run(image_path: Path) -> PipelineResult:
             image_path=image_path,
             colors=color_result,
         )
-        LOGGER.debug(
-            "ai.pipeline.prediction",
+        LOGGER.info(
+            "ai.pipeline.clip_prediction",
             extra={
                 "category": clip_result.get("category"),
                 "category_confidence": clip_result.get("category_confidence"),

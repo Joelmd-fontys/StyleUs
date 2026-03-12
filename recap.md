@@ -1,33 +1,34 @@
-# Recap
+# Repository Recap
 
-## What was cleaned up
+## Current shape
 
-- The backend database configuration now cleanly supports both local Docker Postgres and Supabase Postgres without changing the FastAPI, SQLAlchemy, or Alembic stack.
-- Alembic configuration was clarified so migrations continue to read from the same `DATABASE_URL` as the application.
-- The backend test harness was loosened so pure config tests no longer require a live Postgres instance just to run.
-- The prototype auth stub was replaced with Supabase Auth in the browser plus JWT validation in FastAPI.
+- `apps/web` contains the only frontend application.
+- `services/api` contains the API, worker, migrations, and seed pipeline.
+- `docs` contains only cross-cutting notes that are still relevant to operation or deployment.
 
-## What was simplified
+## Upload and prediction flow
 
-- `DATABASE_URL` remains the single database input for the backend in every environment.
-- Supabase-provided `postgres://` and `postgresql://` URLs are normalized automatically to the `psycopg` SQLAlchemy dialect.
-- The local-vs-hosted database strategy is now explicit in the README and environment docs.
-- User identity now comes from a single source of truth: the Supabase access token `sub`, which maps directly to the existing `users.id` UUID.
-- Local development keeps an explicit bypass instead of an implicit global fake user.
-- The deterministic seed workflow now reuses the configured local auth identity and is blocked outside `APP_ENV=local`.
-- Hosted auth now verifies asymmetric tokens via JWKS and can fall back to Supabase user-info verification for legacy shared-secret projects.
-- Uploads now go directly from the browser to private Supabase Storage through API-issued signed upload targets.
-- Wardrobe items now persist private storage object paths, while API responses translate them into temporary signed image URLs.
-- AI processing now runs through a durable Postgres-backed `ai_jobs` queue with a dedicated worker process.
+1. The web app requests `POST /items/presign`.
+2. The browser uploads directly to private Supabase Storage.
+3. `POST /items/{item_id}/complete-upload` writes image variants and queues an `ai_jobs` row.
+4. The worker processes the queued job and stores predictions.
+5. The review page polls `GET /items/{id}/ai-preview` until the result is ready.
 
-## What was removed
+## Cleanup decisions reflected in the repo
 
-- No product features or schema-management paths were removed in this phase.
-- No local Docker Postgres workflow was removed.
-- The secure-environment API key gate was removed in favor of real bearer-token auth.
+- removed tracked local media artifacts from `services/api/media`
+- removed placeholder READMEs and historical planning docs that were not part of the active system
+- removed the unused S3 helper path and its unused Python dependency
+- aligned `.env.example` files with the active Supabase-based runtime
+- simplified `.gitignore` so generated files stay ignored and tracked app files stay visible
+- trimmed the main docs to current architecture, setup, and deployment boundaries
 
-## What remains potentially fragile
+## Local run
 
-- Hosted worker deployment is still a manual later phase even though the runtime now exists in the repo.
-- Supabase Storage now depends on manual dashboard configuration for the private bucket, MIME allow-list, and size limits.
-- The backend integration tests that exercise real DB behavior still depend on a reachable Postgres instance.
+Use `./dev.sh` from the repo root for the full stack, or run the web app and API separately from `apps/web` and `services/api`.
+
+## Remaining manual work outside the repo
+
+- hosted deployment rollout
+- Supabase project configuration for auth and private storage
+- CI hardening beyond the current placeholder workflow

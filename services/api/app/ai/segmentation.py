@@ -154,7 +154,7 @@ def _grabcut_mask(image: Image.Image) -> np.ndarray | None:
 
 
 def _heuristic_mask(image: Image.Image) -> np.ndarray | None:
-    processed, scale = _resize_for_processing(image)
+    processed, scale = _resize_for_processing(image, max_size=384)
     array = np.asarray(processed.convert("RGB"), dtype=np.float32) / 255.0
     height, width = array.shape[:2]
     if height < 2 or width < 2:
@@ -166,17 +166,23 @@ def _heuristic_mask(image: Image.Image) -> np.ndarray | None:
     center_weights = np.exp(-(((yy - center_y) ** 2 + (xx - center_x) ** 2) / (2 * sigma**2)))
 
     border = (xx < width * 0.08) | (xx > width * 0.92) | (yy < height * 0.08) | (yy > height * 0.92)
-    channel_max = array.max(axis=2)
-    channel_min = array.min(axis=2)
-    saturation = channel_max - channel_min
-    brightness = array.mean(axis=2)
+    border_pixels = array[border]
+    if border_pixels.size == 0:
+        return None
 
-    background_like = (brightness > 0.93) | (brightness < 0.07) | (saturation < 0.04)
-    mask = (center_weights > 0.25) & (~border)
-    mask &= (~background_like) | (center_weights > 0.55)
+    background_mean = border_pixels.mean(axis=0)
+    color_distance = np.linalg.norm(array - background_mean, axis=2)
+    border_distance = color_distance[border]
+    distance_threshold = max(float(np.quantile(border_distance, 0.95)) * 1.35, 0.08)
+
+    mask = (color_distance > max(distance_threshold * 4.0, 0.12)) & (center_weights > 0.05) & (~border)
+    if mask.sum() < max(200, int(height * width * 0.015)):
+        mask = (color_distance > max(distance_threshold * 2.5, 0.08)) & (center_weights > 0.08) & (~border)
 
     mask = mask.astype(np.uint8)
     mask = _keep_largest_component(mask)
+    if mask.max() == 0:
+        return None
     smoothed = _smooth_mask(mask)
 
     if scale != 1.0:

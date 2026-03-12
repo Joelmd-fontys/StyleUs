@@ -1,16 +1,13 @@
 # Documentation
 
-This directory contains supporting product and technical notes for the StyleUs repository.
+Keep code-adjacent details in the app and service READMEs. Use `docs/` only for cross-cutting architecture, environment, and process notes.
 
-## How to use this folder
+Start here:
 
-- Start with the root [README.md](../README.md) for the current product and local setup.
-- Use [docs/tech-stack.md](./tech-stack.md) for the stack decisions currently in effect.
-- Use [docs/config/environments.md](./config/environments.md) for environment tiers, variable ownership, and startup rules.
-- Use [docs/architecture/deployment.md](./architecture/deployment.md) for the target Vercel + Render + Supabase platform split.
-- Use [recap.md](../recap.md) for the latest repository cleanup and status summary.
-
-Many implementation details now live closest to the code:
-
-- frontend runtime and flow details: [apps/web/README.md](../apps/web/README.md)
-- backend runtime, routes, upload pipeline, and AI flow: [services/api/README.md](../services/api/README.md)
+- [../README.md](../README.md) - repository overview and local setup
+- [../apps/web/README.md](../apps/web/README.md) - frontend structure and flows
+- [../services/api/README.md](../services/api/README.md) - API, worker, and upload pipeline
+- [config/environments.md](./config/environments.md) - environment tiers and variable ownership
+- [architecture/README.md](./architecture/README.md) - deployment and worker architecture
+- [tech-stack.md](./tech-stack.md) - current stack summary
+- [../recap.md](../recap.md) - repository maintenance recap
