@@ -65,21 +65,49 @@ Local guest mode still works with `APP_ENV=local` and `LOCAL_AUTH_BYPASS=true`. 
 
 Hosted environments should keep secrets in the deployment platform:
 
-- Vercel for `apps/web`
-- Render for `services/api`
+- Vercel for browser-visible `VITE_*` values
+- Render for API and worker values
 
-See [docs/config/environments.md](docs/config/environments.md) for the full variable list and environment rules.
+See [docs/config/environments.md](docs/config/environments.md) for the complete variable matrix.
 
 ## Deployment target
 
-The intended hosted split is:
+The deployable hosted split in this repo is:
 
-- frontend on Vercel
-- API on Render
-- AI worker on Render
+- frontend on Vercel from `apps/web`
+- API on Render as a web service from `services/api`
+- AI worker on Render as a background worker from `services/api`
 - database, auth, and storage on Supabase
 
-See [docs/architecture/deployment.md](docs/architecture/deployment.md).
+Repo deployment files:
+
+- `apps/web/vercel.json`
+- `render.yaml`
+
+## Hosted deployment
+
+Frontend on Vercel:
+
+1. Create a Vercel project with Root Directory `apps/web`.
+2. Set `VITE_APP_ENV`, `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`.
+3. Deploy. `apps/web/vercel.json` keeps the Vite build output at `dist` and rewrites SPA routes to `index.html`.
+
+Backend on Render:
+
+1. Create services from `render.yaml` or mirror the same settings in the dashboard.
+2. Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, and `CORS_ORIGINS` on both the API and worker.
+3. Let the API run `python -m alembic upgrade head` before startup.
+4. Confirm the API health check succeeds at `/health`.
+
+The deployed system flow stays the same as local:
+
+1. user logs in with Supabase Auth
+2. frontend uploads the source image to Supabase Storage
+3. API finalizes the upload and creates the wardrobe row plus `ai_jobs` row
+4. worker processes the job and writes predictions back to Postgres
+5. frontend review screen polls until the AI result is ready
+
+See [docs/architecture/deployment.md](docs/architecture/deployment.md) and [services/api/README.md](services/api/README.md) for the platform-specific details.
 
 ## Further reading
 

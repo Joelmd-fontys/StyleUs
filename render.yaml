@@ -1,0 +1,63 @@
+envVarGroups:
+  - name: styleus-backend-shared
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOCAL_AUTH_BYPASS
+        value: "false"
+      - key: RUN_MIGRATIONS_ON_START
+        value: "false"
+      - key: RUN_SEED_ON_START
+        value: "false"
+      - key: AI_ENABLE_CLASSIFIER
+        value: "true"
+      - key: AI_JOB_POLL_INTERVAL_SECONDS
+        value: "1"
+      - key: AI_JOB_MAX_ATTEMPTS
+        value: "3"
+      - key: AI_JOB_STALE_AFTER_SECONDS
+        value: "300"
+      - key: SUPABASE_HTTP_TIMEOUT_SECONDS
+        value: "15"
+
+services:
+  - type: web
+    name: styleus-api
+    runtime: docker
+    rootDir: services/api
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    preDeployCommand: python -m alembic upgrade head
+    envVars:
+      - fromGroup: styleus-backend-shared
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: worker
+    name: styleus-ai-worker
+    runtime: docker
+    rootDir: services/api
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m app.worker
+    envVars:
+      - fromGroup: styleus-backend-shared
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

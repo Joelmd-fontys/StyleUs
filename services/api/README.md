@@ -68,30 +68,24 @@ The legacy `PUT /items/uploads/{item_id}` route remains as a `410 Gone` response
 
 Copy `.env.example` to `.env` before running locally.
 
-Core:
+Required for hosted API and worker deployments:
 
-- `APP_ENV` - `local`, `staging`, or `production`
-- `APP_VERSION` - value returned by `/health` and `/version`
-- `DATABASE_URL` - the only database connection setting; local Docker Postgres or hosted Supabase Postgres
-- `CORS_ORIGINS` - comma-separated browser origins
+- `APP_ENV` - set to `production` on Render
+- `DATABASE_URL` - Supabase Postgres connection string; include `sslmode=require`
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - backend-only key for private Storage access
+- `SUPABASE_STORAGE_BUCKET` - private bucket used for original and derived images
+- `CORS_ORIGINS` - comma-separated Vercel origins allowed to call the API
+- `AI_JOB_MAX_ATTEMPTS`
+- `AI_JOB_POLL_INTERVAL_SECONDS`
 
-Auth and storage:
+Common optional settings:
 
-- `SUPABASE_URL` - required in hosted environments and for local live uploads
-- `SUPABASE_SERVICE_ROLE_KEY` - required for private Storage access
-- `SUPABASE_STORAGE_BUCKET` - private bucket name
-- `SUPABASE_JWT_AUDIENCE` - expected access-token audience, usually `authenticated`
-- `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_ANON_KEY` - only needed for legacy shared-secret token verification
-- `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL` - local-only guest path
-
-Media, startup, and worker:
-
-- `MEDIA_ROOT`
-- `MEDIA_MAX_UPLOAD_SIZE`
+- `APP_VERSION`
+- `SUPABASE_JWT_AUDIENCE`
 - `SUPABASE_SIGNED_URL_TTL_SECONDS`
 - `SUPABASE_HTTP_TIMEOUT_SECONDS`
-- `RUN_MIGRATIONS_ON_START`
-- `RUN_SEED_ON_START`
+- `AI_JOB_STALE_AFTER_SECONDS`
 - `AI_ENABLE_CLASSIFIER`
 - `AI_DEVICE`
 - `AI_CONFIDENCE_THRESHOLD`
@@ -102,28 +96,48 @@ Media, startup, and worker:
 - `AI_COLOR_TOPK`
 - `AI_ONNX`
 - `AI_ONNX_MODEL_PATH`
-- `AI_JOB_MAX_ATTEMPTS`
-- `AI_JOB_POLL_INTERVAL_SECONDS`
-- `AI_JOB_STALE_AFTER_SECONDS`
-- `SEED_LIMIT`
-- `SEED_KEY`
+
+Local-only settings:
+
+- `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL`
+- `RUN_MIGRATIONS_ON_START`, `RUN_SEED_ON_START`, `SEED_LIMIT`, `SEED_KEY`
+- `MEDIA_ROOT`, `MEDIA_MAX_UPLOAD_SIZE`
+- `SUPABASE_ANON_KEY` only for legacy shared-secret token verification
 
 Rules:
 
 - `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
 - `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
 - `SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`.
-- Hosted environments should keep `RUN_MIGRATIONS_ON_START=false` and `RUN_SEED_ON_START=false` unless you are intentionally performing startup mutation.
+- Hosted environments should keep `RUN_MIGRATIONS_ON_START=false` and `RUN_SEED_ON_START=false`.
 
-## Hosted deployment model
+## Render deployment
 
-- frontend on Vercel
-- API on Render
-- worker on Render
-- Postgres, Auth, and Storage on Supabase
+The repository includes [render.yaml](../../render.yaml) for the hosted backend shape:
 
-The backend keeps SQLAlchemy and Alembic as the only data-access and schema-management path in every environment. See [../../docs/architecture/deployment.md](../../docs/architecture/deployment.md) and [../../docs/config/environments.md](../../docs/config/environments.md).
-- Use the same `DATABASE_URL` for Alembic and the API process.
+- `styleus-api` -> Render web service using `services/api/Dockerfile`
+- `styleus-ai-worker` -> Render background worker using the same Docker image with `python -m app.worker`
+
+API service settings:
+
+- Root Directory: `services/api`
+- Runtime: `Docker`
+- Health Check Path: `/health`
+- Pre-Deploy Command: `python -m alembic upgrade head`
+- Start Command: Docker default from `services/api/Dockerfile`
+
+Worker service settings:
+
+- Root Directory: `services/api`
+- Runtime: `Docker`
+- Start Command: `python -m app.worker`
+- Use the same `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` values as the API
+
+Deployment notes:
+
+- The Docker image now binds uvicorn to `${PORT:-8000}` so it runs cleanly on Render.
+- `/health` now checks the database connection before returning `200 OK`, which makes the Render health check meaningful.
+- Use the same `DATABASE_URL` for Alembic, the API, and the worker.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
 
 ## Platform boundary

@@ -1,99 +1,102 @@
 # Environment Model
 
-StyleUs uses three runtime tiers:
+StyleUs uses three application environments:
 
 | Environment | Frontend | Backend | Defaults |
 | --- | --- | --- | --- |
-| `local` | Vite dev server | FastAPI on the developer machine | migrations `on`, seed `on` |
-| `staging` | Vercel preview or staging | Render web service | migrations `off`, seed `off` |
-| `production` | Vercel production | Render web service | migrations `off`, seed `off` |
+| `local` | Vite dev server | FastAPI on the developer machine | migrations `on`, seed `on`, local auth bypass allowed |
+| `staging` | Vercel preview or staging domain | Render web service and worker | migrations `off`, seed `off` |
+| `production` | Vercel production domain | Render web service and worker | migrations `off`, seed `off` |
 
-## Local files
+Hosted deployments should keep secrets in platform-managed env settings:
 
-- `apps/web/.env.example` -> `apps/web/.env.local`
-- `services/api/.env.example` -> `services/api/.env`
-
-Hosted environments should use platform-managed secrets:
-
-- Vercel for the web app
-- Render for the API and worker
-- Supabase for database, auth, and storage infrastructure
+- Vercel for browser-visible `VITE_*` values
+- Render for API and worker values
+- Supabase for the actual database, auth, and storage infrastructure
 
 ## Frontend variables
 
-These values are browser-visible:
+These values belong in Vercel and are visible to the browser:
 
-- `VITE_APP_ENV`
-- `VITE_API_BASE_URL`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPABASE_ANON_KEY` as a legacy alias
-- `VITE_USE_LIVE_API_ITEMS`
-- `VITE_USE_LIVE_API_UPLOAD`
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | yes | Public base URL of the Render API |
+| `VITE_SUPABASE_URL` | yes | Public Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | yes | Public browser key used by Supabase Auth and signed uploads |
+| `VITE_APP_ENV` | yes | `local`, `staging`, or `production` |
+| `VITE_USE_LIVE_API_ITEMS` | local only | MSW toggle for wardrobe routes |
+| `VITE_USE_LIVE_API_UPLOAD` | local only | MSW toggle for upload routes |
 
-Rules:
+Notes:
 
-- the `VITE_USE_LIVE_API_*` flags are local-development toggles
-- if `VITE_SUPABASE_URL` and a public browser key are missing, the frontend falls back to local guest mode
-- hosted environments should always provide the public Supabase values
+- `VITE_SUPABASE_PUBLISHABLE_KEY` remains accepted as a legacy alias, but new deployments should use `VITE_SUPABASE_ANON_KEY`.
+- In `local`, the app falls back to `http://127.0.0.1:8000` if `VITE_API_BASE_URL` is unset.
+- Hosted environments should not rely on local mock flags.
 
-## Backend variables
+## Backend and worker variables
 
-Core:
+These values belong in Render. The API and worker should use the same values unless noted otherwise.
 
-- `APP_ENV`
-- `APP_VERSION`
-- `DATABASE_URL`
-- `CORS_ORIGINS`
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `APP_ENV` | yes | Set to `production` on hosted deployments |
+| `DATABASE_URL` | yes | Supabase Postgres connection string with `sslmode=require` |
+| `SUPABASE_URL` | yes | Base URL for Supabase Auth and Storage |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Private key for Storage access and upload finalization |
+| `SUPABASE_STORAGE_BUCKET` | yes | Private bucket used for item images |
+| `CORS_ORIGINS` | yes for API | Comma-separated Vercel origins allowed to call FastAPI |
+| `AI_JOB_POLL_INTERVAL_SECONDS` | yes | Worker poll interval |
+| `AI_JOB_MAX_ATTEMPTS` | yes | Retry limit for AI jobs |
+| `APP_VERSION` | optional | Returned by `/health` and `/version` |
+| `AI_JOB_STALE_AFTER_SECONDS` | optional | Reclaim timeout for stuck running jobs |
+| `SUPABASE_JWT_AUDIENCE` | optional | Defaults to `authenticated` |
+| `SUPABASE_SIGNED_URL_TTL_SECONDS` | optional | Signed media URL lifetime |
+| `SUPABASE_HTTP_TIMEOUT_SECONDS` | optional | Timeout for Supabase HTTP calls |
+| `AI_ENABLE_CLASSIFIER` | optional | Master switch for worker processing |
+| `AI_DEVICE` | optional | Defaults to `cpu` |
+| `AI_CONFIDENCE_THRESHOLD` | optional | Category threshold |
+| `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | optional | Subcategory threshold |
 
-Auth and storage:
+Local-only backend settings:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_STORAGE_BUCKET`
-- `SUPABASE_JWT_AUDIENCE`
-- `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY` only for legacy shared-secret verification
-- `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_USER_ID`, `LOCAL_AUTH_EMAIL` for local-only bypass mode
-
-Media, startup, and worker:
-
-- `MEDIA_ROOT`
-- `MEDIA_MAX_UPLOAD_SIZE`
-- `SUPABASE_SIGNED_URL_TTL_SECONDS`
-- `SUPABASE_HTTP_TIMEOUT_SECONDS`
+- `LOCAL_AUTH_BYPASS`
+- `LOCAL_AUTH_USER_ID`
+- `LOCAL_AUTH_EMAIL`
 - `RUN_MIGRATIONS_ON_START`
 - `RUN_SEED_ON_START`
-- `AI_ENABLE_CLASSIFIER`
-- `AI_DEVICE`
-- `AI_CONFIDENCE_THRESHOLD`
-- `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`
-- `AI_COLOR_USE_MASK`
-- `AI_COLOR_MASK_METHOD`
-- `AI_COLOR_MIN_FOREGROUND_PIXELS`
-- `AI_COLOR_TOPK`
-- `AI_ONNX`
-- `AI_ONNX_MODEL_PATH`
-- `AI_JOB_MAX_ATTEMPTS`
-- `AI_JOB_POLL_INTERVAL_SECONDS`
-- `AI_JOB_STALE_AFTER_SECONDS`
 - `SEED_LIMIT`
 - `SEED_KEY`
+- `MEDIA_ROOT`
+- `MEDIA_MAX_UPLOAD_SIZE`
 
-Rules:
+Notes:
 
-- `APP_ENV` is required
-- `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`
-- `staging` and `production` require `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`
-- `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`
-- `SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`
+- `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
+- `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
+- `SEED_ON_START` remains accepted as a legacy alias for `RUN_SEED_ON_START`.
+- `SUPABASE_ANON_KEY` remains accepted only for legacy shared-secret JWT verification; it is not part of the standard hosted backend contract.
 
-## Database rule
+## Platform mapping
 
-`DATABASE_URL` is the only database setting. The backend continues to use SQLAlchemy and Alembic in every environment.
+Vercel:
 
-- `local` typically points to Docker Postgres
-- `staging` and `production` can point to Supabase Postgres
-- `postgres://` and `postgresql://` URLs are normalized to the psycopg SQLAlchemy dialect
-- hosted connections should keep `sslmode=require`
+- `VITE_API_BASE_URL`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_APP_ENV`
 
-Alembic remains the only schema migration path.
+Render API:
+
+- all backend required values
+- `CORS_ORIGINS` must include the active Vercel origin
+
+Render worker:
+
+- the same backend values as the API
+- `CORS_ORIGINS` can match the API env set even though the worker does not serve HTTP
+
+Supabase:
+
+- creates the actual Postgres URL
+- provides the anon key and service role key
+- hosts the Storage bucket named by `SUPABASE_STORAGE_BUCKET`

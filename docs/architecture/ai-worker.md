@@ -37,3 +37,14 @@ cd services/api
 make run
 make worker
 ```
+
+## Render deployment
+
+The hosted worker runs on Render as a background worker using the same codebase and Docker image as the API.
+
+- Root Directory: `services/api`
+- Runtime: `Docker`
+- Start Command: `python -m app.worker`
+- Shared env vars: `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `AI_JOB_POLL_INTERVAL_SECONDS`, `AI_JOB_MAX_ATTEMPTS`
+
+The repository-level [../../render.yaml](../../render.yaml) file captures this service definition.

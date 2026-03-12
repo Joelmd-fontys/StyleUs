@@ -36,12 +36,29 @@ Default dev URL: `http://127.0.0.1:5173`
 - `VITE_APP_ENV` - `local`, `staging`, or `production`
 - `VITE_API_BASE_URL` - API origin; defaults to localhost only in `local`
 - `VITE_SUPABASE_URL` - public Supabase project URL
-- `VITE_SUPABASE_PUBLISHABLE_KEY` - preferred public browser key
-- `VITE_SUPABASE_ANON_KEY` - legacy alias still accepted
+- `VITE_SUPABASE_ANON_KEY` - public browser key used by Supabase Auth and signed uploads
+- `VITE_SUPABASE_PUBLISHABLE_KEY` - legacy alias still accepted
 - `VITE_USE_LIVE_API_ITEMS` - use the real wardrobe API instead of MSW
 - `VITE_USE_LIVE_API_UPLOAD` - use the real upload flow instead of MSW
 
 If the Supabase variables are omitted, the app stays in local guest mode and depends on the API's `LOCAL_AUTH_BYPASS=true` path. Hosted environments should always set the public Supabase variables.
+
+## Vercel deployment
+
+Deploy this app as a Vercel project with `apps/web` set as the Root Directory.
+
+- `apps/web/vercel.json` sets `npm run build` as the build command
+- the Vite output directory is `dist`
+- all unmatched routes rewrite to `/index.html` so React Router works on direct refresh
+
+Set these Vercel environment variables:
+
+- `VITE_APP_ENV=production`
+- `VITE_API_BASE_URL=https://<your-render-api-domain>`
+- `VITE_SUPABASE_URL=https://<your-supabase-project>.supabase.co`
+- `VITE_SUPABASE_ANON_KEY=<your-supabase-anon-key>`
+
+The hosted frontend should leave `VITE_USE_LIVE_API_ITEMS` and `VITE_USE_LIVE_API_UPLOAD` unset so the defaults stay on the real API and real upload flow.
 
 ## Upload and review flow
 
