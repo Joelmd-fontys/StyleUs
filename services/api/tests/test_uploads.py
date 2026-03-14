@@ -8,6 +8,9 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai import color
+from app.ai import tasks as ai_tasks
+from app.ai.pipeline import PipelineResult
 from app.api.deps import DEFAULT_USER_ID, get_current_user_id, get_db
 from app.core.config import get_settings
 from app.main import create_app
@@ -52,6 +55,17 @@ class FakeStorageAdapter:
     ) -> None:
         _ = content_type, upsert
         self.uploaded_objects[object_path] = data
+        self.file_by_path[object_path] = storage_utils.DownloadedObject(
+            object_path=object_path,
+            data=data,
+            content_type=content_type,
+            size=len(data),
+        )
+        self.info_by_path[object_path] = {
+            "name": object_path,
+            "metadata": {"mimetype": content_type, "size": len(data)},
+            "size": len(data),
+        }
 
     def delete_objects(self, object_paths: list[str]) -> None:
         self.deleted_objects.extend(object_paths)
@@ -68,6 +82,32 @@ def _make_sample_image_bytes(color: tuple[int, int, int] = (200, 40, 40)) -> byt
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _mock_pipeline_result() -> PipelineResult:
+    return PipelineResult(
+        colors=color.ColorResult(
+            primary_color="Camel",
+            secondary_color="Tan",
+            confidence=0.88,
+            secondary_confidence=0.71,
+        ),
+        clip={
+            "category": "outerwear",
+            "category_confidence": 0.91,
+            "materials": [("wool", 0.83)],
+            "style_tags": [("heritage", 0.79)],
+            "subcategory": "coat",
+            "subcategory_confidence": 0.8,
+            "scores": {
+                "category": {"outerwear": 0.91},
+                "materials": {"wool": 0.83},
+                "style_tags": {"heritage": 0.79},
+                "subcategory": {"coat": 0.8},
+            },
+        },
+        cached=False,
+    )
 
 
 def _build_client(db_session: Session) -> TestClient:
@@ -260,6 +300,78 @@ def test_complete_upload_persists_object_paths_and_returns_signed_urls(
     job = db_session.execute(select(AIJob).where(AIJob.item_id == item_id)).scalar_one()
     assert job.status == "pending"
     assert job.attempts == 0
+
+
+def test_complete_upload_runs_inline_heuristic_when_classifier_disabled(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    fake_storage = FakeStorageAdapter()
+    monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: fake_storage)
+    monkeypatch.setenv("AI_ENABLE_CLASSIFIER", "false")
+    monkeypatch.setattr(ai_tasks.pipeline, "run", lambda path: _mock_pipeline_result())
+    get_settings.cache_clear()
+
+    source_bytes = _make_sample_image_bytes()
+
+    with _build_client(db_session) as client:
+        presign = client.post(
+            "/items/presign",
+            json={
+                "contentType": "image/png",
+                "fileName": "look.png",
+                "fileSize": len(source_bytes),
+            },
+        )
+        assert presign.status_code == 200
+
+        payload = presign.json()
+        item_id = uuid.UUID(payload["itemId"])
+        object_key = payload["objectKey"]
+
+        fake_storage.info_by_path[object_key] = {
+            "name": object_key,
+            "metadata": {"mimetype": "image/png", "size": len(source_bytes)},
+            "size": len(source_bytes),
+        }
+        fake_storage.file_by_path[object_key] = storage_utils.DownloadedObject(
+            object_path=object_key,
+            data=source_bytes,
+            content_type="image/png",
+            size=len(source_bytes),
+        )
+
+        complete = client.post(
+            f"/items/{item_id}/complete-upload",
+            json={"objectKey": object_key, "fileName": "look.png"},
+        )
+
+        assert complete.status_code == 200
+        body = complete.json()
+        assert body["aiJob"] is None
+        assert body["ai"]["category"] == "outerwear"
+        assert body["ai"]["subcategory"] == "coat"
+        assert body["primaryColor"] == "Camel"
+        assert body["secondaryColor"] == "Tan"
+
+        preview = client.get(f"/items/{item_id}/ai-preview")
+        assert preview.status_code == 200
+        preview_body = preview.json()
+        assert preview_body["pending"] is False
+        assert preview_body["category"] == "outerwear"
+        assert preview_body["subcategory"] == "coat"
+
+    stmt = select(WardrobeItem).where(WardrobeItem.id == item_id)
+    stored = db_session.execute(stmt).scalar_one()
+    assert stored.category == "outerwear"
+    assert stored.subcategory == "coat"
+    assert stored.primary_color == "Camel"
+    assert stored.secondary_color == "Tan"
+    assert (
+        db_session.execute(select(AIJob).where(AIJob.item_id == item_id)).scalar_one_or_none()
+        is None
+    )
+    get_settings.cache_clear()
 
 
 def test_legacy_binary_upload_sink_is_gone(db_session: Session) -> None:

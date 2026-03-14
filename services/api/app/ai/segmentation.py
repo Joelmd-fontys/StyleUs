@@ -12,7 +12,7 @@ LOGGER = logging.getLogger("app.ai.segmentation")
 
 MaskMethod = Literal["grabcut", "heuristic"]
 
-cv2: Any | None
+cv2: Any | None = None
 
 try:  # pragma: no cover - optional dependency
     import cv2

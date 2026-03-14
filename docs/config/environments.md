@@ -52,7 +52,7 @@ These values belong in Render on the API and worker services.
 | `SUPABASE_JWT_AUDIENCE` | optional | Defaults to `authenticated` |
 | `SUPABASE_SIGNED_URL_TTL_SECONDS` | optional | Signed media URL lifetime |
 | `SUPABASE_HTTP_TIMEOUT_SECONDS` | optional | Timeout for Supabase HTTP calls |
-| `AI_ENABLE_CLASSIFIER` | optional | Master switch for worker processing |
+| `AI_ENABLE_CLASSIFIER` | optional | `false` runs lightweight heuristic enrichment inline in the API; `true` enables queued CLIP inference |
 | `AI_DEVICE` | optional | Defaults to `cpu` |
 | `AI_CONFIDENCE_THRESHOLD` | optional | Category threshold |
 | `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | optional | Subcategory threshold |
@@ -75,8 +75,8 @@ Notes:
 - `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
 - `SEED_ON_START` remains accepted as a legacy alias for `RUN_SEED_ON_START`.
 - `SUPABASE_ANON_KEY` remains accepted only for legacy shared-secret JWT verification; it is not part of the standard hosted backend contract.
-- `services/api/Dockerfile` is the API image and excludes optional AI dependencies.
-- `services/api/Dockerfile.worker` is the worker image and installs the `.[ai]` extra.
+- `services/api/Dockerfile` is the API image and installs the base runtime dependencies, including `numpy` and `scikit-learn`.
+- `services/api/Dockerfile.worker` is the worker image and installs the same base runtime plus the `.[ai]` extra for CLIP inference.
 
 ## Platform mapping
 
@@ -91,6 +91,7 @@ Render API:
 
 - all backend required values
 - `CORS_ORIGINS` must include the active Vercel origin
+- `AI_ENABLE_CLASSIFIER=false` is the free-tier default
 - build from `services/api/Dockerfile`
 
 Render AI worker:
@@ -104,7 +105,8 @@ Render AI worker:
 - `AI_JOB_MAX_ATTEMPTS`
 - `AI_JOB_STALE_AFTER_SECONDS`
 - build from `services/api/Dockerfile.worker`
-- the current PyTorch/OpenCLIP worker warmup reaches about `1489 MB` RSS locally, so do not place it on a 512 MB Render instance
+- keep `AI_ENABLE_CLASSIFIER=false` on free tier so the worker stays disabled and healthy
+- the current PyTorch/OpenCLIP worker warmup reaches about `1489 MB` RSS locally, so only turn classifier mode back on with a higher-memory instance
 
 Supabase:
 

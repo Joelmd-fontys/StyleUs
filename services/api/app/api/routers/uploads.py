@@ -26,6 +26,25 @@ from app.utils import storage as storage_utils
 router = APIRouter()
 
 
+def _run_inline_ai_enrichment(db: Session, *, item_id: uuid.UUID) -> None:
+    from app.ai.tasks import AIEnrichmentError, run_item_enrichment
+
+    try:
+        run_item_enrichment(db, item_id, commit=True)
+    except AIEnrichmentError as exc:
+        db.rollback()
+        logger.warning(
+            "upload.inline_ai_failed",
+            extra={"item_id": str(item_id), "error": str(exc), "mode": "heuristic_inline"},
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        db.rollback()
+        logger.exception(
+            "upload.inline_ai_failed_unexpected",
+            extra={"item_id": str(item_id), "error": str(exc), "mode": "heuristic_inline"},
+        )
+
+
 @router.post("/presign", response_model=PresignResponse, response_model_by_alias=True)
 def create_presigned_upload(
     *,
@@ -176,9 +195,18 @@ def complete_upload(
             metadata=result.metadata,
             commit=False,
         )
-        if settings.ai_enable_classifier:
-            ai_jobs_service.enqueue_item_job(db, updated, commit=False)
         db.commit()
+        if settings.ai_enable_classifier:
+            try:
+                ai_jobs_service.enqueue_item_job(db, updated, commit=True)
+            except Exception as exc:  # pragma: no cover - defensive
+                db.rollback()
+                logger.exception(
+                    "upload.enqueue_ai_job_failed",
+                    extra={"item_id": str(item_id), "error": str(exc)},
+                )
+        else:
+            _run_inline_ai_enrichment(db, item_id=item_id)
         refreshed = items_service.get_item(db, user_id, item_id)
         if refreshed is not None:
             updated = refreshed
