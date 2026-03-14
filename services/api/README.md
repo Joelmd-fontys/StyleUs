@@ -9,7 +9,7 @@ The API owns wardrobe persistence, upload finalization, signed media URLs, and t
 - `app/services/items.py` - wardrobe CRUD and response shaping
 - `app/services/uploads.py` - signed uploads, image variants, and upload completion
 - `app/services/ai_jobs.py` - queue claim, retry, and completion helpers
-- `app/worker.py` - standalone worker entrypoint
+- `app/worker.py` - AI worker runtime used by FastAPI lifespan and the optional CLI entrypoint
 - `app/ai` - color extraction, segmentation, CLIP heads, and enrichment pipeline
 - `app/seed` - deterministic local seed dataset
 
@@ -24,18 +24,11 @@ make upgrade
 make run
 ```
 
-Run the worker in a second terminal:
-
-```bash
-cd services/api
-make worker
-```
-
-From the repo root, `./dev.sh` starts the API, worker, frontend, database, and migrations together.
+`make run` starts FastAPI and the embedded worker loop together. From the repo root, `./dev.sh` starts the API, frontend, database, and migrations together.
 
 Useful commands:
 
-- `make worker`
+- `make worker` - optional standalone worker loop for one-off debugging
 - `make seed`
 - `make reset-seed`
 - `make lint`
@@ -61,14 +54,14 @@ The legacy `PUT /items/uploads/{item_id}` route remains as a `410 Gone` response
 1. `POST /items/presign` creates a placeholder item and returns a signed upload target.
 2. The browser uploads the source image directly to private Supabase Storage.
 3. `POST /items/{item_id}/complete-upload` validates the source object, writes `orig.jpg`, `medium.jpg`, and `thumb.jpg`, and enqueues an `ai_jobs` row.
-4. `app/worker.py` polls the queue, claims one job with `SELECT ... FOR UPDATE SKIP LOCKED`, and runs enrichment outside the request path.
+4. FastAPI startup launches the `app/worker.py` loop in a background thread, and it polls the queue with `SELECT ... FOR UPDATE SKIP LOCKED`.
 5. `GET /items/{item_id}/ai-preview` returns persisted predictions plus queue state so the UI can keep polling without re-running inference in the API.
 
 ## Environment variables
 
 Copy `.env.example` to `.env` before running locally.
 
-Required for hosted API and worker deployments:
+Required for hosted API deployments:
 
 - `APP_ENV` - set to `production` on Render
 - `DATABASE_URL` - Supabase Postgres connection string; include `sslmode=require`
@@ -116,7 +109,6 @@ Rules:
 The repository includes [render.yaml](../../render.yaml) for the hosted backend shape:
 
 - `styleus-api` -> Render web service using `services/api/Dockerfile`
-- `styleus-ai-worker` -> Render background worker using the same Docker image with `python -m app.worker`
 
 API service settings:
 
@@ -126,18 +118,12 @@ API service settings:
 - Pre-Deploy Command: `python -m alembic upgrade head`
 - Start Command: Docker default from `services/api/Dockerfile`
 
-Worker service settings:
-
-- Root Directory: `services/api`
-- Runtime: `Docker`
-- Start Command: `python -m app.worker`
-- Use the same `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` values as the API
-
 Deployment notes:
 
-- The Docker image now binds uvicorn to `${PORT:-8000}` so it runs cleanly on Render.
+- The Docker image binds uvicorn to `${PORT:-8000}` so it runs cleanly on Render.
 - `/health` now checks the database connection before returning `200 OK`, which makes the Render health check meaningful.
-- Use the same `DATABASE_URL` for Alembic, the API, and the worker.
+- The FastAPI lifespan starts the AI worker loop automatically, so no extra process command is required.
+- Use the same `DATABASE_URL` for Alembic and the API runtime.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
 
 ## Platform boundary
@@ -153,8 +139,7 @@ Deployment notes:
 
 ### Target hosted shape
 
-- Render web service -> FastAPI API
-- Render worker -> AI worker runtime using the same Postgres queue
+- Render web service -> FastAPI API plus embedded AI worker loop
 - Supabase Postgres -> supported hosted database target in this phase
 - Supabase Auth -> implemented for bearer-token validation in this phase
 - Supabase Storage -> implemented in this phase for private uploads and signed reads

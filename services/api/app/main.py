@@ -16,6 +16,9 @@ from app.core.config import Settings, get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
+from app.worker import AIWorker
+
+_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
 
 
 def _maybe_run_migrations(settings: Settings) -> None:
@@ -39,14 +42,39 @@ def _maybe_run_seed(settings: Settings) -> None:
         logger.exception("seed.failed")
 
 
-def create_app() -> FastAPI:
+def create_app(*, start_worker: bool = True) -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        worker: AIWorker | None = None
         await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
-        yield
+        if start_worker:
+            worker = AIWorker(settings)
+            worker.start_in_background()
+            app.state.ai_worker = worker
+        else:
+            app.state.ai_worker = None
+            logger.info(
+                "worker.startup_skipped",
+                extra={"reason": "disabled_for_app_instance"},
+            )
+        try:
+            yield
+        finally:
+            if worker is not None:
+                worker.request_shutdown(reason="lifespan_shutdown")
+                stopped = await anyio.to_thread.run_sync(
+                    worker.join,
+                    _WORKER_SHUTDOWN_TIMEOUT_SECONDS,
+                )
+                if not stopped:
+                    logger.warning(
+                        "worker.shutdown_timeout",
+                        extra={"timeout_seconds": _WORKER_SHUTDOWN_TIMEOUT_SECONDS},
+                    )
+            app.state.ai_worker = None
 
     app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)
 

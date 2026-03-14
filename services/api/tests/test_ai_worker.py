@@ -7,8 +7,11 @@ from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import main as main_module
+from app import worker as worker_module
 from app.ai import color
 from app.ai import tasks as ai_tasks
 from app.ai.pipeline import PipelineResult
@@ -19,7 +22,6 @@ from app.models.user import User
 from app.models.wardrobe import WardrobeItem
 from app.services import ai_jobs as ai_jobs_service
 from app.utils import storage as storage_utils
-from app import worker as worker_module
 
 
 class FakeStorageAdapter:
@@ -226,6 +228,38 @@ def test_worker_prefers_medium_variant_for_inference(db_session, tmp_path, monke
     worker = worker_module.AIWorker(get_settings())
     assert worker.run_once() is True
     assert storage.downloaded_paths == [medium_path]
+
+
+def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
+    lifecycle: list[object] = []
+
+    class FakeWorker:
+        def __init__(self, settings) -> None:
+            lifecycle.append(("init", settings.ai_job_poll_interval_seconds))
+
+        def start_in_background(self) -> None:
+            lifecycle.append("started")
+
+        def request_shutdown(self, *, reason: str) -> None:
+            lifecycle.append(("shutdown", reason))
+
+        def join(self, timeout: float | None = None) -> bool:
+            lifecycle.append(("join", timeout))
+            return True
+
+    monkeypatch.setattr(main_module, "AIWorker", FakeWorker)
+
+    application = main_module.create_app()
+
+    with TestClient(application):
+        assert lifecycle == [("init", get_settings().ai_job_poll_interval_seconds), "started"]
+
+    assert lifecycle == [
+        ("init", get_settings().ai_job_poll_interval_seconds),
+        "started",
+        ("shutdown", "lifespan_shutdown"),
+        ("join", 30.0),
+    ]
 
 
 def test_claim_next_job_reclaims_stale_running_job(db_session):
