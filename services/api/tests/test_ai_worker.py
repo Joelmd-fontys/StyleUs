@@ -249,7 +249,7 @@ def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
             lifecycle.append(("join", timeout))
             return True
 
-    monkeypatch.setattr(main_module, "AIWorker", FakeWorker)
+    monkeypatch.setattr(main_module, "_get_ai_worker_class", lambda: FakeWorker)
 
     application = main_module.create_app(start_worker=True)
 
@@ -271,7 +271,7 @@ def test_fastapi_lifespan_skips_worker_by_default(monkeypatch):
         def __init__(self, settings) -> None:
             lifecycle.append(("init", settings.ai_job_poll_interval_seconds))
 
-    monkeypatch.setattr(main_module, "AIWorker", FakeWorker)
+    monkeypatch.setattr(main_module, "_get_ai_worker_class", lambda: FakeWorker)
 
     application = main_module.create_app()
 
@@ -306,7 +306,7 @@ def test_worker_service_health_reports_worker_status(monkeypatch):
         def snapshot(self) -> SimpleNamespace:
             return SimpleNamespace(memory_rss_mb=128.5, last_error=None)
 
-    monkeypatch.setattr(worker_service_module, "AIWorker", FakeWorker)
+    monkeypatch.setattr(worker_service_module, "_get_ai_worker_class", lambda: FakeWorker)
     monkeypatch.setattr(worker_service_module, "SessionLocal", lambda: nullcontext(object()))
     monkeypatch.setattr(
         worker_service_module.ai_jobs_service,
@@ -359,7 +359,7 @@ def test_worker_service_health_fails_when_worker_unavailable(monkeypatch):
         def snapshot(self) -> SimpleNamespace:
             return SimpleNamespace(memory_rss_mb=None, last_error="worker died")
 
-    monkeypatch.setattr(worker_service_module, "AIWorker", FakeWorker)
+    monkeypatch.setattr(worker_service_module, "_get_ai_worker_class", lambda: FakeWorker)
 
     application = worker_service_module.create_worker_app()
     with TestClient(application) as client:

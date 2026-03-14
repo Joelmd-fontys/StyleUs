@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
 
 import numpy as np
 from PIL import Image
-from sklearn.cluster import KMeans
 
 from app.ai.segmentation import MaskMethod, build_foreground_mask, has_opencv
 from app.core.config import settings
@@ -105,6 +106,13 @@ _PALETTE_LAB = np.stack(
     ],
     axis=0,
 )
+
+
+@lru_cache(maxsize=1)
+def _get_kmeans_class() -> Any:
+    from sklearn.cluster import KMeans
+
+    return KMeans
 
 
 @dataclass(slots=True)
@@ -240,7 +248,7 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
             secondary_confidence=None,
         )
 
-    kmeans = KMeans(
+    kmeans = _get_kmeans_class()(
         n_clusters=min(5, len(lab_pixels)),
         n_init=6,
         random_state=0,

@@ -4,18 +4,27 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import anyio
 from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.ai.worker import AIWorker
 from app.core.config import get_settings
 from app.core.logging import logger
 from app.db.session import SessionLocal
 from app.services import ai_jobs as ai_jobs_service
 
+if TYPE_CHECKING:
+    from app.ai.worker import AIWorker
+
 _WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+
+
+def _get_ai_worker_class() -> type[AIWorker]:
+    from app.ai.worker import AIWorker
+
+    return AIWorker
 
 
 def create_worker_app() -> FastAPI:
@@ -23,7 +32,7 @@ def create_worker_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        worker = AIWorker(settings)
+        worker = _get_ai_worker_class()(settings)
         app.state.ai_worker = worker
         worker.start_in_background(thread_name="styleus-ai-worker-service")
         try:
@@ -55,7 +64,7 @@ def create_worker_app() -> FastAPI:
 
     @app.get("/health")
     def health_check() -> dict[str, object]:
-        worker: AIWorker | None = getattr(app.state, "ai_worker", None)
+        worker = getattr(app.state, "ai_worker", None)
         if worker is None or not (worker.is_running() or worker.thread_alive()):
             detail = "Worker unavailable"
             if worker is not None:

@@ -58,7 +58,7 @@ The legacy `PUT /items/uploads/{item_id}` route remains as a `410 Gone` response
 1. `POST /items/presign` creates a placeholder item and returns a signed upload target.
 2. The browser uploads the source image directly to private Supabase Storage.
 3. `POST /items/{item_id}/complete-upload` validates the source object, writes `orig.jpg`, `medium.jpg`, and `thumb.jpg`, and enqueues an `ai_jobs` row.
-4. The worker service launches the `app/ai/worker.py` loop in a background thread, and it polls the queue with `SELECT ... FOR UPDATE SKIP LOCKED`.
+4. The worker service launches the `app/ai/worker.py` loop in a background thread, lazily loads the AI stack on the first claimed job, and polls the queue with `SELECT ... FOR UPDATE SKIP LOCKED`.
 5. `GET /items/{item_id}/ai-preview` returns persisted predictions plus queue state so the UI can keep polling without re-running inference in the API.
 
 ## Environment variables
@@ -113,23 +113,33 @@ Rules:
 The repository includes [render.yaml](../../render.yaml) for the hosted backend shape:
 
 - `styleus-api` -> Render web service using `services/api/Dockerfile`
-- `styleus-ai-worker` -> Render web service using the same Docker image with `dockerCommand: uvicorn app.worker_service:app --host 0.0.0.0 --port ${PORT}`
+- `styleus-ai-worker` -> Render web service using `services/api/Dockerfile.worker`
 
 API service settings:
 
 - Root Directory: `services/api`
 - Runtime: `Docker`
+- Plan: `starter` recommended for production API uptime
 - Health Check Path: `/health`
 - Pre-Deploy Command: `python -m alembic upgrade head`
 - Start Command: Docker default from `services/api/Dockerfile`
 
 Deployment notes:
 
-- The Docker image binds uvicorn to `${PORT:-8000}` so it runs cleanly on Render.
-- The API uses the Dockerfile `CMD`; the worker overrides it with `dockerCommand`.
+- The API image installs only the base backend dependencies and never imports `app.ai.*` at boot.
+- The worker image installs the `.[ai]` extra and is the only image that can load CLIP inference dependencies.
+- The Render blueprint pins `styleus-api` to `starter` and `styleus-ai-worker` to `standard`.
+- Both Dockerfiles bind uvicorn to `${PORT:-8000}` so they run cleanly on Render.
 - `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.
 - Use the same `DATABASE_URL` for Alembic, the API runtime, and the worker runtime.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
+- Measured locally, the worker idles around `110 MB` RSS but the current PyTorch/OpenCLIP warmup reaches about `1489 MB` RSS, so the worker should use a higher-memory Render plan than the API.
+
+## Memory debugging
+
+- `curl /health` on the worker returns `memory_rss_mb` so idle and active RSS can be tracked separately from the API.
+- `worker.warmup_started`, `worker.job_claimed`, `worker.job_completed`, and `worker.job_failed` logs include `memory_rss_mb`.
+- `python -X importtime -c "import app.main"` should not show `app.ai.*`, `torch`, or `open_clip`.
 
 ## Platform boundary
 

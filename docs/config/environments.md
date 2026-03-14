@@ -75,6 +75,8 @@ Notes:
 - `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
 - `SEED_ON_START` remains accepted as a legacy alias for `RUN_SEED_ON_START`.
 - `SUPABASE_ANON_KEY` remains accepted only for legacy shared-secret JWT verification; it is not part of the standard hosted backend contract.
+- `services/api/Dockerfile` is the API image and excludes optional AI dependencies.
+- `services/api/Dockerfile.worker` is the worker image and installs the `.[ai]` extra.
 
 ## Platform mapping
 
@@ -89,6 +91,7 @@ Render API:
 
 - all backend required values
 - `CORS_ORIGINS` must include the active Vercel origin
+- build from `services/api/Dockerfile`
 
 Render AI worker:
 
@@ -100,6 +103,8 @@ Render AI worker:
 - `AI_JOB_POLL_INTERVAL_SECONDS`
 - `AI_JOB_MAX_ATTEMPTS`
 - `AI_JOB_STALE_AFTER_SECONDS`
+- build from `services/api/Dockerfile.worker`
+- the current PyTorch/OpenCLIP worker warmup reaches about `1489 MB` RSS locally, so do not place it on a 512 MB Render instance
 
 Supabase:
 

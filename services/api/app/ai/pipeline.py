@@ -8,13 +8,11 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
 
-from app.ai import color
-from app.ai.clip_heads import ClipPrediction, get_predictor
 from app.ai.labels import MATERIAL_LABELS, STYLE_LABELS
 from app.core.config import settings
 
@@ -25,6 +23,10 @@ _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _SUBCATEGORY_FALLBACK_CONFIDENCE = 0.55
 _PRECOMPUTED_CACHE_KEY_PATTERN = re.compile(r"^(?P<cache_key>[0-9a-f]{64})(?:[_-].+)?$")
+
+if TYPE_CHECKING:
+    from app.ai import color
+    from app.ai.clip_heads import ClipPrediction
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +92,18 @@ class PipelineResult:
     inference_duration_ms: float = 0.0
 
 
+def _get_color_module() -> Any:
+    from app.ai import color as color_module
+
+    return color_module
+
+
+def _get_predictor() -> Any:
+    from app.ai.clip_heads import get_predictor
+
+    return get_predictor()
+
+
 def _hash_file(path: Path) -> str:
     match = _PRECOMPUTED_CACHE_KEY_PATTERN.match(path.stem.lower())
     if match:
@@ -133,7 +147,7 @@ def warm_up() -> bool:
 
     started = time.perf_counter()
     try:
-        get_predictor()
+        _get_predictor()
     except RuntimeError as exc:
         LOGGER.warning(
             "ai.pipeline.warmup_unavailable",
@@ -298,7 +312,7 @@ def run(image_path: Path) -> PipelineResult:
     preprocessing_duration_ms = round((time.perf_counter() - preprocessing_started) * 1000, 2)
 
     color_started = time.perf_counter()
-    color_result = color.get_colors_from_image(source_image)
+    color_result = _get_color_module().get_colors_from_image(source_image)
     color_duration_ms = round((time.perf_counter() - color_started) * 1000, 2)
     LOGGER.info(
         "ai.pipeline.color_prediction",
@@ -313,7 +327,7 @@ def run(image_path: Path) -> PipelineResult:
     embedding_duration_ms = 0.0
     prediction_duration_ms = 0.0
     try:
-        predictor = get_predictor()
+        predictor = _get_predictor()
         embedding_started = time.perf_counter()
         embedding, cached = _load_embedding(image_path, predictor, image=source_image)
         embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
