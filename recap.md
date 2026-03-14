@@ -2,9 +2,13 @@
 
 ## Current shape
 
-- `apps/web` contains the only frontend application.
-- `services/api` contains the API, worker, migrations, and seed pipeline.
-- `docs` contains only cross-cutting notes that are still relevant to operation or deployment.
+<!-- current-shape:start -->
+- `apps/web` contains the only frontend application and is deployed by Vercel.
+- `services/api` contains the API, embedded worker, migrations, and seed pipeline, and is deployed by Render.
+- `.github/workflows/ci.yml` validates docs, code quality, tests, builds, and security on every pull request and push.
+- `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`.
+- `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.
+<!-- current-shape:end -->
 
 ## Upload and prediction flow
 
@@ -31,4 +35,12 @@ Use `./dev.sh` from the repo root for the full stack, or run the web app and API
 
 - hosted deployment rollout
 - Supabase project configuration for auth and private storage
-- CI hardening beyond the current placeholder workflow
+- repository variable and secret rollout for deployment verification and optional secret-scanning review
+
+<!-- ci-cd:start -->
+## CI/CD Pipeline
+
+- PRs fail on backend or frontend validation errors, documentation drift, dependency review issues, high or critical audit findings, or detected secrets.
+- The docs sync script owns the managed CI/CD sections in `README.md`, `docs/architecture/deployment.md`, `docs/config/environments.md`, `docs/process/workflow.md`, and `recap.md`.
+- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API, and GitHub Actions verifies `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) after merge.
+<!-- ci-cd:end -->

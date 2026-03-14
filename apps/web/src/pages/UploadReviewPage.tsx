@@ -259,10 +259,8 @@ const UploadReviewPage = (): ReactElement | null => {
     uploadReview !== undefined &&
     (Boolean(uploadReview.loading && !uploadReview.ai) || (!uploadReview.ai && !uploadReview.error));
   const isAwaitingPredictions = aiPending || isInitialAnalyzing;
-  const showBlockingOverlay =
-    uploadReview !== undefined && !uploadReview?.error && isAwaitingPredictions;
-  const loadingProgress =
-    18 + (loadingStepIndex / Math.max(AI_LOADING_STEPS.length - 1, 1)) * 64;
+  const showBlockingOverlay = uploadReview !== undefined && !uploadReview?.error && isAwaitingPredictions;
+  const loadingProgress = 18 + (loadingStepIndex / Math.max(AI_LOADING_STEPS.length - 1, 1)) * 64;
   const loadingStage = AI_LOADING_STEPS[loadingStepIndex];
 
   useEffect(() => {
@@ -413,9 +411,7 @@ const UploadReviewPage = (): ReactElement | null => {
                   <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-accent-500" />
                 </div>
                 <p className="mt-4 text-sm font-semibold text-neutral-900">Analyzing your item</p>
-                <p className="mt-1 text-xs uppercase tracking-[0.18em] text-neutral-500">
-                  {loadingStage}
-                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.18em] text-neutral-500">{loadingStage}</p>
                 <div className="mt-5 h-2 overflow-hidden rounded-full bg-neutral-200">
                   <div
                     className="h-full rounded-full bg-accent-500 transition-all duration-700 ease-out"
@@ -438,8 +434,8 @@ const UploadReviewPage = (): ReactElement | null => {
               </div>
             ) : aiFailed ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-                AI suggestions could not be completed automatically. You can continue by editing the
-                item manually.
+                AI suggestions could not be completed automatically. You can continue by editing the item
+                manually.
               </div>
             ) : null}
 
@@ -606,12 +602,7 @@ const UploadReviewPage = (): ReactElement | null => {
                 Edit & Confirm
               </Button>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleCancel}
-              disabled={isAwaitingPredictions}
-            >
+            <Button type="button" variant="ghost" onClick={handleCancel} disabled={isAwaitingPredictions}>
               Cancel
             </Button>
           </div>
