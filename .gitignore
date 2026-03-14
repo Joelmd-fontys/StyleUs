@@ -34,6 +34,7 @@ services/api/media/
 .env.*
 !.env.example
 !apps/web/.env.example
+!apps/web/.env.test
 !services/api/.env.example
 
 # Tooling

@@ -63,6 +63,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     },
                 )
             request_id_ctx_var.reset(token)
+        assert response is not None
         return response
 
 

@@ -8,7 +8,7 @@ import time
 def _set_default_env() -> None:
     os.environ.setdefault("APP_ENV", "local")
     os.environ.setdefault(
-        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/styleus"
+        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
     )
     os.environ.setdefault("SUPABASE_URL", "https://styleus-ci.supabase.co")
     os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "styleus-ci-service-role")
