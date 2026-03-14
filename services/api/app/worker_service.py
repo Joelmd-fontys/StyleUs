@@ -65,12 +65,8 @@ def create_worker_app() -> FastAPI:
     @app.get("/health")
     def health_check() -> dict[str, object]:
         worker = getattr(app.state, "ai_worker", None)
-        if worker is None or not (worker.is_running() or worker.thread_alive()):
+        if worker is None:
             detail = "Worker unavailable"
-            if worker is not None:
-                snapshot = worker.snapshot()
-                if snapshot.last_error:
-                    detail = snapshot.last_error
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=detail,
@@ -86,6 +82,27 @@ def create_worker_app() -> FastAPI:
             ) from exc
 
         snapshot = worker.snapshot()
+        if not settings.ai_enable_classifier:
+            disabled_response: dict[str, object] = {
+                "status": "ok",
+                "service": "ai-worker",
+                "mode": "disabled",
+                "pending_jobs": queue_counts["pending"],
+                "running_jobs": queue_counts["running"],
+            }
+            if snapshot.memory_rss_mb is not None:
+                disabled_response["memory_rss_mb"] = snapshot.memory_rss_mb
+            return disabled_response
+
+        if not (worker.is_running() or worker.thread_alive()):
+            detail = "Worker unavailable"
+            if snapshot.last_error:
+                detail = snapshot.last_error
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=detail,
+            )
+
         response: dict[str, object] = {
             "status": "ok",
             "service": "ai-worker",

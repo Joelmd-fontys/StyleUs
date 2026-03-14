@@ -187,7 +187,7 @@ image upload
   -> frontend review screen loads the preview
 ```
 
-The API only enqueues durable jobs and does not import the AI pipeline at boot. A separate worker web service owns inference, lazily warms the model on the first claimed job, polls `ai_jobs` with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to Postgres without blocking upload requests. Measured locally, the worker idles around `110 MB` RSS but its current CLIP warmup reaches about `1489 MB`, so only the API fits a 512 MB Render instance today.
+The API does not import the heavy AI runtime at boot. On the free-tier default config, `AI_ENABLE_CLASSIFIER=false` makes upload completion run the lightweight heuristic pipeline inline in the API, which measured about `288 MB` RSS and `1.4s` on a sample image. Full CLIP inference remains available only when `AI_ENABLE_CLASSIFIER=true` and a higher-memory worker service is deployed.
 
 ## Deployment Overview
 

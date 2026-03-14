@@ -119,21 +119,24 @@ API service settings:
 
 - Root Directory: `services/api`
 - Runtime: `Docker`
-- Plan: `starter` recommended for production API uptime
+- Plan: `free` in the default Render blueprint
 - Health Check Path: `/health`
 - Pre-Deploy Command: `python -m alembic upgrade head`
 - Start Command: Docker default from `services/api/Dockerfile`
 
 Deployment notes:
 
-- The API image installs only the base backend dependencies and never imports `app.ai.*` at boot.
-- The worker image installs the `.[ai]` extra and is the only image that can load CLIP inference dependencies.
-- The Render blueprint pins `styleus-api` to `starter` and `styleus-ai-worker` to `standard`.
+- The base runtime dependencies now include the lightweight heuristic AI stack (`numpy` and `scikit-learn`) because the API uses it in free-tier mode.
+- The API image installs `.` and still never imports `app.ai.*` at boot.
+- The worker image installs `.[ai]`, which adds the CLIP-specific dependencies on top of the base runtime.
+- The Render blueprint pins both services to `free` and sets `AI_ENABLE_CLASSIFIER=false` by default.
 - Both Dockerfiles bind uvicorn to `${PORT:-8000}` so they run cleanly on Render.
 - `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.
 - Use the same `DATABASE_URL` for Alembic, the API runtime, and the worker runtime.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
-- Measured locally, the worker idles around `110 MB` RSS but the current PyTorch/OpenCLIP warmup reaches about `1489 MB` RSS, so the worker should use a higher-memory Render plan than the API.
+- With `AI_ENABLE_CLASSIFIER=false`, upload completion runs the heuristic pipeline inline in the API.
+- Measured locally, that heuristic path uses about `288 MB` RSS and finishes in about `1.4s` on a sample image.
+- The full PyTorch/OpenCLIP worker still reaches about `1489 MB` RSS on warmup, so it should only be re-enabled on a higher-memory plan.
 
 ## Memory debugging
 

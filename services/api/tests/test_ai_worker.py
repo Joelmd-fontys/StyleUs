@@ -334,6 +334,65 @@ def test_worker_service_health_reports_worker_status(monkeypatch):
     ]
 
 
+def test_worker_service_health_reports_disabled_mode_when_classifier_is_off(monkeypatch):
+    monkeypatch.setenv("AI_ENABLE_CLASSIFIER", "false")
+    get_settings.cache_clear()
+    lifecycle: list[object] = []
+
+    class FakeWorker:
+        def __init__(self, settings) -> None:
+            lifecycle.append(("init", settings.ai_enable_classifier))
+
+        def start_in_background(self, *, thread_name: str = "styleus-ai-worker") -> bool:
+            lifecycle.append(("started", thread_name))
+            return False
+
+        def request_shutdown(self, *, reason: str) -> None:
+            lifecycle.append(("shutdown", reason))
+
+        def join(self, timeout: float | None = None) -> bool:
+            lifecycle.append(("join", timeout))
+            return True
+
+        def is_running(self) -> bool:
+            return False
+
+        def thread_alive(self) -> bool:
+            return False
+
+        def snapshot(self) -> SimpleNamespace:
+            return SimpleNamespace(memory_rss_mb=96.0, last_error=None)
+
+    monkeypatch.setattr(worker_service_module, "_get_ai_worker_class", lambda: FakeWorker)
+    monkeypatch.setattr(worker_service_module, "SessionLocal", lambda: nullcontext(object()))
+    monkeypatch.setattr(
+        worker_service_module.ai_jobs_service,
+        "get_queue_counts",
+        lambda session: {"pending": 0, "running": 0, "completed": 0, "failed": 0},
+    )
+
+    application = worker_service_module.create_worker_app()
+    with TestClient(application) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "ai-worker",
+        "mode": "disabled",
+        "pending_jobs": 0,
+        "running_jobs": 0,
+        "memory_rss_mb": 96.0,
+    }
+    assert lifecycle == [
+        ("init", False),
+        ("started", "styleus-ai-worker-service"),
+        ("shutdown", "worker_service_shutdown"),
+        ("join", 30.0),
+    ]
+    get_settings.cache_clear()
+
+
 def test_worker_service_health_fails_when_worker_unavailable(monkeypatch):
     class FakeWorker:
         def __init__(self, settings) -> None:
@@ -360,6 +419,12 @@ def test_worker_service_health_fails_when_worker_unavailable(monkeypatch):
             return SimpleNamespace(memory_rss_mb=None, last_error="worker died")
 
     monkeypatch.setattr(worker_service_module, "_get_ai_worker_class", lambda: FakeWorker)
+    monkeypatch.setattr(worker_service_module, "SessionLocal", lambda: nullcontext(object()))
+    monkeypatch.setattr(
+        worker_service_module.ai_jobs_service,
+        "get_queue_counts",
+        lambda session: {"pending": 0, "running": 0, "completed": 0, "failed": 0},
+    )
 
     application = worker_service_module.create_worker_app()
     with TestClient(application) as client:

@@ -145,6 +145,10 @@ def _load_embedding(
 def warm_up() -> bool:
     """Warm predictor state once at worker startup."""
 
+    if not settings.ai_enable_classifier:
+        LOGGER.info("ai.pipeline.warmup_skipped", extra={"mode": "heuristic_only"})
+        return False
+
     started = time.perf_counter()
     try:
         _get_predictor()
@@ -290,18 +294,21 @@ def _heuristic_prediction(image_path: Path, colors: color.ColorResult) -> ClipPr
     if subcategory and subcategory_conf is not None:
         sub_scores[subcategory] = subcategory_conf
 
-    return ClipPrediction(
-        category=category,
-        category_confidence=category_conf,
-        materials=material_labels,
-        style_tags=style_labels,
-        subcategory=subcategory,
-        subcategory_confidence=subcategory_conf,
-        scores={
-            "category": {category: category_conf},
-            "materials": material_scores,
-            "style_tags": style_scores,
-            "subcategory": sub_scores,
+    return cast(
+        "ClipPrediction",
+        {
+            "category": category,
+            "category_confidence": category_conf,
+            "materials": material_labels,
+            "style_tags": style_labels,
+            "subcategory": subcategory,
+            "subcategory_confidence": subcategory_conf,
+            "scores": {
+                "category": {category: category_conf},
+                "materials": material_scores,
+                "style_tags": style_scores,
+                "subcategory": sub_scores,
+            },
         },
     )
 
@@ -326,21 +333,11 @@ def run(image_path: Path) -> PipelineResult:
     cached = False
     embedding_duration_ms = 0.0
     prediction_duration_ms = 0.0
-    try:
-        predictor = _get_predictor()
-        embedding_started = time.perf_counter()
-        embedding, cached = _load_embedding(image_path, predictor, image=source_image)
-        embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
-        prediction_started = time.perf_counter()
-        clip_result = predictor.predict(embedding)
-        prediction_duration_ms = round((time.perf_counter() - prediction_started) * 1000, 2)
-        _apply_subcategory_selection(
-            clip_result,
-            image_path=image_path,
-            colors=color_result,
-        )
+    if not settings.ai_enable_classifier:
+        clip_result = _heuristic_prediction(image_path, color_result)
+        cached = False
         LOGGER.info(
-            "ai.pipeline.clip_prediction",
+            "ai.pipeline.heuristic_prediction",
             extra={
                 "category": clip_result.get("category"),
                 "category_confidence": clip_result.get("category_confidence"),
@@ -350,14 +347,39 @@ def run(image_path: Path) -> PipelineResult:
                 "style_tags": clip_result.get("style_tags", [])[:3],
             },
         )
-    except RuntimeError as exc:
-        LOGGER.warning("ai.pipeline.predictor_unavailable", extra={"error": str(exc)})
-        clip_result = _heuristic_prediction(image_path, color_result)
-        cached = False
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        LOGGER.exception("ai.pipeline.clip_failed", extra={"error": str(exc)})
-        clip_result = _heuristic_prediction(image_path, color_result)
-        cached = False
+    else:
+        try:
+            predictor = _get_predictor()
+            embedding_started = time.perf_counter()
+            embedding, cached = _load_embedding(image_path, predictor, image=source_image)
+            embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
+            prediction_started = time.perf_counter()
+            clip_result = predictor.predict(embedding)
+            prediction_duration_ms = round((time.perf_counter() - prediction_started) * 1000, 2)
+            _apply_subcategory_selection(
+                clip_result,
+                image_path=image_path,
+                colors=color_result,
+            )
+            LOGGER.info(
+                "ai.pipeline.clip_prediction",
+                extra={
+                    "category": clip_result.get("category"),
+                    "category_confidence": clip_result.get("category_confidence"),
+                    "subcategory": clip_result.get("subcategory"),
+                    "subcategory_confidence": clip_result.get("subcategory_confidence"),
+                    "materials": clip_result.get("materials", [])[:3],
+                    "style_tags": clip_result.get("style_tags", [])[:3],
+                },
+            )
+        except RuntimeError as exc:
+            LOGGER.warning("ai.pipeline.predictor_unavailable", extra={"error": str(exc)})
+            clip_result = _heuristic_prediction(image_path, color_result)
+            cached = False
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            LOGGER.exception("ai.pipeline.clip_failed", extra={"error": str(exc)})
+            clip_result = _heuristic_prediction(image_path, color_result)
+            cached = False
     inference_duration_ms = round(
         color_duration_ms + embedding_duration_ms + prediction_duration_ms,
         2,

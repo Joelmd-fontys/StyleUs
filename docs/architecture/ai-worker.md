@@ -1,14 +1,19 @@
 # AI Worker
 
-The API queues enrichment work and a separate lightweight worker web service executes it. Heavy inference never runs in the request-response path or inside the main API process.
+The API can run in two modes:
+
+- free-tier default: heuristic enrichment runs inline during upload completion and the worker can stay disabled
+- full classifier mode: a separate lightweight worker web service executes queued CLIP inference jobs
 
 ## Flow
 
-1. `POST /items/{item_id}/complete-upload` finalizes image variants and inserts or reuses one `ai_jobs` row.
-2. The worker web service starts `app/ai/worker.py` in a background thread, stays lightweight at boot, and lazily warms the pipeline on the first claimed job.
-3. The worker claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`.
-4. The worker downloads the normalized image, runs the AI pipeline, updates the item, and stores the preview payload on the job.
-5. `GET /items/{item_id}/ai-preview` returns persisted predictions and the current job state.
+1. `POST /items/{item_id}/complete-upload` finalizes image variants.
+2. When `AI_ENABLE_CLASSIFIER=false`, the API runs the heuristic pipeline inline and returns with no queued job.
+3. When `AI_ENABLE_CLASSIFIER=true`, the API inserts or reuses one `ai_jobs` row.
+4. The worker web service starts `app/ai/worker.py` in a background thread, stays lightweight at boot, and lazily warms the pipeline on the first claimed job.
+5. The worker claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`.
+6. The worker downloads the normalized image, runs the AI pipeline, updates the item, and stores the preview payload on the job.
+7. `GET /items/{item_id}/ai-preview` returns persisted predictions and the current job state.
 
 ## Queue behavior
 
@@ -18,7 +23,7 @@ The API queues enrichment work and a separate lightweight worker web service exe
 - failures retry until `AI_JOB_MAX_ATTEMPTS`
 - stale `running` jobs become claimable again after `AI_JOB_STALE_AFTER_SECONDS`
 
-This makes the worker restart-safe without changing the user-visible API while keeping the inference memory footprint out of the API service and avoiding eager model warmup during Render boot.
+This keeps the free-tier path usable without changing the upload UI while still preserving the queue-based worker path for higher-memory deployments.
 
 ## Logs to watch
 
@@ -55,7 +60,9 @@ The repository-level [../../render.yaml](../../render.yaml) file captures this t
 ## Memory notes
 
 - `app.main` no longer imports the AI runtime at API boot.
+- The free-tier default uses inline heuristics and avoids loading CLIP entirely.
 - The worker only imports and warms the inference pipeline when it has a job to process.
 - The worker Docker image caps BLAS and Torch thread pools to reduce idle overhead on Render.
+- Measured locally, the heuristic API path is about `288 MB` RSS and `1.4s` on a sample image.
 - Measured locally, worker idle `/health` is about `110 MB` RSS while the current PyTorch/OpenCLIP warmup reaches about `1489 MB` RSS.
-- Result: the API can stay on a 512 MB Render instance, but the current worker needs a higher-memory Render plan unless the inference runtime is replaced with a lighter artifact.
+- Result: free-tier deployments should leave `AI_ENABLE_CLASSIFIER=false`.
