@@ -32,7 +32,12 @@ Frontend (React / Vite on Vercel)
 FastAPI Backend (Render)
   - REST API
   - upload finalization
-  - embedded AI worker loop
+  - durable AI job queue
+        |
+        v
+AI Worker Service (Render)
+  - queue polling loop
+  - minimal /health endpoint
         |
         v
 Supabase
@@ -57,7 +62,7 @@ POST /items/{id}/complete-upload
 Image variants created + ai_jobs row queued
         |
         v
-Embedded worker runs AI pipeline
+Worker service runs AI pipeline
         |
         v
 Predictions stored in Postgres
@@ -93,7 +98,7 @@ apps/
   web/         React frontend for wardrobe, upload, and review flows
 
 services/
-  api/         FastAPI API, database models, migrations, and the embedded AI worker
+  api/         FastAPI API, AI worker service, database models, and migrations
 
 docs/
   architecture/ deployment and worker design notes
@@ -106,8 +111,8 @@ docs/
 scripts/
   ci/           docs sync, security gating, and startup verification helpers
 
-dev.sh         One-command local launcher for web, API, DB, and migrations
-render.yaml    Render service definition for the backend
+dev.sh         One-command local launcher for web, API, worker, DB, and migrations
+render.yaml    Render service definitions for the API and AI worker
 Makefile       Repo-level convenience commands
 ```
 <!-- project-structure:end -->
@@ -122,7 +127,7 @@ Makefile       Repo-level convenience commands
 make dev
 ```
 
-This starts local Postgres in Docker, runs migrations, creates missing env files from the checked-in examples, launches the API on `http://127.0.0.1:8000`, launches the web app on `http://127.0.0.1:5173`, and runs the AI worker inside the FastAPI process.
+This starts local Postgres in Docker, runs migrations, creates missing env files from the checked-in examples, launches the API on `http://127.0.0.1:8000`, launches the worker service on `http://127.0.0.1:8001/health`, and launches the web app on `http://127.0.0.1:5173`.
 
 Useful checks:
 
@@ -153,14 +158,16 @@ cp .env.example .env
 make db-up
 make upgrade
 make run
+make worker-service
 ```
 
 AI processing:
 
 ```bash
-# starts automatically with `make run`
-# standalone worker entrypoint for debugging
 cd services/api
+make worker-service
+
+# standalone worker entrypoint for debugging
 make worker
 ```
 
@@ -190,14 +197,14 @@ image upload
   -> frontend review screen loads the preview
 ```
 
-The worker is embedded in the API process, so inference runs asynchronously without blocking upload requests. Users review the stored AI preview rather than triggering inference from the browser.
+The API only enqueues durable jobs. A separate lightweight worker web service warms the AI pipeline once, polls `ai_jobs` with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to Postgres without blocking upload requests.
 
 ## Deployment Overview
 
 - Frontend -> Vercel (`apps/web`)
-- Backend -> Render web service (`services/api`)
+- API -> Render web service (`services/api`)
+- AI worker -> Render web service (`services/api`, `uvicorn app.worker_service:app`)
 - Database / Auth / Storage -> Supabase
-- AI worker -> runs inside FastAPI during app startup, not as a separate hosted service
 
 Deployment config in this repo:
 

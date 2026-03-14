@@ -5,13 +5,13 @@ StyleUs uses three application environments:
 | Environment | Frontend | Backend | Defaults |
 | --- | --- | --- | --- |
 | `local` | Vite dev server | FastAPI on the developer machine | migrations `on`, seed `on`, local auth bypass allowed |
-| `staging` | Vercel preview or staging domain | Render web service running FastAPI plus the embedded worker loop | migrations `off`, seed `off` |
-| `production` | Vercel production domain | Render web service running FastAPI plus the embedded worker loop | migrations `off`, seed `off` |
+| `staging` | Vercel preview or staging domain | Render web services running FastAPI plus the AI worker | migrations `off`, seed `off` |
+| `production` | Vercel production domain | Render web services running FastAPI plus the AI worker | migrations `off`, seed `off` |
 
 Hosted deployments should keep secrets in platform-managed env settings:
 
 - Vercel for browser-visible `VITE_*` values
-- Render for API values
+- Render for API and worker values
 - Supabase for the actual database, auth, and storage infrastructure
 
 ## Frontend variables
@@ -35,7 +35,7 @@ Notes:
 
 ## Backend variables
 
-These values belong in Render on the single API service.
+These values belong in Render on the API and worker services.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -45,14 +45,14 @@ These values belong in Render on the single API service.
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Private key for Storage access and upload finalization |
 | `SUPABASE_STORAGE_BUCKET` | yes | Private bucket used for item images |
 | `CORS_ORIGINS` | yes for API | Comma-separated Vercel origins allowed to call FastAPI |
-| `AI_JOB_POLL_INTERVAL_SECONDS` | yes | Embedded worker poll interval |
-| `AI_JOB_MAX_ATTEMPTS` | yes | Retry limit for AI jobs |
+| `AI_JOB_POLL_INTERVAL_SECONDS` | yes on worker | Worker poll interval |
+| `AI_JOB_MAX_ATTEMPTS` | yes on worker | Retry limit for AI jobs |
 | `APP_VERSION` | optional | Returned by `/health` and `/version` |
 | `AI_JOB_STALE_AFTER_SECONDS` | optional | Reclaim timeout for stuck running jobs |
 | `SUPABASE_JWT_AUDIENCE` | optional | Defaults to `authenticated` |
 | `SUPABASE_SIGNED_URL_TTL_SECONDS` | optional | Signed media URL lifetime |
 | `SUPABASE_HTTP_TIMEOUT_SECONDS` | optional | Timeout for Supabase HTTP calls |
-| `AI_ENABLE_CLASSIFIER` | optional | Master switch for embedded worker processing |
+| `AI_ENABLE_CLASSIFIER` | optional | Master switch for worker processing |
 | `AI_DEVICE` | optional | Defaults to `cpu` |
 | `AI_CONFIDENCE_THRESHOLD` | optional | Category threshold |
 | `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | optional | Subcategory threshold |
@@ -89,6 +89,17 @@ Render API:
 
 - all backend required values
 - `CORS_ORIGINS` must include the active Vercel origin
+
+Render AI worker:
+
+- `DATABASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET`
+- `AI_ENABLE_CLASSIFIER`
+- `AI_JOB_POLL_INTERVAL_SECONDS`
+- `AI_JOB_MAX_ATTEMPTS`
+- `AI_JOB_STALE_AFTER_SECONDS`
 
 Supabase:
 

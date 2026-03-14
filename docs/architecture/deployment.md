@@ -1,9 +1,10 @@
 # Deployment Architecture
 
-StyleUs deploys as three pieces:
+StyleUs deploys as four pieces:
 
 - frontend on Vercel
-- API on a Render web service, with the AI worker loop embedded in the FastAPI process
+- API on a Render web service
+- AI worker on a separate lightweight Render web service
 - Postgres, Auth, and Storage on Supabase
 
 ## Runtime boundaries
@@ -18,12 +19,18 @@ Vercel frontend:
 Render API:
 
 - runs FastAPI from `services/api`
-- starts the embedded AI worker loop during FastAPI lifespan startup
 - validates Supabase bearer tokens
 - creates presigned upload intents
 - finalizes uploads into private Storage paths
 - writes wardrobe items and AI jobs to Supabase Postgres
-- reads and updates the same `ai_jobs` table for asynchronous enrichment work
+- exposes `/health` for Render health checks
+
+Render AI worker:
+
+- runs `uvicorn app.worker_service:app`
+- starts the reusable `app/ai/worker.py` loop at startup
+- warms the model state once and reuses it across jobs
+- reads and updates the shared `ai_jobs` table for asynchronous enrichment work
 - exposes `/health` for Render health checks
 
 Supabase:
@@ -40,7 +47,7 @@ Supabase:
 4. The browser uploads the image directly to Supabase Storage.
 5. The frontend calls `POST /items/{item_id}/complete-upload`.
 6. The API validates the uploaded source image, writes derived variants, and enqueues an `ai_jobs` row.
-7. The API's embedded worker loop polls the queue, processes the item, and stores predictions.
+7. The worker service polls the queue, processes the item, and stores predictions.
 8. The frontend polls `GET /items/{item_id}/ai-preview` until the review screen can show the result.
 
 ## Deployment files in this repo
@@ -67,10 +74,21 @@ The frontend must not know:
 
 The API owns:
 
-- all database access
-- all private Storage operations
-- all job queue state
-- all service-role credentials
+- client-facing CRUD and auth enforcement
+- presigned upload creation and upload finalization
+- writes that create wardrobe rows and enqueue AI jobs
+
+The worker owns:
+
+- claiming queued AI jobs
+- running enrichment and retry logic
+- writing AI predictions back to the database
+
+Both backend services own:
+
+- private database access
+- private Storage operations
+- service-role credentials
 
 <!-- ci-cd:start -->
 ## CI/CD Pipeline

@@ -1,7 +1,7 @@
 API_DIR := services/api
 WEB_DIR := apps/web
 
-.PHONY: dev db-up db-down run worker lint test typecheck
+.PHONY: dev db-up db-down run worker worker-service lint test typecheck
 
 dev:
 	./dev.sh
@@ -17,6 +17,9 @@ run:
 
 worker:
 	$(MAKE) -C $(API_DIR) worker
+
+worker-service:
+	$(MAKE) -C $(API_DIR) worker-service
 
 lint:
 	$(MAKE) -C $(API_DIR) lint

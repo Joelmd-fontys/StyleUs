@@ -4,7 +4,7 @@
 
 <!-- current-shape:start -->
 - `apps/web` contains the only frontend application and is deployed by Vercel.
-- `services/api` contains the API, embedded worker, migrations, and seed pipeline, and is deployed by Render.
+- `services/api` contains the API, worker service, migrations, and seed pipeline, and is deployed by Render.
 - `.github/workflows/ci.yml` validates docs, code quality, tests, builds, and security on every pull request and push.
 - `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`.
 - `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.
@@ -15,7 +15,7 @@
 1. The web app requests `POST /items/presign`.
 2. The browser uploads directly to private Supabase Storage.
 3. `POST /items/{item_id}/complete-upload` writes image variants and queues an `ai_jobs` row.
-4. The worker processes the queued job and stores predictions.
+4. The worker service processes the queued job and stores predictions.
 5. The review page polls `GET /items/{id}/ai-preview` until the result is ready.
 
 ## Cleanup decisions reflected in the repo
@@ -42,5 +42,5 @@ Use `./dev.sh` from the repo root for the full stack, or run the web app and API
 
 - PRs fail on backend or frontend validation errors, documentation drift, dependency review issues, high or critical audit findings, or detected secrets.
 - The docs sync script owns the managed CI/CD sections in `README.md`, `docs/architecture/deployment.md`, `docs/config/environments.md`, `docs/process/workflow.md`, and `recap.md`.
-- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API, and GitHub Actions verifies `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) after merge.
+- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API and worker services, and GitHub Actions verifies `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) after merge.
 <!-- ci-cd:end -->

@@ -52,7 +52,7 @@ apps/
   web/         React frontend for wardrobe, upload, and review flows
 
 services/
-  api/         FastAPI API, database models, migrations, and the embedded AI worker
+  api/         FastAPI API, AI worker service, database models, and migrations
 
 docs/
   architecture/ deployment and worker design notes
@@ -65,8 +65,8 @@ docs/
 scripts/
   ci/           docs sync, security gating, and startup verification helpers
 
-dev.sh         One-command local launcher for web, API, DB, and migrations
-render.yaml    Render service definition for the backend
+dev.sh         One-command local launcher for web, API, worker, DB, and migrations
+render.yaml    Render service definitions for the API and AI worker
 Makefile       Repo-level convenience commands
 ```"""
 
@@ -161,7 +161,7 @@ def _build_sections() -> list[ManagedSection]:
             start_marker="<!-- current-shape:start -->",
             end_marker="<!-- current-shape:end -->",
             content="""- `apps/web` contains the only frontend application and is deployed by Vercel.
-- `services/api` contains the API, embedded worker, migrations, and seed pipeline, and is deployed by Render.
+- `services/api` contains the API, worker service, migrations, and seed pipeline, and is deployed by Render.
 - `.github/workflows/ci.yml` validates docs, code quality, tests, builds, and security on every pull request and push.
 - `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`.
 - `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.""",
@@ -175,7 +175,7 @@ def _build_sections() -> list[ManagedSection]:
 
 - PRs fail on backend or frontend validation errors, documentation drift, dependency review issues, high or critical audit findings, or detected secrets.
 - The docs sync script owns the managed CI/CD sections in `README.md`, `docs/architecture/deployment.md`, `docs/config/environments.md`, `docs/process/workflow.md`, and `recap.md`.
-- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API, and GitHub Actions verifies {deploy_target} after merge.""",
+- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API and worker services, and GitHub Actions verifies {deploy_target} after merge.""",
             line_limit=200,
         ),
     ]

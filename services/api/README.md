@@ -9,7 +9,9 @@ The API owns wardrobe persistence, upload finalization, signed media URLs, and t
 - `app/services/items.py` - wardrobe CRUD and response shaping
 - `app/services/uploads.py` - signed uploads, image variants, and upload completion
 - `app/services/ai_jobs.py` - queue claim, retry, and completion helpers
-- `app/worker.py` - AI worker runtime used by FastAPI lifespan and the optional CLI entrypoint
+- `app/ai/worker.py` - reusable AI worker runtime used by the worker service and CLI
+- `app/worker.py` - optional CLI entrypoint for one-off worker runs
+- `app/worker_service.py` - minimal FastAPI worker service with `/health`
 - `app/ai` - color extraction, segmentation, CLIP heads, and enrichment pipeline
 - `app/seed` - deterministic local seed dataset
 
@@ -22,12 +24,14 @@ make setup
 make db-up
 make upgrade
 make run
+make worker-service
 ```
 
-`make run` starts FastAPI and the embedded worker loop together. From the repo root, `./dev.sh` starts the API, frontend, database, and migrations together.
+`make run` starts only the API. `make worker-service` starts the lightweight worker web service. From the repo root, `./dev.sh` starts the API, worker, frontend, database, and migrations together.
 
 Useful commands:
 
+- `make worker-service` - local worker web service on `http://127.0.0.1:8001/health`
 - `make worker` - optional standalone worker loop for one-off debugging
 - `make seed`
 - `make reset-seed`
@@ -54,14 +58,14 @@ The legacy `PUT /items/uploads/{item_id}` route remains as a `410 Gone` response
 1. `POST /items/presign` creates a placeholder item and returns a signed upload target.
 2. The browser uploads the source image directly to private Supabase Storage.
 3. `POST /items/{item_id}/complete-upload` validates the source object, writes `orig.jpg`, `medium.jpg`, and `thumb.jpg`, and enqueues an `ai_jobs` row.
-4. FastAPI startup launches the `app/worker.py` loop in a background thread, and it polls the queue with `SELECT ... FOR UPDATE SKIP LOCKED`.
+4. The worker service launches the `app/ai/worker.py` loop in a background thread, and it polls the queue with `SELECT ... FOR UPDATE SKIP LOCKED`.
 5. `GET /items/{item_id}/ai-preview` returns persisted predictions plus queue state so the UI can keep polling without re-running inference in the API.
 
 ## Environment variables
 
 Copy `.env.example` to `.env` before running locally.
 
-Required for hosted API deployments:
+Required for hosted deployments:
 
 - `APP_ENV` - set to `production` on Render
 - `DATABASE_URL` - Supabase Postgres connection string; include `sslmode=require`
@@ -69,8 +73,8 @@ Required for hosted API deployments:
 - `SUPABASE_SERVICE_ROLE_KEY` - backend-only key for private Storage access
 - `SUPABASE_STORAGE_BUCKET` - private bucket used for original and derived images
 - `CORS_ORIGINS` - comma-separated Vercel origins allowed to call the API
-- `AI_JOB_MAX_ATTEMPTS`
-- `AI_JOB_POLL_INTERVAL_SECONDS`
+- `AI_JOB_MAX_ATTEMPTS` - worker retry limit
+- `AI_JOB_POLL_INTERVAL_SECONDS` - worker poll interval
 
 Common optional settings:
 
@@ -109,6 +113,7 @@ Rules:
 The repository includes [render.yaml](../../render.yaml) for the hosted backend shape:
 
 - `styleus-api` -> Render web service using `services/api/Dockerfile`
+- `styleus-ai-worker` -> Render web service using the same Docker image with `dockerCommand: uvicorn app.worker_service:app --host 0.0.0.0 --port ${PORT}`
 
 API service settings:
 
@@ -121,9 +126,9 @@ API service settings:
 Deployment notes:
 
 - The Docker image binds uvicorn to `${PORT:-8000}` so it runs cleanly on Render.
-- `/health` now checks the database connection before returning `200 OK`, which makes the Render health check meaningful.
-- The FastAPI lifespan starts the AI worker loop automatically, so no extra process command is required.
-- Use the same `DATABASE_URL` for Alembic and the API runtime.
+- The API uses the Dockerfile `CMD`; the worker overrides it with `dockerCommand`.
+- `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.
+- Use the same `DATABASE_URL` for Alembic, the API runtime, and the worker runtime.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
 
 ## Platform boundary
@@ -137,9 +142,10 @@ Deployment notes:
   - explicit local bypass, or
   - real Supabase bearer tokens when configured locally
 
-### Target hosted shape
+### Hosted shape
 
-- Render web service -> FastAPI API plus embedded AI worker loop
+- Render web service -> FastAPI API
+- Render web service -> minimal AI worker service
 - Supabase Postgres -> supported hosted database target in this phase
 - Supabase Auth -> implemented for bearer-token validation in this phase
 - Supabase Storage -> implemented in this phase for private uploads and signed reads
@@ -148,16 +154,19 @@ The API remains the only component that should own:
 
 - business CRUD
 - upload finalization
-- AI prediction persistence
 - user-scoped authorization rules
+
+The worker service owns:
+
+- asynchronous AI job claiming
+- retry and stale-job recovery
+- AI prediction persistence
 
 The frontend should only know public API and public auth configuration. Database credentials, storage credentials, and server-side secrets remain backend-only.
 
-## Deployment notes for later phases
+## Deployment notes
 
-This repository is now documented for the target platform split, but the following are still future work:
-
-- staging and production rollout
+The checked-in blueprint and local scripts reflect the current two-service Render deployment shape. Add or rename environments by extending `render.yaml` and the corresponding Render/Vercel project settings.
 
 ## Docker and Postgres
 

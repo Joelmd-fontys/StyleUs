@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.ai_job import AIJob, AIJobStatus
@@ -188,6 +188,16 @@ def get_item_job(db: Session, item_id: uuid.UUID) -> AIJob | None:
     """Return the durable AI job for an item if one exists."""
 
     return db.execute(select(AIJob).where(AIJob.item_id == item_id)).scalars().first()
+
+
+def get_queue_counts(db: Session) -> dict[str, int]:
+    """Return queued job counts keyed by status."""
+
+    rows = db.execute(select(AIJob.status, func.count()).group_by(AIJob.status)).all()
+    counts = {status.value: 0 for status in AIJobStatus}
+    for job_status, count in rows:
+        counts[str(job_status)] = int(count)
+    return counts
 
 
 def _normalize_error_message(error_message: str) -> str:

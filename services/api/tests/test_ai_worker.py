@@ -5,15 +5,17 @@ import io
 import uuid
 from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import main as main_module
-from app import worker as worker_module
+from app import worker_service as worker_service_module
 from app.ai import color
 from app.ai import tasks as ai_tasks
+from app.ai import worker as worker_module
 from app.ai.pipeline import PipelineResult
 from app.api.deps import DEFAULT_USER_ID
 from app.core.config import get_settings
@@ -249,7 +251,7 @@ def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
 
     monkeypatch.setattr(main_module, "AIWorker", FakeWorker)
 
-    application = main_module.create_app()
+    application = main_module.create_app(start_worker=True)
 
     with TestClient(application):
         assert lifecycle == [("init", get_settings().ai_job_poll_interval_seconds), "started"]
@@ -260,6 +262,111 @@ def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
         ("shutdown", "lifespan_shutdown"),
         ("join", 30.0),
     ]
+
+
+def test_fastapi_lifespan_skips_worker_by_default(monkeypatch):
+    lifecycle: list[object] = []
+
+    class FakeWorker:
+        def __init__(self, settings) -> None:
+            lifecycle.append(("init", settings.ai_job_poll_interval_seconds))
+
+    monkeypatch.setattr(main_module, "AIWorker", FakeWorker)
+
+    application = main_module.create_app()
+
+    with TestClient(application):
+        assert lifecycle == []
+
+
+def test_worker_service_health_reports_worker_status(monkeypatch):
+    lifecycle: list[object] = []
+
+    class FakeWorker:
+        def __init__(self, settings) -> None:
+            lifecycle.append(("init", settings.ai_job_poll_interval_seconds))
+
+        def start_in_background(self, *, thread_name: str = "styleus-ai-worker") -> bool:
+            lifecycle.append(("started", thread_name))
+            return True
+
+        def request_shutdown(self, *, reason: str) -> None:
+            lifecycle.append(("shutdown", reason))
+
+        def join(self, timeout: float | None = None) -> bool:
+            lifecycle.append(("join", timeout))
+            return True
+
+        def is_running(self) -> bool:
+            return True
+
+        def thread_alive(self) -> bool:
+            return True
+
+        def snapshot(self) -> SimpleNamespace:
+            return SimpleNamespace(memory_rss_mb=128.5, last_error=None)
+
+    monkeypatch.setattr(worker_service_module, "AIWorker", FakeWorker)
+    monkeypatch.setattr(worker_service_module, "SessionLocal", lambda: nullcontext(object()))
+    monkeypatch.setattr(
+        worker_service_module.ai_jobs_service,
+        "get_queue_counts",
+        lambda session: {"pending": 2, "running": 1, "completed": 0, "failed": 0},
+    )
+
+    application = worker_service_module.create_worker_app()
+    with TestClient(application) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "ai-worker",
+        "pending_jobs": 2,
+        "running_jobs": 1,
+        "memory_rss_mb": 128.5,
+    }
+    assert lifecycle == [
+        ("init", get_settings().ai_job_poll_interval_seconds),
+        ("started", "styleus-ai-worker-service"),
+        ("shutdown", "worker_service_shutdown"),
+        ("join", 30.0),
+    ]
+
+
+def test_worker_service_health_fails_when_worker_unavailable(monkeypatch):
+    class FakeWorker:
+        def __init__(self, settings) -> None:
+            del settings
+
+        def start_in_background(self, *, thread_name: str = "styleus-ai-worker") -> bool:
+            del thread_name
+            return True
+
+        def request_shutdown(self, *, reason: str) -> None:
+            del reason
+
+        def join(self, timeout: float | None = None) -> bool:
+            del timeout
+            return True
+
+        def is_running(self) -> bool:
+            return False
+
+        def thread_alive(self) -> bool:
+            return False
+
+        def snapshot(self) -> SimpleNamespace:
+            return SimpleNamespace(memory_rss_mb=None, last_error="worker died")
+
+    monkeypatch.setattr(worker_service_module, "AIWorker", FakeWorker)
+
+    application = worker_service_module.create_worker_app()
+    with TestClient(application) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "worker died"}
 
 
 def test_claim_next_job_reclaims_stale_running_job(db_session):
