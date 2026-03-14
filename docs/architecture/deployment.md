@@ -1,10 +1,9 @@
 # Deployment Architecture
 
-StyleUs deploys as four pieces:
+StyleUs deploys as three pieces:
 
 - frontend on Vercel
-- API on a Render web service
-- AI worker on a Render background worker
+- API on a Render web service, with the AI worker loop embedded in the FastAPI process
 - Postgres, Auth, and Storage on Supabase
 
 ## Runtime boundaries
@@ -19,18 +18,13 @@ Vercel frontend:
 Render API:
 
 - runs FastAPI from `services/api`
+- starts the embedded AI worker loop during FastAPI lifespan startup
 - validates Supabase bearer tokens
 - creates presigned upload intents
 - finalizes uploads into private Storage paths
 - writes wardrobe items and AI jobs to Supabase Postgres
+- reads and updates the same `ai_jobs` table for asynchronous enrichment work
 - exposes `/health` for Render health checks
-
-Render worker:
-
-- runs `python -m app.worker`
-- reads and updates the same `ai_jobs` table as the API
-- downloads normalized item images from Supabase Storage
-- writes AI predictions back to Postgres
 
 Supabase:
 
@@ -46,15 +40,15 @@ Supabase:
 4. The browser uploads the image directly to Supabase Storage.
 5. The frontend calls `POST /items/{item_id}/complete-upload`.
 6. The API validates the uploaded source image, writes derived variants, and enqueues an `ai_jobs` row.
-7. The Render worker polls the queue, processes the item, and stores predictions.
+7. The API's embedded worker loop polls the queue, processes the item, and stores predictions.
 8. The frontend polls `GET /items/{item_id}/ai-preview` until the review screen can show the result.
 
 ## Deployment files in this repo
 
 - `apps/web/vercel.json` - Vercel build output and SPA rewrites
-- `render.yaml` - Render web service and worker blueprint
+- `render.yaml` - Render web service blueprint
 - `apps/web/.env.example` - frontend local env template using the hosted variable names
-- `services/api/.env.example` - backend and worker local env template using the hosted variable names
+- `services/api/.env.example` - backend local env template using the hosted variable names
 
 ## Boundary rules
 
@@ -69,9 +63,9 @@ The frontend must not know:
 
 - `DATABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- any Alembic or worker settings
+- any Alembic or AI job settings
 
-The API and worker own:
+The API owns:
 
 - all database access
 - all private Storage operations

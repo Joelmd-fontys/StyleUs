@@ -58,7 +58,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         finally:
             pass
 
-    application = create_app()
+    application = create_app(start_worker=False)
     application.dependency_overrides[get_db] = override_get_db
     with TestClient(application) as test_client:
         yield test_client

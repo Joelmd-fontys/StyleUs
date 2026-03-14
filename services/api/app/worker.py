@@ -1,4 +1,4 @@
-"""Standalone AI worker entrypoint."""
+"""AI worker runtime and CLI entrypoint."""
 
 from __future__ import annotations
 
@@ -23,9 +23,11 @@ class AIWorker:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
 
-    def run_forever(self) -> None:
-        self._install_signal_handlers()
+    def run_forever(self, *, install_signal_handlers: bool = False) -> None:
+        if install_signal_handlers:
+            self._install_signal_handlers()
         logger.info(
             "worker.started",
             extra={
@@ -41,6 +43,38 @@ class AIWorker:
             if not claimed:
                 self.stop_event.wait(self.settings.ai_job_poll_interval_seconds)
         logger.info("worker.stopped")
+
+    def start_in_background(self, *, thread_name: str = "styleus-ai-worker") -> None:
+        if not self.settings.ai_enable_classifier:
+            logger.warning("worker.disabled")
+            return
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            logger.debug(
+                "worker.background_thread_already_running",
+                extra={"thread_name": thread.name},
+            )
+            return
+
+        self.stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run_forever_safely,
+            name=thread_name,
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("worker.background_thread_started", extra={"thread_name": thread_name})
+
+    def request_shutdown(self, *, reason: str) -> None:
+        logger.info("worker.shutdown_requested", extra={"reason": reason})
+        self.stop_event.set()
+
+    def join(self, timeout: float | None = None) -> bool:
+        thread = self._thread
+        if thread is None:
+            return True
+        thread.join(timeout=timeout)
+        return not thread.is_alive()
 
     def run_once(self) -> bool:
         claim_started = time.perf_counter()
@@ -141,6 +175,13 @@ class AIWorker:
             },
         )
 
+    def _run_forever_safely(self) -> None:
+        try:
+            self.run_forever()
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.exception("worker.crashed", extra={"error": str(exc)})
+            self.stop_event.set()
+
     def _install_signal_handlers(self) -> None:
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -151,8 +192,7 @@ class AIWorker:
 
     def _handle_shutdown_signal(self, signum: int, frame) -> None:  # type: ignore[no-untyped-def]
         del frame
-        logger.info("worker.shutdown_requested", extra={"signal": signal.Signals(signum).name})
-        self.stop_event.set()
+        self.request_shutdown(reason=signal.Signals(signum).name)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -175,7 +215,7 @@ def main() -> int:
     worker = AIWorker(settings)
     if args.once:
         return 0 if worker.run_once() else 1
-    worker.run_forever()
+    worker.run_forever(install_signal_handlers=True)
     return 0
 
 

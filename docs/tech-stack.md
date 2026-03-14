@@ -20,9 +20,9 @@
 - Pydantic Settings
 - PyJWT for Supabase token verification
 
-## AI worker
+## AI processing
 
-- Postgres-backed `ai_jobs` queue
+- Postgres-backed `ai_jobs` queue polled by an embedded FastAPI worker loop
 - Pillow
 - NumPy
 - scikit-learn

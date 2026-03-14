@@ -70,7 +70,7 @@ def _make_sample_image_bytes(color: tuple[int, int, int] = (200, 40, 40)) -> byt
 
 
 def _build_client(db_session: Session) -> TestClient:
-    application = create_app()
+    application = create_app(start_worker=False)
 
     def override_get_db():
         try:
@@ -143,7 +143,11 @@ def test_complete_upload_persists_object_paths_and_returns_signed_urls(
     with _build_client(db_session) as client:
         presign = client.post(
             "/items/presign",
-            json={"contentType": "image/png", "fileName": "look.png", "fileSize": len(source_bytes)},
+            json={
+                "contentType": "image/png",
+                "fileName": "look.png",
+                "fileSize": len(source_bytes),
+            },
         )
         assert presign.status_code == 200
 

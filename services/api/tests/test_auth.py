@@ -45,7 +45,7 @@ def _build_staging_client(
     get_settings.cache_clear()
     clear_auth_cache()
 
-    application = create_app()
+    application = create_app(start_worker=False)
 
     def override_get_db() -> Generator[Session, None, None]:
         try:
@@ -138,7 +138,7 @@ def test_invalid_bearer_token_is_rejected(db_session: Session, monkeypatch) -> N
     get_settings.cache_clear()
     clear_auth_cache()
 
-    application = create_app()
+    application = create_app(start_worker=False)
 
     def override_get_db() -> Generator[Session, None, None]:
         try:
