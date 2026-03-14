@@ -11,6 +11,7 @@ DB_CONTAINER="styleus-db"
 DB_COMPOSE_FILE="$API_DIR/docker-compose.yml"
 
 BACKEND_PID=""
+WORKER_PID=""
 FRONTEND_PID=""
 STARTED_DB=0
 CLEANED_UP=0
@@ -42,6 +43,12 @@ cleanup() {
     log "Stopping backend..."
     kill "$BACKEND_PID" 2>/dev/null
     wait "$BACKEND_PID" 2>/dev/null
+  fi
+
+  if [ -n "$WORKER_PID" ] && kill -0 "$WORKER_PID" 2>/dev/null; then
+    log "Stopping worker..."
+    kill "$WORKER_PID" 2>/dev/null
+    wait "$WORKER_PID" 2>/dev/null
   fi
 
   if [ -n "$FRONTEND_PID" ] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
@@ -212,6 +219,15 @@ start_backend() {
   BACKEND_PID=$!
 }
 
+start_worker_service() {
+  log "Starting worker service (FastAPI @ http://localhost:8001)..."
+  (
+    cd "$API_DIR"
+    exec "$VENV_DIR/bin/uvicorn" app.worker_service:app --host 0.0.0.0 --port 8001
+  ) &
+  WORKER_PID=$!
+}
+
 start_frontend() {
   log "Starting frontend (Vite @ http://localhost:5173)..."
   (
@@ -236,18 +252,19 @@ main() {
   install_frontend_deps
 
   start_backend
+  start_worker_service
   start_frontend
 
-  log "All set. API: http://localhost:8000 | Web: http://localhost:5173 | Worker: embedded in FastAPI"
+  log "All set. API: http://localhost:8000 | Worker: http://localhost:8001/health | Web: http://localhost:5173"
   log "Press Ctrl+C to stop all services."
 
   set +e
-  if wait -n "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null; then
+  if wait -n "$BACKEND_PID" "$WORKER_PID" "$FRONTEND_PID" 2>/dev/null; then
     exit_code=$?
   else
     # Bash <4 doesn't support wait -n; poll for an exited child.
     while :; do
-      for pid in "$BACKEND_PID" "$FRONTEND_PID"; do
+      for pid in "$BACKEND_PID" "$WORKER_PID" "$FRONTEND_PID"; do
         if ! kill -0 "$pid" 2>/dev/null; then
           wait "$pid"
           exit_code=$?

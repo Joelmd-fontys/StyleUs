@@ -13,12 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from app.ai.worker import AIWorker
 from app.api import get_api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
-from app.worker import AIWorker
 
 _WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
 
@@ -63,6 +63,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                     },
                 )
             request_id_ctx_var.reset(token)
+        assert response is not None
         return response
 
 
@@ -87,7 +88,7 @@ def _maybe_run_seed(settings: Settings) -> None:
         logger.exception("seed.failed")
 
 
-def create_app(*, start_worker: bool = True) -> FastAPI:
+def create_app(*, start_worker: bool = False) -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
@@ -137,4 +138,4 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(start_worker=False)
