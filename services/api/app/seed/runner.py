@@ -26,8 +26,8 @@ from app.seed.utils import (
 )
 from app.services import items as items_service
 from app.services import uploads as uploads_service
-from app.services.users import sync_authenticated_user
 from app.services.uploads import UploadFinalizationResult
+from app.services.users import sync_authenticated_user
 from app.utils import storage as storage_utils
 from app.utils.images import ProcessedImage, process_image_bytes
 

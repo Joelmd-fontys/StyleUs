@@ -95,3 +95,12 @@ Supabase:
 - creates the actual Postgres URL
 - provides the anon key and service role key
 - hosts the Storage bucket named by `SUPABASE_STORAGE_BUCKET`
+
+<!-- ci-cd:start -->
+## CI/CD Pipeline
+
+- CI uses a GitHub Actions PostgreSQL service plus local-safe values for `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`, `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
+- Pull request validation does not require hosted platform secrets for normal backend or frontend checks.
+- Deploy verification reads `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`); set the repository variable when the production API URL changes.
+- Optional repository secret `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub secret-scanning alert review in CI when GitHub Advanced Security is available.
+<!-- ci-cd:end -->

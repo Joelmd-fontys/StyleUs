@@ -12,6 +12,9 @@ from urllib import error, parse, request
 from app.core.config import Settings
 from app.utils.http import urlopen
 
+JsonObject = dict[str, Any]
+JsonPayload = JsonObject | list[JsonObject]
+
 
 class SupabaseStorageError(RuntimeError):
     """Raised when Supabase Storage returns an unexpected error."""
@@ -62,7 +65,7 @@ class SupabaseStorageAdapter:
         *,
         upsert: bool = False,
     ) -> SignedUploadTarget:
-        payload = self._request_json(
+        payload = self._request_json_object(
             "POST",
             self._object_path(f"/object/upload/sign/{self.bucket}", object_path),
             json_body={"upsert": upsert},
@@ -83,7 +86,7 @@ class SupabaseStorageAdapter:
         )
 
     def create_signed_url(self, object_path: str, *, expires_in: int | None = None) -> str:
-        payload = self._request_json(
+        payload = self._request_json_object(
             "POST",
             self._object_path(f"/object/sign/{self.bucket}", object_path),
             json_body={"expiresIn": expires_in or self.signed_url_ttl_seconds},
@@ -112,7 +115,11 @@ class SupabaseStorageAdapter:
             },
         )
 
-        entries = payload if isinstance(payload, list) else payload.get("signedURLs") or payload.get("data")
+        entries = (
+            payload
+            if isinstance(payload, list)
+            else payload.get("signedURLs") or payload.get("data")
+        )
         if not isinstance(entries, list):
             raise SupabaseStorageError("Supabase Storage returned an unexpected signed URL payload")
 
@@ -127,7 +134,7 @@ class SupabaseStorageAdapter:
         return signed
 
     def get_object_info(self, object_path: str) -> dict[str, Any]:
-        return self._request_json(
+        return self._request_json_object(
             "GET",
             self._object_path(f"/object/info/{self.bucket}", object_path),
         )
@@ -185,7 +192,7 @@ class SupabaseStorageAdapter:
         json_body: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
         expected_statuses: Sequence[int] = (200,),
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> JsonPayload:
         body, _headers = self._request_bytes(
             method,
             path,
@@ -207,6 +214,26 @@ class SupabaseStorageAdapter:
         if isinstance(decoded, list):
             return [entry for entry in decoded if isinstance(entry, dict)]
         raise SupabaseStorageError("Supabase Storage returned an unsupported payload")
+
+    def _request_json_object(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        expected_statuses: Sequence[int] = (200,),
+    ) -> JsonObject:
+        payload = self._request_json(
+            method,
+            path,
+            json_body=json_body,
+            headers=headers,
+            expected_statuses=expected_statuses,
+        )
+        if isinstance(payload, dict):
+            return payload
+        raise SupabaseStorageError("Supabase Storage returned a list where an object was expected")
 
     def _request_bytes(
         self,

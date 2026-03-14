@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import uuid
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any

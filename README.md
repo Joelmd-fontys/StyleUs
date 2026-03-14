@@ -87,21 +87,30 @@ Frontend review screen confirms or edits results
 
 ## Project Structure
 
+<!-- project-structure:start -->
 ```text
 apps/
   web/         React frontend for wardrobe, upload, and review flows
 
 services/
-  api/         FastAPI API, database models, migrations, and AI worker
+  api/         FastAPI API, database models, migrations, and the embedded AI worker
 
 docs/
-  architecture/ deployment and system design notes
+  architecture/ deployment and worker design notes
   config/       environment and platform configuration docs
+  process/      delivery workflow notes
+
+.github/
+  workflows/    GitHub Actions CI and deployment verification
+
+scripts/
+  ci/           docs sync, security gating, and startup verification helpers
 
 dev.sh         One-command local launcher for web, API, DB, and migrations
 render.yaml    Render service definition for the backend
 Makefile       Repo-level convenience commands
 ```
+<!-- project-structure:end -->
 
 ## Local Development
 
@@ -156,6 +165,17 @@ make worker
 ```
 
 Real auth and live uploads require Supabase values in `apps/web/.env.local` and `services/api/.env`. Without them, local guest mode still works with the API's local auth bypass path.
+
+<!-- ci-cd:start -->
+## CI/CD Pipeline
+
+- `.github/workflows/ci.yml` runs on every pull request and branch push.
+- Backend validation runs `python -m ruff check .`, `python -m mypy app`, `python -m pytest -q`, and `python scripts/ci/verify_backend.py` against PostgreSQL.
+- Frontend validation runs `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+- Security checks run `actions/dependency-review-action`, `npm audit --audit-level=high`, `pip-audit`, and `gitleaks`.
+- `python scripts/ci/sync_docs.py --check` fails when the generated documentation sections drift from the current repo shape.
+- After merge to `main`, `.github/workflows/deploy.yml` waits for the platform Git deploy window and polls `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) until `/health` reports `status=ok` and `database=ok`.
+<!-- ci-cd:end -->
 
 ## AI Pipeline
 

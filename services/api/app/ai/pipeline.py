@@ -8,7 +8,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from PIL import Image
@@ -137,13 +137,19 @@ def warm_up() -> bool:
     except RuntimeError as exc:
         LOGGER.warning(
             "ai.pipeline.warmup_unavailable",
-            extra={"error": str(exc), "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+            extra={
+                "error": str(exc),
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            },
         )
         return False
     except Exception as exc:  # pragma: no cover - defensive
         LOGGER.exception(
             "ai.pipeline.warmup_failed",
-            extra={"error": str(exc), "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+            extra={
+                "error": str(exc),
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            },
         )
         return False
     LOGGER.info(
@@ -155,7 +161,7 @@ def warm_up() -> bool:
 
 def _load_source_image(image_path: Path) -> Image.Image:
     with Image.open(image_path) as image:
-        return image.convert("RGB").copy()
+        return cast(Image.Image, image.convert("RGB").copy())
 
 
 def _normalize_token(value: str | None) -> str:

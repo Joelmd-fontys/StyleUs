@@ -9,5 +9,6 @@ Start here:
 - [../services/api/README.md](../services/api/README.md) - API, worker, and upload pipeline
 - [config/environments.md](./config/environments.md) - environment tiers and variable ownership
 - [architecture/README.md](./architecture/README.md) - deployment and worker architecture
+- [process/workflow.md](./process/workflow.md) - branch, PR, CI, and deployment workflow
 - [tech-stack.md](./tech-stack.md) - current stack summary
 - [../recap.md](../recap.md) - repository maintenance recap

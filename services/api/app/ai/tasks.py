@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import time
 import logging
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -73,7 +73,7 @@ def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
     style_tags = [name for name, _score in clip.get("style_tags", [])[:5]]
     tags = [name for name, _score in select_top_tags(clip, threshold=0.0, limit=3)]
 
-    payload = {
+    payload: dict[str, object] = {
         "category": clip.get("category"),
         "category_confidence": clip.get("category_confidence"),
         "subcategory": clip.get("subcategory"),

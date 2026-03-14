@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -12,6 +12,8 @@ LOGGER = logging.getLogger("app.ai.segmentation")
 
 MaskMethod = Literal["grabcut", "heuristic"]
 
+cv2: Any | None
+
 try:  # pragma: no cover - optional dependency
     import cv2
 
@@ -19,6 +21,12 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover - OpenCV is optional
     cv2 = None
     _HAS_CV2 = False
+
+
+def _get_cv2() -> Any:
+    if cv2 is None:  # pragma: no cover - guarded by _HAS_CV2
+        raise RuntimeError("OpenCV is not available")
+    return cv2
 
 
 def _resize_for_processing(image: Image.Image, *, max_size: int = 512) -> tuple[Image.Image, float]:
@@ -54,10 +62,13 @@ def _keep_largest_component(mask: np.ndarray) -> np.ndarray:
         return binary
 
     if _HAS_CV2:
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        cv2_module = _get_cv2()
+        num_labels, labels, stats, _ = cv2_module.connectedComponentsWithStats(
+            binary, connectivity=8
+        )
         if num_labels <= 1:
             return binary
-        largest_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        largest_label = 1 + int(np.argmax(stats[1:, cv2_module.CC_STAT_AREA]))
         return cast(np.ndarray, (labels == largest_label).astype(np.uint8))
 
     # Fallback labeling without OpenCV (simple DFS)
@@ -110,6 +121,7 @@ def _smooth_mask(mask: np.ndarray) -> np.ndarray:
 def _grabcut_mask(image: Image.Image) -> np.ndarray | None:
     if not _HAS_CV2:
         return None
+    cv2_module = _get_cv2()
 
     processed, scale = _resize_for_processing(image)
     array = np.asarray(processed.convert("RGB"))
@@ -126,29 +138,41 @@ def _grabcut_mask(image: Image.Image) -> np.ndarray | None:
     bgd_model = np.zeros((1, 65), np.float64)
     fgd_model = np.zeros((1, 65), np.float64)
     try:  # pragma: no cover - depends on OpenCV build
-        cv2.setRNGSeed(0)
+        cv2_module.setRNGSeed(0)
     except Exception:
         pass
 
     try:
-        cv2.grabCut(array, mask, rect, bgd_model, fgd_model, 4, cv2.GC_INIT_WITH_RECT)
+        cv2_module.grabCut(
+            array,
+            mask,
+            rect,
+            bgd_model,
+            fgd_model,
+            4,
+            cv2_module.GC_INIT_WITH_RECT,
+        )
     except Exception as exc:  # pragma: no cover - defensive
         LOGGER.warning("ai.segmentation.grabcut_failed", extra={"error": str(exc)})
         return None
 
-    mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 1, 0).astype(np.uint8)
+    mask = np.where((mask == cv2_module.GC_FGD) | (mask == cv2_module.GC_PR_FGD), 1, 0).astype(
+        np.uint8
+    )
     if mask.max() == 0:
         return None
 
     mask = _keep_largest_component(mask)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    mask = cv2.medianBlur(mask, 3)
+    mask = cast(
+        np.ndarray,
+        cv2_module.morphologyEx(mask, cv2_module.MORPH_CLOSE, np.ones((5, 5), np.uint8)),
+    )
+    mask = cast(np.ndarray, cv2_module.medianBlur(mask, 3))
 
     if scale != 1.0:
-        mask = cv2.resize(
-            mask,
-            image.size,
-            interpolation=cv2.INTER_NEAREST,
+        mask = cast(
+            np.ndarray,
+            cv2_module.resize(mask, image.size, interpolation=cv2_module.INTER_NEAREST),
         )
     return mask.astype(bool)
 
@@ -175,9 +199,15 @@ def _heuristic_mask(image: Image.Image) -> np.ndarray | None:
     border_distance = color_distance[border]
     distance_threshold = max(float(np.quantile(border_distance, 0.95)) * 1.35, 0.08)
 
-    mask = (color_distance > max(distance_threshold * 4.0, 0.12)) & (center_weights > 0.05) & (~border)
+    mask = (
+        (color_distance > max(distance_threshold * 4.0, 0.12)) & (center_weights > 0.05) & (~border)
+    )
     if mask.sum() < max(200, int(height * width * 0.015)):
-        mask = (color_distance > max(distance_threshold * 2.5, 0.08)) & (center_weights > 0.08) & (~border)
+        mask = (
+            (color_distance > max(distance_threshold * 2.5, 0.08))
+            & (center_weights > 0.08)
+            & (~border)
+        )
 
     mask = mask.astype(np.uint8)
     mask = _keep_largest_component(mask)

@@ -54,7 +54,7 @@ def process_image_bytes(data: bytes, mime_type: str) -> ProcessedImage:
     if mime_type not in ALLOWED_MIME_TYPES:
         raise ValueError(f"Unsupported MIME type: {mime_type}")
 
-    image = Image.open(io.BytesIO(data))
+    image: Image.Image = Image.open(io.BytesIO(data))
     transposed = ImageOps.exif_transpose(image)
     image = transposed if transposed is not None else image
     if image.mode not in ("RGB", "L"):
