@@ -65,6 +65,16 @@ class ClipPredictor:
             torch_module = importlib.import_module("torch")
         except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("open-clip-torch is required for local classification") from exc
+        if hasattr(torch_module, "set_num_threads"):
+            try:
+                torch_module.set_num_threads(1)
+            except RuntimeError:  # pragma: no cover - torch may already be initialized
+                LOGGER.debug("ai.clip.set_num_threads_skipped")
+        if hasattr(torch_module, "set_num_interop_threads"):
+            try:
+                torch_module.set_num_interop_threads(1)
+            except RuntimeError:  # pragma: no cover - torch may already be initialized
+                LOGGER.debug("ai.clip.set_num_interop_threads_skipped")
         return open_clip_module, torch_module
 
     def _load_model(self) -> None:

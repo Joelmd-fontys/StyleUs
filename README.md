@@ -197,13 +197,13 @@ image upload
   -> frontend review screen loads the preview
 ```
 
-The API only enqueues durable jobs. A separate lightweight worker web service warms the AI pipeline once, polls `ai_jobs` with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to Postgres without blocking upload requests.
+The API only enqueues durable jobs and does not import the AI pipeline at boot. A separate worker web service owns inference, lazily warms the model on the first claimed job, polls `ai_jobs` with `SELECT ... FOR UPDATE SKIP LOCKED`, and writes predictions back to Postgres without blocking upload requests. Measured locally, the worker idles around `110 MB` RSS but its current CLIP warmup reaches about `1489 MB`, so only the API fits a 512 MB Render instance today.
 
 ## Deployment Overview
 
 - Frontend -> Vercel (`apps/web`)
-- API -> Render web service (`services/api`)
-- AI worker -> Render web service (`services/api`, `uvicorn app.worker_service:app`)
+- API -> Render web service (`services/api`, `Dockerfile`)
+- AI worker -> Render web service (`services/api`, `Dockerfile.worker`)
 - Database / Auth / Storage -> Supabase
 
 Deployment config in this repo:

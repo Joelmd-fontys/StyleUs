@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import anyio
 from fastapi import FastAPI, Request, status
@@ -13,12 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.ai.worker import AIWorker
 from app.api import get_api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
 from app.db.migrations import ensure_schema
+
+if TYPE_CHECKING:
+    from app.ai.worker import AIWorker
 
 _WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
 
@@ -88,6 +91,12 @@ def _maybe_run_seed(settings: Settings) -> None:
         logger.exception("seed.failed")
 
 
+def _get_ai_worker_class() -> type[AIWorker]:
+    from app.ai.worker import AIWorker
+
+    return AIWorker
+
+
 def create_app(*, start_worker: bool = False) -> FastAPI:
     settings = get_settings()
 
@@ -97,7 +106,7 @@ def create_app(*, start_worker: bool = False) -> FastAPI:
         await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         if start_worker:
-            worker = AIWorker(settings)
+            worker = _get_ai_worker_class()(settings)
             worker.start_in_background()
             app.state.ai_worker = worker
         else:

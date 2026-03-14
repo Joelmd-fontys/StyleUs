@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import Any, cast
 
 try:  # pragma: no cover - platform specific
@@ -15,8 +16,6 @@ try:  # pragma: no cover - platform specific
 except ImportError:  # pragma: no cover - windows fallback
     resource = None  # type: ignore[assignment]
 
-from app.ai import pipeline
-from app.ai.tasks import AIEnrichmentError, build_ai_preview_payload, run_item_enrichment
 from app.core.config import Settings
 from app.core.logging import logger
 from app.db.session import SessionLocal
@@ -39,6 +38,14 @@ class WorkerSnapshot:
     memory_rss_mb: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class _AIImports:
+    pipeline: Any
+    ai_enrichment_error: Any
+    build_ai_preview_payload: Any
+    run_item_enrichment: Any
+
+
 def _current_memory_rss_mb() -> float | None:
     if resource is None:  # pragma: no cover - platform specific
         return None
@@ -49,6 +56,19 @@ def _current_memory_rss_mb() -> float | None:
     return round(usage / 1024, 2)
 
 
+@lru_cache(maxsize=1)
+def _get_ai_imports() -> _AIImports:
+    from app.ai import pipeline
+    from app.ai.tasks import AIEnrichmentError, build_ai_preview_payload, run_item_enrichment
+
+    return _AIImports(
+        pipeline=pipeline,
+        ai_enrichment_error=AIEnrichmentError,
+        build_ai_preview_payload=build_ai_preview_payload,
+        run_item_enrichment=run_item_enrichment,
+    )
+
+
 class AIWorker:
     """Poll the database queue and process AI enrichment jobs."""
 
@@ -56,6 +76,8 @@ class AIWorker:
         self.settings = settings
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._warmup_attempted = False
+        self._warmup_lock = threading.Lock()
         self._snapshot = WorkerSnapshot(
             classifier_enabled=settings.ai_enable_classifier,
             running=False,
@@ -113,15 +135,6 @@ class AIWorker:
                 "memory_rss_mb": _current_memory_rss_mb(),
             },
         )
-        logger.info(
-            "worker.warmup_started",
-            extra={"event": "worker_warmup_started", "memory_rss_mb": _current_memory_rss_mb()},
-        )
-        if pipeline.warm_up():
-            self._update_snapshot(
-                warmup_completed_at=dt.datetime.now(dt.UTC),
-                memory_rss_mb=_current_memory_rss_mb(),
-            )
 
         try:
             while not self.stop_event.is_set():
@@ -222,6 +235,7 @@ class AIWorker:
             )
 
     def _process_job(self, lease: AIJobLease, *, claim_duration_ms: float) -> None:
+        self._ensure_pipeline_ready()
         started = time.perf_counter()
         claimed_at = dt.datetime.now(dt.UTC)
         self._update_snapshot(
@@ -242,10 +256,15 @@ class AIWorker:
                 "memory_rss_mb": _current_memory_rss_mb(),
             },
         )
+        ai_imports = _get_ai_imports()
         try:
             with SessionLocal() as session:
-                pipeline_result = run_item_enrichment(session, lease.item_id, commit=False)
-                preview_payload = build_ai_preview_payload(pipeline_result)
+                pipeline_result = ai_imports.run_item_enrichment(
+                    session,
+                    lease.item_id,
+                    commit=False,
+                )
+                preview_payload = ai_imports.build_ai_preview_payload(pipeline_result)
                 ai_jobs_service.mark_job_completed(
                     session,
                     lease.job_id,
@@ -253,7 +272,7 @@ class AIWorker:
                     commit=False,
                 )
                 session.commit()
-        except AIEnrichmentError as exc:
+        except ai_imports.ai_enrichment_error as exc:
             failed_at = dt.datetime.now(dt.UTC)
             with SessionLocal() as session:
                 job = ai_jobs_service.mark_job_failed(
@@ -332,6 +351,24 @@ class AIWorker:
                 "memory_rss_mb": _current_memory_rss_mb(),
             },
         )
+
+    def _ensure_pipeline_ready(self) -> None:
+        if self._warmup_attempted:
+            return
+        with self._warmup_lock:
+            if self._warmup_attempted:
+                return
+            self._warmup_attempted = True
+            logger.info(
+                "worker.warmup_started",
+                extra={"event": "worker_warmup_started", "memory_rss_mb": _current_memory_rss_mb()},
+            )
+            ai_imports = _get_ai_imports()
+            if ai_imports.pipeline.warm_up():
+                self._update_snapshot(
+                    warmup_completed_at=dt.datetime.now(dt.UTC),
+                    memory_rss_mb=_current_memory_rss_mb(),
+                )
 
     def _run_forever_safely(self) -> None:
         try:

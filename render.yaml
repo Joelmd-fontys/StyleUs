@@ -1,5 +1,17 @@
 envVarGroups:
-  - name: styleus-backend-shared
+  - name: styleus-api-shared
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOCAL_AUTH_BYPASS
+        value: "false"
+      - key: RUN_MIGRATIONS_ON_START
+        value: "false"
+      - key: RUN_SEED_ON_START
+        value: "false"
+      - key: SUPABASE_HTTP_TIMEOUT_SECONDS
+        value: "15"
+  - name: styleus-worker-shared
     envVars:
       - key: APP_ENV
         value: production
@@ -24,13 +36,14 @@ services:
   - type: web
     name: styleus-api
     runtime: docker
+    plan: starter
     rootDir: services/api
     dockerContext: .
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     preDeployCommand: python -m alembic upgrade head
     envVars:
-      - fromGroup: styleus-backend-shared
+      - fromGroup: styleus-api-shared
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -44,13 +57,13 @@ services:
   - type: web
     name: styleus-ai-worker
     runtime: docker
+    plan: standard
     rootDir: services/api
     dockerContext: .
-    dockerfilePath: ./Dockerfile
-    dockerCommand: uvicorn app.worker_service:app --host 0.0.0.0 --port ${PORT}
+    dockerfilePath: ./Dockerfile.worker
     healthCheckPath: /health
     envVars:
-      - fromGroup: styleus-backend-shared
+      - fromGroup: styleus-worker-shared
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL

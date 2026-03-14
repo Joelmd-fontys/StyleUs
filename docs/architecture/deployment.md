@@ -19,6 +19,8 @@ Vercel frontend:
 Render API:
 
 - runs FastAPI from `services/api`
+- builds from `services/api/Dockerfile`, which installs only the base backend dependencies
+- should use Render `starter` if you want a non-sleeping production API; the process itself stays within a 512 MB budget
 - validates Supabase bearer tokens
 - creates presigned upload intents
 - finalizes uploads into private Storage paths
@@ -27,11 +29,14 @@ Render API:
 
 Render AI worker:
 
+- builds from `services/api/Dockerfile.worker`, which installs the `.[ai]` extra
+- should use Render `standard` or higher because the current CLIP warmup reaches about `1489 MB` RSS locally
 - runs `uvicorn app.worker_service:app`
 - starts the reusable `app/ai/worker.py` loop at startup
-- warms the model state once and reuses it across jobs
+- loads and warms the model state lazily on the first claimed job, then reuses it across jobs
 - reads and updates the shared `ai_jobs` table for asynchronous enrichment work
 - exposes `/health` for Render health checks
+- idles around `110 MB` RSS locally, but the current CLIP warmup reaches about `1489 MB` RSS, so it should not be placed on a 512 MB Render instance
 
 Supabase:
 
@@ -54,6 +59,8 @@ Supabase:
 
 - `apps/web/vercel.json` - Vercel build output and SPA rewrites
 - `render.yaml` - Render web service blueprint
+- `services/api/Dockerfile` - API image without AI inference extras
+- `services/api/Dockerfile.worker` - worker image with AI inference extras
 - `apps/web/.env.example` - frontend local env template using the hosted variable names
 - `services/api/.env.example` - backend local env template using the hosted variable names
 
