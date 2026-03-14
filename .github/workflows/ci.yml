@@ -138,6 +138,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    env:
+      SECRET_SCAN_REVIEW_GITHUB_TOKEN: ${{ secrets.SECRET_SCAN_REVIEW_GITHUB_TOKEN }}
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -208,18 +211,18 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_LICENSE: ${{ env.GITLEAKS_LICENSE }}
 
       - name: GitHub secret-scanning review
-        if: github.event_name == 'pull_request' && secrets.SECRET_SCAN_REVIEW_GITHUB_TOKEN != ''
+        if: github.event_name == 'pull_request' && env.SECRET_SCAN_REVIEW_GITHUB_TOKEN != ''
         uses: advanced-security/secret-scanning-review-action@v1
         with:
-          token: ${{ secrets.SECRET_SCAN_REVIEW_GITHUB_TOKEN }}
+          token: ${{ env.SECRET_SCAN_REVIEW_GITHUB_TOKEN }}
           fail-on-alert: true
           disable-pr-comment: true
 
       - name: GitHub secret-scanning review not configured
-        if: github.event_name == 'pull_request' && secrets.SECRET_SCAN_REVIEW_GITHUB_TOKEN == ''
+        if: github.event_name == 'pull_request' && env.SECRET_SCAN_REVIEW_GITHUB_TOKEN == ''
         run: |
           echo "GitHub secret-scanning review skipped."
           echo "Set SECRET_SCAN_REVIEW_GITHUB_TOKEN to enable alert-based PR checks."
