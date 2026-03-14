@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 import anyio
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from app.api import get_api_router
 from app.core.config import Settings, get_settings
@@ -19,6 +21,49 @@ from app.db.migrations import ensure_schema
 from app.worker import AIWorker
 
 _WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+
+
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Attach request ids and consistent error logging to every request."""
+
+    def __init__(self, app, *, settings: Settings) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(app)
+        self._settings = settings
+
+    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        token = request_id_ctx_var.set(request_id)
+        start = time.perf_counter()
+        response: Response | None = None
+        try:
+            response = await call_next(request)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.exception(
+                "request.error",
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "error": str(exc),
+                },
+            )
+            details = {"error": str(exc)} if self._settings.app_env == "local" else None
+            response = error_response("internal_error", "Internal server error", details)
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        finally:
+            latency_ms = round((time.perf_counter() - start) * 1000, 2)
+            if response is not None:
+                response.headers["X-Request-ID"] = request_id
+                logger.info(
+                    "request.complete",
+                    extra={
+                        "path": request.url.path,
+                        "method": request.method,
+                        "status_code": response.status_code,
+                        "latency_ms": latency_ms,
+                    },
+                )
+            request_id_ctx_var.reset(token)
+        return response
 
 
 def _maybe_run_migrations(settings: Settings) -> None:
@@ -78,6 +123,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
 
     app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)
 
+    app.add_middleware(RequestContextMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -85,42 +131,6 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @app.middleware("http")
-    async def request_context_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        token = request_id_ctx_var.set(request_id)
-        start = time.perf_counter()
-        response = None
-        try:
-            response = await call_next(request)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.exception(
-                "request.error",
-                extra={
-                    "path": request.url.path,
-                    "method": request.method,
-                    "error": str(exc),
-                },
-            )
-            details = {"error": str(exc)} if settings.app_env == "local" else None
-            response = error_response("internal_error", "Internal server error", details)
-            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        finally:
-            latency_ms = round((time.perf_counter() - start) * 1000, 2)
-            if response is not None:
-                response.headers["X-Request-ID"] = request_id
-                logger.info(
-                    "request.complete",
-                    extra={
-                        "path": request.url.path,
-                        "method": request.method,
-                        "status_code": response.status_code,
-                        "latency_ms": latency_ms,
-                    },
-                )
-            request_id_ctx_var.reset(token)
-        return response
 
     app.include_router(get_api_router())
 

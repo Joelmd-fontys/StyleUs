@@ -8,11 +8,12 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import DEFAULT_USER_ID, get_db
+from app.api.deps import DEFAULT_USER_ID, get_current_user_id, get_db
 from app.core.config import get_settings
 from app.main import create_app
 from app.models.ai_job import AIJob
 from app.models.wardrobe import WardrobeItem
+from app.services import uploads as uploads_service
 from app.utils import storage as storage_utils
 
 
@@ -128,6 +129,56 @@ def test_presign_rejects_oversized_upload(db_session: Session, monkeypatch) -> N
 
     assert response.status_code == 400
     assert fake_storage.created_uploads == []
+
+
+def test_presign_preflight_returns_cors_headers_without_auth_or_body_logic(
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("CORS_ORIGINS", "https://style-us.vercel.app")
+    monkeypatch.delenv("LOCAL_AUTH_BYPASS", raising=False)
+    get_settings.cache_clear()
+
+    application = create_app(start_worker=False)
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    def fail_on_auth():
+        raise AssertionError("Auth dependency should not run for CORS preflight")
+
+    def fail_on_presign(*args, **kwargs):
+        raise AssertionError("Presign handler should not run for CORS preflight")
+
+    application.dependency_overrides[get_db] = override_get_db
+    application.dependency_overrides[get_current_user_id] = fail_on_auth
+    monkeypatch.setattr(uploads_service, "create_presigned_upload", fail_on_presign)
+
+    with TestClient(application) as client:
+        response = client.options(
+            "/items/presign",
+            headers={
+                "Origin": "https://style-us.vercel.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type,x-client-info",
+            },
+        )
+
+    application.dependency_overrides.pop(get_db, None)
+    application.dependency_overrides.pop(get_current_user_id, None)
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://style-us.vercel.app"
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "POST" in response.headers["access-control-allow-methods"]
+    assert (
+        response.headers["access-control-allow-headers"]
+        == "authorization,content-type,x-client-info"
+    )
 
 
 def test_complete_upload_persists_object_paths_and_returns_signed_urls(
