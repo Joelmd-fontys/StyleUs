@@ -351,10 +351,7 @@ const UploadReviewPage = (): ReactElement | null => {
             />
           ) : (
             <span
-              className={cn(
-                'text-sm text-neutral-700',
-                uncertainFields.has(fieldKey) && 'text-amber-900'
-              )}
+              className={cn('text-sm text-neutral-700', uncertainFields.has(fieldKey) && 'text-amber-900')}
             >
               {isValidColor ? value : fallbackText}
             </span>
