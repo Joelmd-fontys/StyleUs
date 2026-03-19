@@ -72,6 +72,61 @@ def test_pipeline_caches_embedding(tmp_path, monkeypatch):
     assert result_second.cached is True
 
 
+def test_pipeline_uses_full_image_for_classification_even_when_focus_mask_exists(
+    tmp_path,
+    monkeypatch,
+):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    monkeypatch.setattr(pipeline, "_EMB_CACHE_DIR", cache_dir)
+
+    class _RecordingPredictor(_StubPredictor):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embed_sizes: list[tuple[int, int]] = []
+
+        def embed_pil_image(self, image: Image.Image) -> np.ndarray:
+            self.calls += 1
+            self.embed_sizes.append(image.size)
+            return np.ones(512, dtype=np.float32)
+
+    predictor = _RecordingPredictor()
+    monkeypatch.setattr(pipeline, "_get_predictor", lambda: predictor)
+    monkeypatch.setattr(
+        pipeline,
+        "_get_color_module",
+        lambda: _stub_color_module(
+            color.ColorResult(
+                primary_color="Blue",
+                secondary_color=None,
+                confidence=0.9,
+                secondary_confidence=None,
+            )
+        ),
+    )
+
+    image_path = tmp_path / "sample.png"
+    Image.new("RGB", (128, 128), color=(30, 60, 200)).save(image_path)
+    source_image = pipeline._load_source_image(image_path)
+    monkeypatch.setattr(
+        pipeline,
+        "_prepare_focus_image",
+        lambda _image: SimpleNamespace(
+            image=source_image.crop((16, 16, 112, 112)),
+            masked_image=Image.new("RGB", (48, 48), color=(255, 255, 255)),
+            mask=np.ones((48, 48), dtype=bool),
+            crop_box=(16, 16, 112, 112),
+            method="grabcut",
+            foreground_pixels=2304,
+            foreground_ratio=0.14,
+        ),
+    )
+
+    pipeline.run(image_path)
+
+    assert predictor.embed_sizes == [(128, 128)]
+
+
 def test_pipeline_fallback_on_predictor_error(tmp_path, monkeypatch):
     image_path = tmp_path / "sneaker_sample.jpg"
     Image.new("RGB", (128, 128), color=(120, 80, 40)).save(image_path)

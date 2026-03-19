@@ -5,8 +5,8 @@ StyleUs uses three application environments:
 | Environment | Frontend | Backend | Defaults |
 | --- | --- | --- | --- |
 | `local` | Vite dev server | FastAPI on the developer machine | migrations `on`, seed `on`, local auth bypass allowed |
-| `staging` | Vercel preview or staging domain | Render web services running FastAPI plus the AI worker | migrations `off`, seed `off` |
-| `production` | Vercel production domain | Render web services running FastAPI plus the AI worker | migrations `off`, seed `off` |
+| `staging` | Vercel preview or staging domain | Render web services running FastAPI plus the AI worker | migrations `on`, seed `off` |
+| `production` | Vercel production domain | Render web services running FastAPI plus the AI worker | migrations `on`, seed `off` |
 
 Hosted deployments should keep secrets in platform-managed env settings:
 
@@ -72,9 +72,10 @@ Local-only backend settings:
 Notes:
 
 - `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
-- `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
+- `RUN_MIGRATIONS_ON_START` defaults to `true` in every environment unless it is explicitly set to `false`.
+- `RUN_SEED_ON_START` defaults to `true` only in `local`.
 - `SEED_ON_START` remains accepted as a legacy alias for `RUN_SEED_ON_START`.
-- The hosted Render blueprint overrides `RUN_MIGRATIONS_ON_START=true` so schema migrations run before API and worker startup.
+- The hosted Render blueprint keeps `RUN_MIGRATIONS_ON_START=true` so schema migrations run before API and worker startup.
 - `SUPABASE_ANON_KEY` remains accepted only for legacy shared-secret JWT verification; it is not part of the standard hosted backend contract.
 - `services/api/Dockerfile` is the API image and installs the base runtime dependencies, including `numpy` and `scikit-learn`.
 - `services/api/Dockerfile.worker` is the worker image and installs the same base runtime plus the `.[ai]` extra for CLIP inference and startup migrations.

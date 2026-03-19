@@ -24,6 +24,13 @@ from app.utils import storage as storage_utils
 
 LOGGER = logging.getLogger("app.ai.tasks")
 
+_CATEGORY_PREVIEW_MIN_CONFIDENCE = 0.45
+_SUBCATEGORY_PREVIEW_MIN_CONFIDENCE = 0.45
+_PRIMARY_COLOR_PREVIEW_MIN_CONFIDENCE = 0.5
+_SECONDARY_COLOR_PREVIEW_MIN_CONFIDENCE = 0.65
+_TAG_PREVIEW_MIN_CONFIDENCE = 0.5
+_DISPLAYABLE_ATTRIBUTE_TAGS = {"chunky", "cropped", "oversized", "quilted", "tailored"}
+
 
 class AIEnrichmentError(RuntimeError):
     """Base error raised while preparing or running item enrichment."""
@@ -54,12 +61,14 @@ def select_top_tags(
     """Return up to ``limit`` highest-confidence controlled-vocabulary tags."""
 
     scores: dict[str, float] = {}
-    for family_scores in (
-        _clip_tag_family(clip, "materials"),
-        _clip_tag_family(clip, "style_tags"),
-        _clip_tag_family(clip, "attribute_tags"),
+    for family, family_scores in (
+        ("materials", _clip_tag_family(clip, "materials")),
+        ("style_tags", _clip_tag_family(clip, "style_tags")),
+        ("attribute_tags", _clip_tag_family(clip, "attribute_tags")),
     ):
         for name, score in family_scores:
+            if family == "attribute_tags" and name not in _DISPLAYABLE_ATTRIBUTE_TAGS:
+                continue
             confidence = float(score)
             if confidence < threshold:
                 continue
@@ -79,49 +88,88 @@ def _clip_tag_family(
 def _build_tag_confidences(
     clip: pipeline.ClipPrediction,
     *,
+    threshold: float,
     limit: int = 3,
 ) -> dict[str, float]:
     return {
         name: float(score)
-        for name, score in select_top_tags(clip, threshold=0.0, limit=limit)
+        for name, score in select_top_tags(clip, threshold=threshold, limit=limit)
     }
 
 
 def _build_uncertain_fields(result: PipelineResult) -> list[str]:
-    uncertain_fields: list[str] = []
     clip = result.clip
-    colors = result.colors
+    category_confidence = float(clip.get("category_confidence") or 0.0)
+    if not clip.get("category") or category_confidence < settings.ai_confidence_threshold:
+        return ["category"]
+    return []
 
-    if float(clip.get("category_confidence") or 0.0) < settings.ai_confidence_threshold:
-        uncertain_fields.append("category")
 
-    subcategory_confidence = float(clip.get("subcategory_confidence") or 0.0)
-    if not clip.get("subcategory") or (
-        subcategory_confidence < settings.ai_subcategory_confidence_threshold
-    ):
-        uncertain_fields.append("subcategory")
+def _effective_subcategory_threshold() -> float:
+    return max(settings.ai_subcategory_confidence_threshold, _SUBCATEGORY_PREVIEW_MIN_CONFIDENCE)
 
-    if (
-        not colors.primary_color
-        or colors.primary_color.lower() in {"unknown", "unspecified"}
-        or float(colors.confidence) < settings.ai_confidence_threshold
-    ):
-        uncertain_fields.append("primary_color")
 
-    if (
-        colors.secondary_color
-        and float(colors.secondary_confidence or 0.0) < settings.ai_confidence_threshold
-    ):
-        uncertain_fields.append("secondary_color")
+def _effective_tag_threshold() -> float:
+    return max(settings.ai_tag_confidence_threshold, _TAG_PREVIEW_MIN_CONFIDENCE)
 
-    if not select_top_tags(
-        clip,
-        threshold=settings.ai_tag_confidence_threshold,
-        limit=3,
-    ):
-        uncertain_fields.append("tags")
 
-    return uncertain_fields
+def _normalize_optional_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.lower() in {"unknown", "unspecified"}:
+        return None
+    return normalized
+
+
+def _category_preview_value(
+    clip: pipeline.ClipPrediction,
+) -> tuple[str | None, float | None]:
+    confidence = float(clip.get("category_confidence") or 0.0)
+    label = _normalize_optional_label(cast(str | None, clip.get("category")))
+    if not label or confidence < _CATEGORY_PREVIEW_MIN_CONFIDENCE:
+        return None, None
+    return label, confidence
+
+
+def _subcategory_preview_value(
+    clip: pipeline.ClipPrediction,
+    *,
+    category: str | None,
+) -> tuple[str | None, float | None]:
+    confidence = float(clip.get("subcategory_confidence") or 0.0)
+    label = _normalize_optional_label(cast(str | None, clip.get("subcategory")))
+    if not category or not label or confidence < _effective_subcategory_threshold():
+        return None, None
+    return label, confidence
+
+
+def _preview_color_value(
+    value: str | None,
+    confidence: float | None,
+    *,
+    minimum_confidence: float,
+) -> tuple[str | None, float | None]:
+    label = _normalize_optional_label(value)
+    normalized_confidence = float(confidence or 0.0)
+    if not label or normalized_confidence < minimum_confidence:
+        return None, None
+    return label, normalized_confidence
+
+
+def _filter_tag_family(
+    labels: list[tuple[str, float]],
+    *,
+    threshold: float,
+    limit: int,
+    allowed: set[str] | None = None,
+) -> list[str]:
+    filtered = [
+        name
+        for name, score in sorted(labels, key=lambda entry: entry[1], reverse=True)
+        if float(score) >= threshold and (allowed is None or name in allowed)
+    ]
+    return filtered[:limit]
 
 
 def _serialize_embedding(embedding: np.ndarray | None) -> list[float] | None:
@@ -138,22 +186,52 @@ def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
 
     clip = result.clip
     color_result = result.colors
-    materials = [name for name, _score in clip.get("materials", [])[:5]]
-    style_tags = [name for name, _score in clip.get("style_tags", [])[:5]]
-    attributes = [name for name, _score in clip.get("attribute_tags", [])[:5]]
-    tags = [name for name, _score in select_top_tags(clip, threshold=0.0, limit=3)]
-    tag_confidences = _build_tag_confidences(clip)
+    tag_threshold = _effective_tag_threshold()
+    category, category_confidence = _category_preview_value(clip)
+    subcategory, subcategory_confidence = _subcategory_preview_value(
+        clip,
+        category=category,
+    )
+    primary_color, primary_color_confidence = _preview_color_value(
+        color_result.primary_color,
+        color_result.confidence,
+        minimum_confidence=_PRIMARY_COLOR_PREVIEW_MIN_CONFIDENCE,
+    )
+    secondary_color, secondary_color_confidence = _preview_color_value(
+        color_result.secondary_color,
+        color_result.secondary_confidence,
+        minimum_confidence=_SECONDARY_COLOR_PREVIEW_MIN_CONFIDENCE,
+    )
+    materials = _filter_tag_family(
+        _clip_tag_family(clip, "materials"),
+        threshold=tag_threshold,
+        limit=5,
+    )
+    style_tags = _filter_tag_family(
+        _clip_tag_family(clip, "style_tags"),
+        threshold=tag_threshold,
+        limit=3,
+    )
+    attributes = _filter_tag_family(
+        _clip_tag_family(clip, "attribute_tags"),
+        threshold=tag_threshold,
+        limit=3,
+        allowed=_DISPLAYABLE_ATTRIBUTE_TAGS,
+    )
+    selected_tags = select_top_tags(clip, threshold=tag_threshold, limit=3)
+    tags = [name for name, _score in selected_tags]
+    tag_confidences = _build_tag_confidences(clip, threshold=tag_threshold)
     uncertain_fields = _build_uncertain_fields(result)
 
     payload: dict[str, object] = {
-        "category": clip.get("category"),
-        "category_confidence": clip.get("category_confidence"),
-        "subcategory": clip.get("subcategory"),
-        "subcategory_confidence": clip.get("subcategory_confidence"),
-        "primary_color": _normalize_preview_color(color_result.primary_color),
-        "primary_color_confidence": color_result.confidence,
-        "secondary_color": _normalize_preview_color(color_result.secondary_color),
-        "secondary_color_confidence": color_result.secondary_confidence,
+        "category": category,
+        "category_confidence": category_confidence,
+        "subcategory": subcategory,
+        "subcategory_confidence": subcategory_confidence,
+        "primary_color": primary_color,
+        "primary_color_confidence": primary_color_confidence,
+        "secondary_color": secondary_color,
+        "secondary_color_confidence": secondary_color_confidence,
         "materials": materials,
         "style_tags": style_tags,
         "attributes": attributes,
@@ -312,15 +390,6 @@ def _prepare_item_image(item: WardrobeItem) -> PreparedItemImage | None:
     return None
 
 
-def _normalize_preview_color(value: str | None) -> str | None:
-    if not value:
-        return None
-    normalized = value.strip()
-    if not normalized or normalized.lower() in {"unknown", "unspecified"}:
-        return None
-    return normalized
-
-
 def _prepare_legacy_image(image_url: str) -> PreparedItemImage | None:
     """Return a local path to the image and whether it should be cleaned up."""
     parsed = urlparse(image_url)
@@ -409,8 +478,8 @@ def _apply_classification(
 ) -> list[str]:
     update_kwargs: dict[str, object] = {}
     threshold = settings.ai_confidence_threshold
-    subcategory_threshold = settings.ai_subcategory_confidence_threshold
-    tag_threshold = settings.ai_tag_confidence_threshold
+    subcategory_threshold = _effective_subcategory_threshold()
+    tag_threshold = _effective_tag_threshold()
 
     color_result = result.colors
     if color_result.primary_color:

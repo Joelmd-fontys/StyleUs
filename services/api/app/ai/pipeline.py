@@ -22,7 +22,7 @@ LOGGER = logging.getLogger("app.ai.pipeline")
 _EMB_CACHE_DIR = settings.media_root_path / ".emb_cache"
 _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-_PIPELINE_CACHE_VERSION = "fashion-v2"
+_PIPELINE_CACHE_VERSION = "fashion-v3-full-image"
 _SUBCATEGORY_FALLBACK_CONFIDENCE = 0.55
 _PRECOMPUTED_CACHE_KEY_PATTERN = re.compile(r"^(?P<cache_key>[0-9a-f]{64})(?:[_-].+)?$")
 
@@ -438,12 +438,11 @@ def run(image_path: Path) -> PipelineResult:
     else:
         try:
             predictor = _get_predictor()
-            classifier_image = focus.masked_image if focus.mask is not None else focus.image
             embedding_started = time.perf_counter()
             embedding, cached = _load_embedding(
                 image_path,
                 predictor,
-                image=classifier_image,
+                image=source_image,
             )
             embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
             embedding_model = getattr(predictor, "model_name", None)

@@ -108,10 +108,11 @@ Local-only settings:
 Rules:
 
 - `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
-- `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
+- `RUN_MIGRATIONS_ON_START` defaults to `true` in every environment unless it is explicitly set to `false`.
+- `RUN_SEED_ON_START` defaults to `true` only in `local`.
 - `SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`.
 - Hosted environments should keep `RUN_SEED_ON_START=false`.
-- The Render blueprint sets `RUN_MIGRATIONS_ON_START=true` so API and worker startup can self-heal schema drift before serving traffic.
+- The Render blueprint keeps `RUN_MIGRATIONS_ON_START=true` so API and worker startup can self-heal schema drift before serving traffic.
 
 ## Render deployment
 

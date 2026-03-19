@@ -47,7 +47,7 @@ def test_local_defaults_enable_startup_helpers_and_bypass(monkeypatch):
     assert settings.local_auth_bypass_enabled is True
 
 
-def test_production_defaults_disable_startup_helpers_and_require_supabase(monkeypatch):
+def test_production_defaults_enable_migrations_but_require_supabase(monkeypatch):
     _clear_startup_env(monkeypatch)
     with pytest.raises(ValidationError):
         Settings(
@@ -65,9 +65,24 @@ def test_production_defaults_disable_startup_helpers_and_require_supabase(monkey
         _env_file=None,
     )
 
-    assert settings.run_migrations_on_start is False
+    assert settings.run_migrations_on_start is True
     assert settings.run_seed_on_start is False
     assert settings.local_auth_bypass_enabled is False
+
+
+def test_production_explicitly_allows_disabling_startup_migrations(monkeypatch):
+    _clear_startup_env(monkeypatch)
+    settings = Settings(
+        APP_ENV="production",
+        DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/postgres",
+        SUPABASE_URL="https://project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role-key",
+        SUPABASE_STORAGE_BUCKET="wardrobe-images",
+        RUN_MIGRATIONS_ON_START="false",
+        _env_file=None,
+    )
+
+    assert settings.run_migrations_on_start is False
 
 
 def test_local_auth_bypass_is_rejected_outside_local(monkeypatch):
