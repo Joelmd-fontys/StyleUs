@@ -20,6 +20,7 @@ from app.ai import worker as worker_module
 from app.ai.pipeline import PipelineResult
 from app.api.deps import DEFAULT_USER_ID
 from app.core.config import get_settings
+from app.db.migrations import SchemaCompatibilityError
 from app.models.ai_job import AIJob, AIJobStatus
 from app.models.user import User
 from app.models.wardrobe import WardrobeItem
@@ -323,6 +324,21 @@ def test_fastapi_lifespan_skips_worker_by_default(monkeypatch):
         assert lifecycle == []
 
 
+def test_fastapi_lifespan_fails_when_schema_is_outdated_in_secure_env(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "run_migrations_on_start", False)
+    monkeypatch.setattr(main_module, "ensure_schema_compatible", lambda: (_ for _ in ()).throw(
+        SchemaCompatibilityError(missing_columns={"wardrobe_items": ["ai_attribute_tags"]})
+    ))
+
+    application = main_module.create_app()
+
+    with pytest.raises(SchemaCompatibilityError):
+        with TestClient(application):
+            pass
+
+
 def test_worker_service_health_reports_worker_status(monkeypatch):
     lifecycle: list[object] = []
 
@@ -376,6 +392,25 @@ def test_worker_service_health_reports_worker_status(monkeypatch):
         ("shutdown", "worker_service_shutdown"),
         ("join", 30.0),
     ]
+
+
+def test_worker_service_startup_fails_when_schema_is_outdated_in_secure_env(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "run_migrations_on_start", False)
+    monkeypatch.setattr(
+        worker_service_module,
+        "ensure_schema_compatible",
+        lambda: (_ for _ in ()).throw(
+            SchemaCompatibilityError(missing_columns={"wardrobe_items": ["ai_attribute_tags"]})
+        ),
+    )
+
+    application = worker_service_module.create_worker_app()
+
+    with pytest.raises(SchemaCompatibilityError):
+        with TestClient(application):
+            pass
 
 
 def test_worker_service_health_reports_disabled_mode_when_classifier_is_off(monkeypatch):
