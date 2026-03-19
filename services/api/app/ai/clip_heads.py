@@ -17,22 +17,25 @@ from PIL import Image
 from app.ai.labels import (
     ATTRIBUTE_SPECS,
     CATEGORY_LABELS,
-    CATEGORY_SPECS,
     MATERIAL_SPECS,
     STYLE_SPECS,
-    SUBCATEGORY_SPECS,
-    SUBCATEGORY_TO_CATEGORY,
+    SUBCATEGORY_LABELS,
     LabelSpec,
 )
 from app.core.config import settings
 
 LOGGER = logging.getLogger("app.ai.clip")
 
-_DEFAULT_MODEL_NAME = "hf-hub:Marqo/marqo-fashionCLIP"
-_FALLBACK_MODEL_NAME = "ViT-B-32"
-_FALLBACK_PRETRAINED = "laion2b_s34b_b79k"
+_DEFAULT_MODEL_NAME = "ViT-B-32"
+_DEFAULT_MODEL_PRETRAINED = "laion2b_s34b_b79k"
+_FALLBACK_MODEL_NAME = _DEFAULT_MODEL_NAME
+_FALLBACK_PRETRAINED = _DEFAULT_MODEL_PRETRAINED
 _LOGIT_SCALE = 100.0
-_CATEGORY_BLEND_WEIGHT = 0.65
+_CATEGORY_PROMPT_TEMPLATES: Sequence[str] = (
+    "studio photo of a {}",
+    "clean product image of a {}",
+    "clothing item: {}",
+)
 _PROMPT_PREFIXES: Sequence[str] = (
     "a photo of {}",
     "fashion product photo of {}",
@@ -73,8 +76,6 @@ class ClipPredictor:
         self.onnx_session: Any | None = None
         self._open_clip, self._torch = self._load_dependencies()
         self.device = self._torch.device(settings.ai_device)
-        self.category_index = {label: idx for idx, label in enumerate(CATEGORY_LABELS)}
-        self.subcategory_to_category = dict(SUBCATEGORY_TO_CATEGORY)
         self.model_name = ""
         self.model_pretrained = ""
         self.cache_key = ""
@@ -129,7 +130,9 @@ class ClipPredictor:
 
     def _load_model(self) -> None:
         requested_name = settings.ai_model_name or _DEFAULT_MODEL_NAME
-        requested_pretrained = settings.ai_model_pretrained or None
+        requested_pretrained = settings.ai_model_pretrained or (
+            _DEFAULT_MODEL_PRETRAINED if requested_name == _DEFAULT_MODEL_NAME else None
+        )
         try:
             self.model, self.preprocess, self.tokenizer = self._create_model_and_tokenizer(
                 model_name=requested_name,
@@ -175,13 +178,31 @@ class ClipPredictor:
         self.cache_key = f"{self.model_name}:{self.model_pretrained or 'default'}"
 
     def _prepare_text_heads(self) -> None:
-        self.category_head = self._build_text_head(CATEGORY_SPECS)
-        self.subcategory_head = self._build_text_head(
-            tuple(spec for specs in SUBCATEGORY_SPECS.values() for spec in specs)
-        )
+        self.category_head = self._build_label_head(CATEGORY_LABELS)
+        self.subcategory_heads = {
+            category: self._build_label_head(labels)
+            for category, labels in SUBCATEGORY_LABELS.items()
+        }
         self.material_head = self._build_text_head(MATERIAL_SPECS)
         self.style_head = self._build_text_head(STYLE_SPECS)
         self.attribute_head = self._build_text_head(ATTRIBUTE_SPECS)
+
+    def _build_label_head(self, labels: Sequence[str]) -> TextHead:
+        torch = self._torch
+        prompts: list[str] = []
+        prompt_count = len(_CATEGORY_PROMPT_TEMPLATES)
+        for label in labels:
+            phrase = label.replace("_", " ")
+            prompts.extend(template.format(phrase) for template in _CATEGORY_PROMPT_TEMPLATES)
+
+        tokens = self.tokenizer(prompts)
+        tokens = tokens.to(self.device)
+        with torch.no_grad():
+            text_features = self.model.encode_text(tokens)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        text_features = text_features.view(len(labels), prompt_count, -1).mean(dim=1)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        return TextHead(labels=tuple(labels), embeddings=text_features.to(self.device))
 
     def _build_text_head(self, specs: Sequence[LabelSpec]) -> TextHead:
         torch = self._torch
@@ -274,10 +295,6 @@ class ClipPredictor:
             embedding_tensor,
             self.category_head,
         )
-        subcategory_global_scores, subcategory_global_probs = self._scores_for_head(
-            embedding_tensor,
-            self.subcategory_head,
-        )
         material_scores, _material_probs = self._scores_for_head(
             embedding_tensor,
             self.material_head,
@@ -291,47 +308,22 @@ class ClipPredictor:
             self.attribute_head,
         )
 
-        subcategory_category_probs = torch.zeros(len(CATEGORY_LABELS), device=self.device)
-        for idx, label in enumerate(self.subcategory_head.labels):
-            category = self.subcategory_to_category[label]
-            category_index = self.category_index[category]
-            subcategory_category_probs[category_index] = torch.maximum(
-                subcategory_category_probs[category_index],
-                subcategory_global_probs[idx],
-            )
+        category_idx = int(torch.argmax(category_probs).item())
+        category_label = self.category_head.labels[category_idx]
+        category_conf = float(category_probs[category_idx].item())
 
-        blended_category_probs = (
-            (category_probs * _CATEGORY_BLEND_WEIGHT)
-            + (subcategory_category_probs * (1.0 - _CATEGORY_BLEND_WEIGHT))
-        )
-        blended_category_probs = blended_category_probs / blended_category_probs.sum()
-        category_scores = {
-            label: float(blended_category_probs[idx].item())
-            for idx, label in enumerate(CATEGORY_LABELS)
-        }
-        category_idx = int(torch.argmax(blended_category_probs).item())
-        category_label = CATEGORY_LABELS[category_idx]
-        category_conf = float(blended_category_probs[category_idx].item())
-
-        allowed_indices = [
-            idx
-            for idx, label in enumerate(self.subcategory_head.labels)
-            if self.subcategory_to_category[label] == category_label
-        ]
         subcategory_label: str | None = None
         subcategory_conf: float | None = None
         subcategory_scores: dict[str, float] = {}
-        if allowed_indices:
-            allowed_tensor = torch.tensor(allowed_indices, device=self.device)
-            allowed_probs = subcategory_global_probs.index_select(0, allowed_tensor)
-            allowed_probs = allowed_probs / allowed_probs.sum()
-            for local_index, global_index in enumerate(allowed_indices):
-                label = self.subcategory_head.labels[global_index]
-                subcategory_scores[label] = float(allowed_probs[local_index].item())
-            best_local_index = int(torch.argmax(allowed_probs).item())
-            best_global_index = allowed_indices[best_local_index]
-            subcategory_label = self.subcategory_head.labels[best_global_index]
-            subcategory_conf = float(allowed_probs[best_local_index].item())
+        subcategory_head = self.subcategory_heads.get(category_label)
+        if subcategory_head is not None:
+            subcategory_scores, subcategory_probs = self._scores_for_head(
+                embedding_tensor,
+                subcategory_head,
+            )
+            best_subcategory_index = int(torch.argmax(subcategory_probs).item())
+            subcategory_label = subcategory_head.labels[best_subcategory_index]
+            subcategory_conf = float(subcategory_probs[best_subcategory_index].item())
 
         material_ranked = sorted(
             material_scores.items(),
@@ -360,7 +352,6 @@ class ClipPredictor:
             scores={
                 "category": category_scores,
                 "subcategory": subcategory_scores,
-                "subcategory_global": subcategory_global_scores,
                 "materials": material_scores,
                 "style_tags": style_scores,
                 "attribute_tags": attribute_scores,

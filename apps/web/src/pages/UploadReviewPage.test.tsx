@@ -47,6 +47,12 @@ const mockAI = {
   secondaryColorConfidence: 0.4
 };
 
+const mockUncertainAI = {
+  ...mockAI,
+  uncertain: true,
+  uncertainFields: ['category']
+};
+
 const mockPendingAI = {
   ...mockAI,
   pending: true,
@@ -284,5 +290,30 @@ describe('UploadReviewPage', () => {
 
     expect(screen.getByText(/Still running the AI pipeline/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeDisabled();
+  });
+
+  it('uses a single review banner without repeated check badges', async () => {
+    useWardrobeStore.setState((state) => ({
+      ...state,
+      uploadReview: {
+        item: mockItem,
+        ai: mockUncertainAI,
+        loading: false,
+        isConfirming: false,
+        error: undefined
+      },
+      fetchUploadReviewAI: vi.fn().mockResolvedValue(undefined),
+      hydrateUploadReview: vi.fn().mockResolvedValue(undefined),
+      saveItem: vi.fn().mockResolvedValue(mockItem),
+      deleteItem: vi.fn().mockResolvedValue(true),
+      clearUploadReview: vi.fn(),
+      loadItems: vi.fn().mockResolvedValue(undefined),
+      showFlashMessage: vi.fn()
+    }));
+
+    await renderPage();
+
+    expect(screen.getByText(/Review recommended for category/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Check$/)).not.toBeInTheDocument();
   });
 });

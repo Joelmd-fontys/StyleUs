@@ -201,6 +201,40 @@ def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
     assert payload["uncertain_fields"] == []
 
 
+def test_build_ai_preview_payload_blanks_weak_fields_and_only_flags_category_review() -> None:
+    payload = ai_tasks.build_ai_preview_payload(
+        _mock_pipeline_result(
+            primary="Black",
+            secondary="Gray",
+            color_conf=0.48,
+            secondary_conf=0.52,
+            category="accessory",
+            category_conf=0.55,
+            materials=[("canvas", 0.4)],
+            style_tags=[("minimal", 0.43)],
+            attribute_tags=[("relaxed", 0.44)],
+            subcategory="cap",
+            subcategory_conf=0.32,
+        )
+    )
+
+    assert payload["category"] == "accessory"
+    assert payload["category_confidence"] == pytest.approx(0.55)
+    assert payload["subcategory"] is None
+    assert payload["subcategory_confidence"] is None
+    assert payload["primary_color"] is None
+    assert payload["primary_color_confidence"] is None
+    assert payload["secondary_color"] is None
+    assert payload["secondary_color_confidence"] is None
+    assert payload["materials"] == []
+    assert payload["style_tags"] == []
+    assert payload["attributes"] == []
+    assert payload["tags"] == []
+    assert payload["tag_confidences"] == {}
+    assert payload["uncertain"] is True
+    assert payload["uncertain_fields"] == ["category"]
+
+
 def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypatch):
     storage = FakeStorageAdapter()
     _prepare_settings(monkeypatch, tmp_path, storage, session=db_session)

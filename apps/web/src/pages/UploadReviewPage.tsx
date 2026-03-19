@@ -129,6 +129,11 @@ const UploadReviewPage = (): ReactElement | null => {
       .filter(Boolean);
     return labels.join(', ');
   }, [ai?.uncertainFields]);
+  const reviewFieldClasses = (field: string) =>
+    cn(
+      'rounded-xl border border-neutral-200 bg-neutral-50/40 p-4',
+      uncertainFields.has(field) && 'border-amber-300 bg-amber-50/70'
+    );
 
   useEffect(() => {
     if (!itemId) {
@@ -302,13 +307,6 @@ const UploadReviewPage = (): ReactElement | null => {
     return <img src={source} alt="Uploaded item" className="h-72 w-full rounded-xl object-cover shadow-sm" />;
   };
 
-  const renderAttentionPill = (field: string) =>
-    uncertainFields.has(field) ? (
-      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
-        Check
-      </span>
-    ) : null;
-
   const renderColorSwatch = (
     label: string,
     value: string,
@@ -319,15 +317,17 @@ const UploadReviewPage = (): ReactElement | null => {
     const inputId = `${key}-input`;
     const isValidColor = value && value.trim().length > 0;
     return (
-      <div>
+      <div className={reviewFieldClasses(fieldKey)}>
         <div className="flex items-center gap-2">
           <label
-            className="text-sm font-medium text-neutral-700"
+            className={cn(
+              'text-sm font-medium text-neutral-700',
+              uncertainFields.has(fieldKey) && 'text-amber-900'
+            )}
             htmlFor={mode === 'edit' ? inputId : undefined}
           >
             {label}
           </label>
-          {renderAttentionPill(fieldKey)}
         </div>
         <div className="mt-2 flex items-center gap-3">
           <div
@@ -350,7 +350,14 @@ const UploadReviewPage = (): ReactElement | null => {
               className="flex-1 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-accent-500 focus:outline-none"
             />
           ) : (
-            <span className="text-sm text-neutral-700">{isValidColor ? value : fallbackText}</span>
+            <span
+              className={cn(
+                'text-sm text-neutral-700',
+                uncertainFields.has(fieldKey) && 'text-amber-900'
+              )}
+            >
+              {isValidColor ? value : fallbackText}
+            </span>
           )}
         </div>
       </div>
@@ -474,16 +481,26 @@ const UploadReviewPage = (): ReactElement | null => {
             ) : null}
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
+              <div className={reviewFieldClasses('category')}>
                 {mode === 'edit' ? (
-                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-category">
+                  <label
+                    className={cn(
+                      'text-sm font-medium text-neutral-700',
+                      uncertainFields.has('category') && 'text-amber-900'
+                    )}
+                    htmlFor="review-category"
+                  >
                     Category
                   </label>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-neutral-700">Category</p>
-                    {renderAttentionPill('category')}
-                  </div>
+                  <p
+                    className={cn(
+                      'text-sm font-medium text-neutral-700',
+                      uncertainFields.has('category') && 'text-amber-900'
+                    )}
+                  >
+                    Category
+                  </p>
                 )}
                 {mode === 'edit' ? (
                   <select
@@ -504,21 +521,36 @@ const UploadReviewPage = (): ReactElement | null => {
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 text-lg font-semibold text-neutral-900">
-                    {(ai?.category ?? item?.category ?? 'uncategorized').toUpperCase()}
+                  <p
+                    className={cn(
+                      'mt-1 text-lg font-semibold text-neutral-900',
+                      uncertainFields.has('category') && 'text-amber-900'
+                    )}
+                  >
+                    {toDisplayLabel((ai?.category ?? item?.category ?? 'uncategorized') as WardrobeCategory)}
                   </p>
                 )}
               </div>
-              <div>
+              <div className={reviewFieldClasses('subcategory')}>
                 {mode === 'edit' ? (
-                  <label className="text-sm font-medium text-neutral-700" htmlFor="review-subcategory">
+                  <label
+                    className={cn(
+                      'text-sm font-medium text-neutral-700',
+                      uncertainFields.has('subcategory') && 'text-amber-900'
+                    )}
+                    htmlFor="review-subcategory"
+                  >
                     Subcategory
                   </label>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-neutral-700">Subcategory</p>
-                    {renderAttentionPill('subcategory')}
-                  </div>
+                  <p
+                    className={cn(
+                      'text-sm font-medium text-neutral-700',
+                      uncertainFields.has('subcategory') && 'text-amber-900'
+                    )}
+                  >
+                    Subcategory
+                  </p>
                 )}
                 {mode === 'edit' ? (
                   <select
@@ -541,7 +573,12 @@ const UploadReviewPage = (): ReactElement | null => {
                     ))}
                   </select>
                 ) : (
-                  <p className="mt-1 text-sm text-neutral-700">
+                  <p
+                    className={cn(
+                      'mt-1 text-sm text-neutral-700',
+                      uncertainFields.has('subcategory') && 'text-amber-900'
+                    )}
+                  >
                     {resolvedSubcategory ? toDisplayLabel(resolvedSubcategory) : 'Not set'}
                   </p>
                 )}
@@ -570,11 +607,15 @@ const UploadReviewPage = (): ReactElement | null => {
               {renderColorSwatch('Secondary color', form.secondaryColor, 'Not detected', 'secondary_color')}
             </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-neutral-700">Tags</p>
-                {renderAttentionPill('tags')}
-              </div>
+            <div className={reviewFieldClasses('tags')}>
+              <p
+                className={cn(
+                  'text-sm font-medium text-neutral-700',
+                  uncertainFields.has('tags') && 'text-amber-900'
+                )}
+              >
+                Tags
+              </p>
               <div className="mt-2">{renderTagList()}</div>
             </div>
 

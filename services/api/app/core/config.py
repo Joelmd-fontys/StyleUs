@@ -74,13 +74,16 @@ class Settings(BaseSettings):
     seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
     ai_enable_classifier: bool = Field(default=True, alias="AI_ENABLE_CLASSIFIER")
     ai_device: str = Field(default="cpu", alias="AI_DEVICE")
-    ai_model_name: str = Field(default="hf-hub:Marqo/marqo-fashionCLIP", alias="AI_MODEL_NAME")
-    ai_model_pretrained: str | None = Field(default=None, alias="AI_MODEL_PRETRAINED")
+    ai_model_name: str = Field(default="ViT-B-32", alias="AI_MODEL_NAME")
+    ai_model_pretrained: str | None = Field(
+        default="laion2b_s34b_b79k",
+        alias="AI_MODEL_PRETRAINED",
+    )
     ai_model_cache_dir: str = Field(default="./media/.model_cache", alias="AI_MODEL_CACHE_DIR")
     ai_onnx: bool = Field(default=False, alias="AI_ONNX")
     ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
     ai_subcategory_confidence_threshold: float = Field(
-        default=0.5,
+        default=0.45,
         alias="AI_SUBCATEGORY_CONFIDENCE_THRESHOLD",
     )
     ai_tag_confidence_threshold: float = Field(default=0.28, alias="AI_TAG_CONFIDENCE_THRESHOLD")
@@ -159,7 +162,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def finalize_settings(self) -> Settings:
         if self.run_migrations_on_start is None:
-            self.run_migrations_on_start = self.app_env == "local"
+            self.run_migrations_on_start = True
         if self.run_seed_on_start is None:
             self.run_seed_on_start = self.app_env == "local"
         if self.local_auth_bypass is None:
@@ -191,11 +194,13 @@ class Settings(BaseSettings):
             self.ai_subcategory_confidence_threshold <= 0
             or self.ai_subcategory_confidence_threshold > 1
         ):
-            self.ai_subcategory_confidence_threshold = 0.5
+            self.ai_subcategory_confidence_threshold = 0.45
         if self.ai_tag_confidence_threshold <= 0 or self.ai_tag_confidence_threshold > 1:
             self.ai_tag_confidence_threshold = 0.28
         if not self.ai_model_name:
-            self.ai_model_name = "hf-hub:Marqo/marqo-fashionCLIP"
+            self.ai_model_name = "ViT-B-32"
+        if self.ai_model_name == "ViT-B-32" and not self.ai_model_pretrained:
+            self.ai_model_pretrained = "laion2b_s34b_b79k"
         if not self.ai_model_cache_dir:
             self.ai_model_cache_dir = "./media/.model_cache"
         if self.ai_color_mask_method not in {"grabcut", "heuristic"}:
