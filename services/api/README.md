@@ -110,7 +110,8 @@ Rules:
 - `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
 - `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
 - `SEED_ON_START` is still accepted as a legacy alias for `RUN_SEED_ON_START`.
-- Hosted environments should keep `RUN_MIGRATIONS_ON_START=false` and `RUN_SEED_ON_START=false`.
+- Hosted environments should keep `RUN_SEED_ON_START=false`.
+- The Render blueprint sets `RUN_MIGRATIONS_ON_START=true` so API and worker startup can self-heal schema drift before serving traffic.
 
 ## Render deployment
 
@@ -133,6 +134,7 @@ Deployment notes:
 - The base runtime dependencies now include the lightweight heuristic AI stack (`numpy` and `scikit-learn`) because the API uses it in free-tier mode.
 - The API image installs `.` and still never imports `app.ai.*` at boot.
 - The worker image installs `.[ai]`, which adds OpenCLIP plus `transformers` for the fashion-specific model path.
+- Both hosted services run startup migrations, and the migration helper uses a PostgreSQL advisory lock so concurrent starts do not race each other.
 - The Render blueprint pins both services to `free` and sets `AI_ENABLE_CLASSIFIER=false` by default.
 - Both Dockerfiles bind uvicorn to `${PORT:-8000}` so they run cleanly on Render.
 - `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.

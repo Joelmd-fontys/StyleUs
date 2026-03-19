@@ -24,3 +24,5 @@ def test_dockerfiles_install_expected_dependency_sets() -> None:
 
     assert 'pip install --no-cache-dir .' in api_dockerfile
     assert 'pip install --no-cache-dir ".[ai]"' in worker_dockerfile
+    assert "COPY alembic.ini ./alembic.ini" in worker_dockerfile
+    assert "COPY alembic ./alembic" in worker_dockerfile

@@ -5,8 +5,8 @@
 <!-- current-shape:start -->
 - `apps/web` contains the only frontend application and is deployed by Vercel.
 - `services/api` contains the API, worker service, migrations, and seed pipeline, and is deployed by Render.
-- `.github/workflows/ci.yml` validates docs, code quality, tests, builds, and security on every pull request and push.
-- `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`.
+- `.github/workflows/ci.yml` validates workflow syntax, docs, code quality, tests, builds, and security on every pull request and push.
+- `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`, and can optionally verify the frontend URL too.
 - `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.
 <!-- current-shape:end -->
 

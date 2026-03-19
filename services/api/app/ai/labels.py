@@ -63,11 +63,17 @@ SUBCATEGORY_SPECS: Mapping[str, tuple[LabelSpec, ...]] = {
     "top": (
         LabelSpec("t-shirt", ("short sleeve tee shirt top", "crew neck t-shirt", "casual tee top")),
         LabelSpec("tank top", ("sleeveless tank top", "tank shirt", "athletic tank top")),
-        LabelSpec("long sleeve", ("long sleeve tee top", "long sleeve shirt", "long sleeve knit top")),
+        LabelSpec(
+            "long sleeve",
+            ("long sleeve tee top", "long sleeve shirt", "long sleeve knit top"),
+        ),
         LabelSpec("shirt", ("button up shirt", "dress shirt top", "collared woven shirt")),
         LabelSpec("polo", ("polo shirt with collar", "short sleeve polo top", "knit polo shirt")),
         LabelSpec("hoodie", ("hooded sweatshirt", "hoodie top", "casual hooded pullover")),
-        LabelSpec("sweatshirt", ("crewneck sweatshirt", "casual sweatshirt top", "pullover sweatshirt")),
+        LabelSpec(
+            "sweatshirt",
+            ("crewneck sweatshirt", "casual sweatshirt top", "pullover sweatshirt"),
+        ),
         LabelSpec("sweater", ("knit sweater", "pullover sweater top", "soft sweater knitwear")),
         LabelSpec("jacket", ("lightweight jacket top", "zip jacket", "casual jacket topwear")),
         LabelSpec("coat", ("long coat topwear", "tailored coat", "heavy coat top")),
@@ -89,7 +95,10 @@ SUBCATEGORY_SPECS: Mapping[str, tuple[LabelSpec, ...]] = {
     "outerwear": (
         LabelSpec("puffer", ("puffer jacket", "quilted padded jacket", "down puffer outerwear")),
         LabelSpec("fleece", ("fleece jacket", "fleece outerwear", "soft fleece zip jacket")),
-        LabelSpec("rain jacket", ("rain jacket shell", "waterproof jacket", "rain shell outerwear")),
+        LabelSpec(
+            "rain jacket",
+            ("rain jacket shell", "waterproof jacket", "rain shell outerwear"),
+        ),
         LabelSpec("windbreaker", ("windbreaker jacket", "light shell jacket", "sport windbreaker")),
     ),
     "accessory": (
@@ -104,15 +113,36 @@ SUBCATEGORY_SPECS: Mapping[str, tuple[LabelSpec, ...]] = {
 }
 
 STYLE_SPECS: tuple[LabelSpec, ...] = (
-    LabelSpec("casual", ("casual everyday style", "relaxed casual fashion", "easy everyday outfit piece")),
+    LabelSpec(
+        "casual",
+        ("casual everyday style", "relaxed casual fashion", "easy everyday outfit piece"),
+    ),
     LabelSpec("streetwear", ("streetwear style", "urban street style", "street fashion piece")),
     LabelSpec("formal", ("formal tailored style", "dressy formal fashion", "smart occasion wear")),
-    LabelSpec("sporty", ("sporty athletic style", "activewear inspired fashion", "performance sport style")),
-    LabelSpec("outdoor", ("outdoor utility style", "gorpcore outdoor fashion", "technical outdoor piece")),
-    LabelSpec("minimal", ("minimal clean style", "simple understated fashion", "minimal wardrobe staple")),
-    LabelSpec("vintage", ("vintage style", "aged archival fashion look", "secondhand vintage aesthetic")),
-    LabelSpec("retro", ("retro style", "throwback fashion look", "old school retro aesthetic")),
-    LabelSpec("heritage", ("heritage style", "classic heritage fashion", "timeless heritage piece")),
+    LabelSpec(
+        "sporty",
+        ("sporty athletic style", "activewear inspired fashion", "performance sport style"),
+    ),
+    LabelSpec(
+        "outdoor",
+        ("outdoor utility style", "gorpcore outdoor fashion", "technical outdoor piece"),
+    ),
+    LabelSpec(
+        "minimal",
+        ("minimal clean style", "simple understated fashion", "minimal wardrobe staple"),
+    ),
+    LabelSpec(
+        "vintage",
+        ("vintage style", "aged archival fashion look", "secondhand vintage aesthetic"),
+    ),
+    LabelSpec(
+        "retro",
+        ("retro style", "throwback fashion look", "old school retro aesthetic"),
+    ),
+    LabelSpec(
+        "heritage",
+        ("heritage style", "classic heritage fashion", "timeless heritage piece"),
+    ),
 )
 
 MATERIAL_SPECS: tuple[LabelSpec, ...] = (
@@ -130,13 +160,25 @@ MATERIAL_SPECS: tuple[LabelSpec, ...] = (
 )
 
 ATTRIBUTE_SPECS: tuple[LabelSpec, ...] = (
-    LabelSpec("oversized", ("oversized fit", "boxy oversized silhouette", "roomy loose fitting item")),
+    LabelSpec(
+        "oversized",
+        ("oversized fit", "boxy oversized silhouette", "roomy loose fitting item"),
+    ),
     LabelSpec("slim-fit", ("slim fit silhouette", "close fitting garment", "streamlined slim fit")),
     LabelSpec("relaxed", ("relaxed fit", "easy relaxed silhouette", "loose casual fit")),
-    LabelSpec("tailored", ("tailored construction", "structured tailored fit", "clean tailored silhouette")),
+    LabelSpec(
+        "tailored",
+        ("tailored construction", "structured tailored fit", "clean tailored silhouette"),
+    ),
     LabelSpec("cropped", ("cropped length", "short cropped silhouette", "cropped garment shape")),
-    LabelSpec("quilted", ("quilted construction", "padded quilted texture", "stitched quilted finish")),
-    LabelSpec("chunky", ("chunky shape", "bulky chunky silhouette", "thick chunky footwear or knit")),
+    LabelSpec(
+        "quilted",
+        ("quilted construction", "padded quilted texture", "stitched quilted finish"),
+    ),
+    LabelSpec(
+        "chunky",
+        ("chunky shape", "bulky chunky silhouette", "thick chunky footwear or knit"),
+    ),
     LabelSpec("boxy", ("boxy silhouette", "square boxy fit", "wide straight boxy shape")),
 )
 

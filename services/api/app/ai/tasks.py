@@ -7,7 +7,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -54,8 +54,12 @@ def select_top_tags(
     """Return up to ``limit`` highest-confidence controlled-vocabulary tags."""
 
     scores: dict[str, float] = {}
-    for family_key in ("materials", "style_tags", "attribute_tags"):
-        for name, score in clip.get(family_key, []):
+    for family_scores in (
+        _clip_tag_family(clip, "materials"),
+        _clip_tag_family(clip, "style_tags"),
+        _clip_tag_family(clip, "attribute_tags"),
+    ):
+        for name, score in family_scores:
             confidence = float(score)
             if confidence < threshold:
                 continue
@@ -63,6 +67,13 @@ def select_top_tags(
 
     ordered = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
     return ordered[:limit]
+
+
+def _clip_tag_family(
+    clip: pipeline.ClipPrediction,
+    family: Literal["materials", "style_tags", "attribute_tags"],
+) -> list[tuple[str, float]]:
+    return cast(list[tuple[str, float]], clip.get(family, []))
 
 
 def _build_tag_confidences(
