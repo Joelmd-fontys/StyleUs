@@ -135,6 +135,7 @@ Deployment notes:
 - The API image installs `.` and still never imports `app.ai.*` at boot.
 - The worker image installs `.[ai]`, which adds OpenCLIP plus `transformers` for the fashion-specific model path.
 - Both hosted services run startup migrations, and the migration helper uses a PostgreSQL advisory lock so concurrent starts do not race each other.
+- If production reports missing `wardrobe_items` AI columns at startup, run `python -m alembic upgrade head` from `services/api` before restarting the API or worker.
 - The Render blueprint pins both services to `free` and sets `AI_ENABLE_CLASSIFIER=false` by default.
 - Both Dockerfiles bind uvicorn to `${PORT:-8000}` so they run cleanly on Render.
 - `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.
