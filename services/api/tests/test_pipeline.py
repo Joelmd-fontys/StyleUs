@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from app.ai import pipeline
+from app.ai import color, pipeline
 from app.ai.pipeline import PipelineResult
 
 
@@ -36,22 +37,27 @@ class _StubPredictor:
         }
 
 
+def _stub_color_module(result: color.ColorResult) -> SimpleNamespace:
+    return SimpleNamespace(get_colors_from_image=lambda _image: result)
+
+
 def test_pipeline_caches_embedding(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     monkeypatch.setattr(pipeline, "_EMB_CACHE_DIR", cache_dir)
 
     predictor = _StubPredictor()
-    monkeypatch.setattr(pipeline, "get_predictor", lambda: predictor)
-
+    monkeypatch.setattr(pipeline, "_get_predictor", lambda: predictor)
     monkeypatch.setattr(
-        pipeline.color,
-        "get_colors",
-        lambda path: pipeline.color.ColorResult(
-            primary_color="Blue",
-            secondary_color=None,
-            confidence=0.9,
-            secondary_confidence=None,
+        pipeline,
+        "_get_color_module",
+        lambda: _stub_color_module(
+            color.ColorResult(
+                primary_color="Blue",
+                secondary_color=None,
+                confidence=0.9,
+                secondary_confidence=None,
+            )
         ),
     )
 
@@ -71,20 +77,22 @@ def test_pipeline_fallback_on_predictor_error(tmp_path, monkeypatch):
     Image.new("RGB", (128, 128), color=(120, 80, 40)).save(image_path)
 
     monkeypatch.setattr(
-        pipeline.color,
-        "get_colors",
-        lambda path: pipeline.color.ColorResult(
-            primary_color="Camel",
-            secondary_color=None,
-            confidence=0.9,
-            secondary_confidence=None,
+        pipeline,
+        "_get_color_module",
+        lambda: _stub_color_module(
+            color.ColorResult(
+                primary_color="Camel",
+                secondary_color=None,
+                confidence=0.9,
+                secondary_confidence=None,
+            )
         ),
     )
 
     def _raise():
         raise RuntimeError("clip unavailable")
 
-    monkeypatch.setattr(pipeline, "get_predictor", _raise)
+    monkeypatch.setattr(pipeline, "_get_predictor", _raise)
 
     result = pipeline.run(image_path)
 
@@ -107,7 +115,7 @@ def test_subcategory_selection_prefers_highest_score(tmp_path, monkeypatch):
     }
     image_path = tmp_path / "hoodie.png"
     image_path.write_text("stub")
-    colors = pipeline.color.ColorResult(
+    colors = color.ColorResult(
         primary_color="Black",
         secondary_color=None,
         confidence=0.9,
@@ -139,7 +147,7 @@ def test_subcategory_selection_falls_back_to_keywords(tmp_path, monkeypatch):
     }
     image_path = tmp_path / "fresh-sneaker.jpg"
     image_path.write_text("stub")
-    colors = pipeline.color.ColorResult(
+    colors = color.ColorResult(
         primary_color=None,
         secondary_color=None,
         confidence=0.0,

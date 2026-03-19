@@ -39,7 +39,7 @@ const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
   if (ai.tags && ai.tags.length > 0) {
     return ai.tags.slice(0, 3);
   }
-  const combined = [...(ai.materials ?? []), ...(ai.styleTags ?? [])];
+  const combined = [...(ai.materials ?? []), ...(ai.styleTags ?? []), ...(ai.attributes ?? [])];
   const seen = new Set<string>();
   const unique: string[] = [];
   combined.forEach((tag) => {
@@ -49,6 +49,14 @@ const toTopAITags = (ai?: AIPreviewResponse | null): string[] => {
     }
   });
   return unique.slice(0, 3);
+};
+
+const UNCERTAIN_FIELD_LABELS: Record<string, string> = {
+  category: 'category',
+  subcategory: 'subcategory',
+  primary_color: 'primary color',
+  secondary_color: 'secondary color',
+  tags: 'tags'
 };
 
 const UploadReviewPage = (): ReactElement | null => {
@@ -114,6 +122,13 @@ const UploadReviewPage = (): ReactElement | null => {
     ai?.subcategoryConfidence,
     item?.aiConfidence
   ]);
+  const uncertainFields = useMemo(() => new Set(ai?.uncertainFields ?? []), [ai?.uncertainFields]);
+  const uncertaintySummary = useMemo(() => {
+    const labels = (ai?.uncertainFields ?? [])
+      .map((field) => UNCERTAIN_FIELD_LABELS[field] ?? field.replace(/_/g, ' '))
+      .filter(Boolean);
+    return labels.join(', ');
+  }, [ai?.uncertainFields]);
 
   useEffect(() => {
     if (!itemId) {
@@ -287,18 +302,33 @@ const UploadReviewPage = (): ReactElement | null => {
     return <img src={source} alt="Uploaded item" className="h-72 w-full rounded-xl object-cover shadow-sm" />;
   };
 
-  const renderColorSwatch = (label: string, value: string, fallbackText: string) => {
+  const renderAttentionPill = (field: string) =>
+    uncertainFields.has(field) ? (
+      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+        Check
+      </span>
+    ) : null;
+
+  const renderColorSwatch = (
+    label: string,
+    value: string,
+    fallbackText: string,
+    fieldKey: 'primary_color' | 'secondary_color'
+  ) => {
     const key = label.toLowerCase().includes('primary') ? 'primaryColor' : 'secondaryColor';
     const inputId = `${key}-input`;
     const isValidColor = value && value.trim().length > 0;
     return (
       <div>
-        <label
-          className="text-sm font-medium text-neutral-700"
-          htmlFor={mode === 'edit' ? inputId : undefined}
-        >
-          {label}
-        </label>
+        <div className="flex items-center gap-2">
+          <label
+            className="text-sm font-medium text-neutral-700"
+            htmlFor={mode === 'edit' ? inputId : undefined}
+          >
+            {label}
+          </label>
+          {renderAttentionPill(fieldKey)}
+        </div>
         <div className="mt-2 flex items-center gap-3">
           <div
             className="h-8 w-8 rounded-full border border-neutral-300 shadow-sm"
@@ -437,6 +467,10 @@ const UploadReviewPage = (): ReactElement | null => {
                 AI suggestions could not be completed automatically. You can continue by editing the item
                 manually.
               </div>
+            ) : ai?.uncertain && uncertaintySummary ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                Review recommended for {uncertaintySummary}.
+              </div>
             ) : null}
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -446,7 +480,10 @@ const UploadReviewPage = (): ReactElement | null => {
                     Category
                   </label>
                 ) : (
-                  <p className="text-sm font-medium text-neutral-700">Category</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-neutral-700">Category</p>
+                    {renderAttentionPill('category')}
+                  </div>
                 )}
                 {mode === 'edit' ? (
                   <select
@@ -478,7 +515,10 @@ const UploadReviewPage = (): ReactElement | null => {
                     Subcategory
                   </label>
                 ) : (
-                  <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-neutral-700">Subcategory</p>
+                    {renderAttentionPill('subcategory')}
+                  </div>
                 )}
                 {mode === 'edit' ? (
                   <select
@@ -526,12 +566,15 @@ const UploadReviewPage = (): ReactElement | null => {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {renderColorSwatch('Primary color', form.primaryColor, 'Not detected')}
-              {renderColorSwatch('Secondary color', form.secondaryColor, 'Not detected')}
+              {renderColorSwatch('Primary color', form.primaryColor, 'Not detected', 'primary_color')}
+              {renderColorSwatch('Secondary color', form.secondaryColor, 'Not detected', 'secondary_color')}
             </div>
 
             <div>
-              <p className="text-sm font-medium text-neutral-700">Tags</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-neutral-700">Tags</p>
+                {renderAttentionPill('tags')}
+              </div>
               <div className="mt-2">{renderTagList()}</div>
             </div>
 

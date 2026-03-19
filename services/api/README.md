@@ -85,8 +85,12 @@ Common optional settings:
 - `AI_JOB_STALE_AFTER_SECONDS`
 - `AI_ENABLE_CLASSIFIER`
 - `AI_DEVICE`
+- `AI_MODEL_NAME`
+- `AI_MODEL_PRETRAINED`
+- `AI_MODEL_CACHE_DIR`
 - `AI_CONFIDENCE_THRESHOLD`
 - `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD`
+- `AI_TAG_CONFIDENCE_THRESHOLD`
 - `AI_COLOR_USE_MASK`
 - `AI_COLOR_MASK_METHOD`
 - `AI_COLOR_MIN_FOREGROUND_PIXELS`
@@ -128,13 +132,14 @@ Deployment notes:
 
 - The base runtime dependencies now include the lightweight heuristic AI stack (`numpy` and `scikit-learn`) because the API uses it in free-tier mode.
 - The API image installs `.` and still never imports `app.ai.*` at boot.
-- The worker image installs `.[ai]`, which adds the CLIP-specific dependencies on top of the base runtime.
+- The worker image installs `.[ai]`, which adds OpenCLIP plus `transformers` for the fashion-specific model path.
 - The Render blueprint pins both services to `free` and sets `AI_ENABLE_CLASSIFIER=false` by default.
 - Both Dockerfiles bind uvicorn to `${PORT:-8000}` so they run cleanly on Render.
 - `/health` on the API checks database connectivity, and `/health` on the worker checks worker liveness plus queue visibility.
 - Use the same `DATABASE_URL` for Alembic, the API runtime, and the worker runtime.
 - Local Docker Postgres remains the default for `./dev.sh` and `make db-up`.
 - With `AI_ENABLE_CLASSIFIER=false`, upload completion runs the heuristic pipeline inline in the API.
+- With `AI_ENABLE_CLASSIFIER=true`, the worker now stores item embeddings and confidence-aware preview payloads for later similarity search and manual review.
 - Measured locally, that heuristic path uses about `288 MB` RSS and finishes in about `1.4s` on a sample image.
 - The full PyTorch/OpenCLIP worker still reaches about `1489 MB` RSS on warmup, so it should only be re-enabled on a higher-memory plan.
 

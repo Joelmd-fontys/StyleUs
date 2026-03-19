@@ -52,8 +52,12 @@ export interface AIPreviewResponse {
   secondaryColorConfidence?: number | null;
   materials?: string[];
   styleTags?: string[];
+  attributes?: string[];
   tags: string[];
+  tagConfidences?: Record<string, number>;
   confidence?: number | null;
+  uncertain?: boolean;
+  uncertainFields?: string[];
   pending?: boolean;
   job?: AIJobState | null;
 }

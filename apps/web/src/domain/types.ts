@@ -45,6 +45,7 @@ export interface ItemAIAttributes {
   subcategory?: WardrobeSubcategory | null;
   materials: string[];
   styleTags: string[];
+  attributes: string[];
   confidence?: number | null;
 }
 

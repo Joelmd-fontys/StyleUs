@@ -11,6 +11,7 @@ from typing import cast
 from urllib.parse import urlparse
 from uuid import UUID
 
+import numpy as np
 from sqlalchemy.orm import Session
 
 from app.ai import pipeline
@@ -50,18 +51,75 @@ class PreparedItemImage:
 def select_top_tags(
     clip: pipeline.ClipPrediction, *, threshold: float, limit: int = 3
 ) -> list[tuple[str, float]]:
-    """Return up to ``limit`` highest-confidence tag names across materials + styles."""
+    """Return up to ``limit`` highest-confidence controlled-vocabulary tags."""
 
     scores: dict[str, float] = {}
-    for name, score in clip.get("materials", []):
-        if score >= threshold:
-            scores[name] = max(scores.get(name, 0.0), float(score))
-    for name, score in clip.get("style_tags", []):
-        if score >= threshold:
-            scores[name] = max(scores.get(name, 0.0), float(score))
+    for family_key in ("materials", "style_tags", "attribute_tags"):
+        for name, score in clip.get(family_key, []):
+            confidence = float(score)
+            if confidence < threshold:
+                continue
+            scores[name] = max(scores.get(name, 0.0), confidence)
 
     ordered = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
     return ordered[:limit]
+
+
+def _build_tag_confidences(
+    clip: pipeline.ClipPrediction,
+    *,
+    limit: int = 3,
+) -> dict[str, float]:
+    return {
+        name: float(score)
+        for name, score in select_top_tags(clip, threshold=0.0, limit=limit)
+    }
+
+
+def _build_uncertain_fields(result: PipelineResult) -> list[str]:
+    uncertain_fields: list[str] = []
+    clip = result.clip
+    colors = result.colors
+
+    if float(clip.get("category_confidence") or 0.0) < settings.ai_confidence_threshold:
+        uncertain_fields.append("category")
+
+    subcategory_confidence = float(clip.get("subcategory_confidence") or 0.0)
+    if not clip.get("subcategory") or (
+        subcategory_confidence < settings.ai_subcategory_confidence_threshold
+    ):
+        uncertain_fields.append("subcategory")
+
+    if (
+        not colors.primary_color
+        or colors.primary_color.lower() in {"unknown", "unspecified"}
+        or float(colors.confidence) < settings.ai_confidence_threshold
+    ):
+        uncertain_fields.append("primary_color")
+
+    if (
+        colors.secondary_color
+        and float(colors.secondary_confidence or 0.0) < settings.ai_confidence_threshold
+    ):
+        uncertain_fields.append("secondary_color")
+
+    if not select_top_tags(
+        clip,
+        threshold=settings.ai_tag_confidence_threshold,
+        limit=3,
+    ):
+        uncertain_fields.append("tags")
+
+    return uncertain_fields
+
+
+def _serialize_embedding(embedding: np.ndarray | None) -> list[float] | None:
+    if embedding is None:
+        return None
+    normalized = np.asarray(embedding, dtype=np.float32)
+    if normalized.size == 0:
+        return None
+    return [round(float(value), 6) for value in normalized.tolist()]
 
 
 def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
@@ -71,7 +129,10 @@ def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
     color_result = result.colors
     materials = [name for name, _score in clip.get("materials", [])[:5]]
     style_tags = [name for name, _score in clip.get("style_tags", [])[:5]]
+    attributes = [name for name, _score in clip.get("attribute_tags", [])[:5]]
     tags = [name for name, _score in select_top_tags(clip, threshold=0.0, limit=3)]
+    tag_confidences = _build_tag_confidences(clip)
+    uncertain_fields = _build_uncertain_fields(result)
 
     payload: dict[str, object] = {
         "category": clip.get("category"),
@@ -84,8 +145,12 @@ def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
         "secondary_color_confidence": color_result.secondary_confidence,
         "materials": materials,
         "style_tags": style_tags,
+        "attributes": attributes,
         "tags": tags,
+        "tag_confidences": tag_confidences,
         "confidence": clip.get("category_confidence"),
+        "uncertain": bool(uncertain_fields),
+        "uncertain_fields": uncertain_fields,
     }
     LOGGER.info(
         "ai.tasks.preview_payload_built",
@@ -95,6 +160,7 @@ def build_ai_preview_payload(result: PipelineResult) -> dict[str, object]:
             "primary_color": payload["primary_color"],
             "secondary_color": payload["secondary_color"],
             "tags": payload["tags"],
+            "uncertain_fields": uncertain_fields,
         },
     )
     return payload
@@ -333,6 +399,7 @@ def _apply_classification(
     update_kwargs: dict[str, object] = {}
     threshold = settings.ai_confidence_threshold
     subcategory_threshold = settings.ai_subcategory_confidence_threshold
+    tag_threshold = settings.ai_tag_confidence_threshold
 
     color_result = result.colors
     if color_result.primary_color:
@@ -388,22 +455,31 @@ def _apply_classification(
         update_kwargs["subcategory"] = subcategory_label
 
     materials_above_threshold = [
-        name for name, score in clip.get("materials", []) if score >= threshold
+        name for name, score in clip.get("materials", []) if score >= tag_threshold
     ]
     style_tags_above_threshold = [
         name
         for name, score in sorted(
             clip.get("style_tags", []), key=lambda entry: entry[1], reverse=True
         )
-        if score >= threshold
+        if score >= tag_threshold
+    ]
+    attribute_tags_above_threshold = [
+        name
+        for name, score in sorted(
+            clip.get("attribute_tags", []), key=lambda entry: entry[1], reverse=True
+        )
+        if score >= tag_threshold
     ]
     if materials_above_threshold:
         update_kwargs["ai_materials"] = materials_above_threshold[:5]
     if style_tags_above_threshold:
         update_kwargs["ai_style_tags"] = style_tags_above_threshold[:3]
+    if attribute_tags_above_threshold:
+        update_kwargs["ai_attribute_tags"] = attribute_tags_above_threshold[:3]
 
     existing_tags = [tag.tag for tag in item.tags]
-    top_scored_tags = select_top_tags(clip, threshold=threshold, limit=3)
+    top_scored_tags = select_top_tags(clip, threshold=tag_threshold, limit=3)
     suggested_tags = [name for name, _ in top_scored_tags]
 
     if not existing_tags and suggested_tags:
@@ -415,6 +491,13 @@ def _apply_classification(
         combined = combined[:10]
         if combined != existing_tags:
             update_kwargs["tags"] = combined
+
+    serialized_embedding = _serialize_embedding(result.embedding)
+    embedding_model = result.embedding_model or cast(str | None, clip.get("model_name"))
+    if serialized_embedding is not None:
+        update_kwargs["ai_embedding"] = serialized_embedding
+    if embedding_model:
+        update_kwargs["ai_embedding_model"] = embedding_model
 
     if update_kwargs:
         items_service.update_item(
@@ -429,6 +512,9 @@ def _apply_classification(
             secondary_color=cast(str | None, update_kwargs.get("secondary_color")),
             ai_materials=cast(list[str] | None, update_kwargs.get("ai_materials")),
             ai_style_tags=cast(list[str] | None, update_kwargs.get("ai_style_tags")),
+            ai_attribute_tags=cast(list[str] | None, update_kwargs.get("ai_attribute_tags")),
+            ai_embedding=cast(list[float] | None, update_kwargs.get("ai_embedding")),
+            ai_embedding_model=cast(str | None, update_kwargs.get("ai_embedding_model")),
             ai_confidence=category_conf,
             commit=commit,
         )
@@ -448,6 +534,14 @@ def _apply_classification(
                 "ai_style_tags": update_kwargs.get(
                     "ai_style_tags",
                     getattr(item, "ai_style_tags", None),
+                ),
+                "ai_attribute_tags": update_kwargs.get(
+                    "ai_attribute_tags",
+                    getattr(item, "ai_attribute_tags", None),
+                ),
+                "ai_embedding_model": update_kwargs.get(
+                    "ai_embedding_model",
+                    getattr(item, "ai_embedding_model", None),
                 ),
                 "confidence": category_conf,
             },

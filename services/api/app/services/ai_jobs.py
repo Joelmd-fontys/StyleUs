@@ -20,6 +20,10 @@ _DELETED_ITEM_ERROR = "Wardrobe item deleted before AI enrichment"
 AIJobResultPayload = Mapping[str, object]
 
 
+def _ensure_utc(value: dt.datetime) -> dt.datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=dt.UTC)
+
+
 @dataclass(frozen=True, slots=True)
 class AIJobLease:
     job_id: uuid.UUID
@@ -31,7 +35,9 @@ class AIJobLease:
 
     @property
     def queue_latency_ms(self) -> float:
-        return round((self.claimed_at - self.created_at).total_seconds() * 1000, 2)
+        claimed_at = _ensure_utc(self.claimed_at)
+        created_at = _ensure_utc(self.created_at)
+        return round((claimed_at - created_at).total_seconds() * 1000, 2)
 
 
 def enqueue_item_job(db: Session, item: WardrobeItem, *, commit: bool = True) -> AIJob:
