@@ -20,16 +20,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - name: Install actionlint
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
-
       - name: Validate GitHub Actions workflows
-        run: "$(go env GOPATH)/bin/actionlint"
+        uses: devops-actions/actionlint@v0.1.10
 
   documentation:
     name: Documentation Synchronization

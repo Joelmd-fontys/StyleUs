@@ -198,7 +198,7 @@ The checked-in blueprint and local scripts reflect the current two-service Rende
 ## Testing notes
 
 - Backend tests run with pytest.
-- The current test configuration expects a Postgres database reachable via `DATABASE_URL`; the default test setup points at `postgresql+psycopg://postgres:postgres@localhost:5432/postgres`.
+- Backend CI and local tests default to a temporary sqlite database, so they do not require a separately running Postgres instance.
 - Supabase Storage interactions are mocked in unit tests.
 
 See also:
