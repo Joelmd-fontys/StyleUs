@@ -28,11 +28,13 @@ jobs:
     steps:
       - name: Resolve deployment settings
         run: |
-          echo "DEPLOY_HEALTHCHECK_URL=${DEPLOY_HEALTHCHECK_URL:-https://styleus-api.onrender.com/health}" >> "$GITHUB_ENV"
-          echo "DEPLOY_FRONTEND_URL=${DEPLOY_FRONTEND_URL:-}" >> "$GITHUB_ENV"
-          echo "DEPLOY_INITIAL_WAIT_SECONDS=${DEPLOY_INITIAL_WAIT_SECONDS:-90}" >> "$GITHUB_ENV"
-          echo "DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-900}" >> "$GITHUB_ENV"
-          echo "DEPLOY_POLL_INTERVAL_SECONDS=${DEPLOY_POLL_INTERVAL_SECONDS:-15}" >> "$GITHUB_ENV"
+          {
+            echo "DEPLOY_HEALTHCHECK_URL=${DEPLOY_HEALTHCHECK_URL:-https://styleus-api.onrender.com/health}"
+            echo "DEPLOY_FRONTEND_URL=${DEPLOY_FRONTEND_URL:-}"
+            echo "DEPLOY_INITIAL_WAIT_SECONDS=${DEPLOY_INITIAL_WAIT_SECONDS:-90}"
+            echo "DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-900}"
+            echo "DEPLOY_POLL_INTERVAL_SECONDS=${DEPLOY_POLL_INTERVAL_SECONDS:-15}"
+          } >> "$GITHUB_ENV"
 
       - name: Announce deployment flow
         run: |
