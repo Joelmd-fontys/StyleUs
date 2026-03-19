@@ -41,6 +41,12 @@ Render AI worker:
 - exposes `/health` for Render health checks
 - reports `mode=disabled` on `/health` when `AI_ENABLE_CLASSIFIER=false`
 
+## Schema migrations
+
+- Alembic is the schema source of truth for the API and worker.
+- The current production head includes `202603181030_add_ai_embeddings_and_attributes.py`, which adds `wardrobe_items.ai_attribute_tags`, `wardrobe_items.ai_embedding`, and `wardrobe_items.ai_embedding_model`.
+- If a hosted deployment reports those columns as missing, run `cd services/api && python -m alembic upgrade head` against the production `DATABASE_URL` before restarting services.
+
 Supabase:
 
 - stores the Postgres database used by SQLAlchemy and Alembic
