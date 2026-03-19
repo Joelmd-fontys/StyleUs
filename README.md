@@ -166,12 +166,12 @@ Real auth and live uploads require Supabase values in `apps/web/.env.local` and 
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- `.github/workflows/ci.yml` runs on every pull request and branch push.
-- Backend validation runs `python -m ruff check .`, `python -m mypy app`, `python -m pytest -q`, and `python scripts/ci/verify_backend.py` against PostgreSQL.
+- `.github/workflows/ci.yml` runs on every pull request and branch push, with `actionlint` validating the workflow definitions.
+- Backend validation runs `python -m ruff check .`, `python -m mypy app`, `python -m pytest -q`, and `python scripts/ci/verify_backend.py` against a local sqlite database.
 - Frontend validation runs `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
 - Security checks run `actions/dependency-review-action`, `npm audit --audit-level=high`, `pip-audit`, and `gitleaks`.
 - `python scripts/ci/sync_docs.py --check` fails when the generated documentation sections drift from the current repo shape.
-- After merge to `main`, `.github/workflows/deploy.yml` waits for the platform Git deploy window and polls `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) until `/health` reports `status=ok` and `database=ok`.
+- After merge to `main`, `.github/workflows/deploy.yml` waits for the platform Git deploy window and polls `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) until `/health` reports `status=ok` and `database=ok`; optional repository variable `DEPLOY_FRONTEND_URL` adds a frontend availability check after the backend passes.
 <!-- ci-cd:end -->
 
 ## AI Pipeline

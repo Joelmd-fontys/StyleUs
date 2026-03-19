@@ -1,9 +1,9 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { Route, Routes, MemoryRouter } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import UploadReviewPage from './UploadReviewPage';
-import { useWardrobeStore } from '../store/wardrobe';
 import { WardrobeItem } from '../domain/types';
+import { useWardrobeStore } from '../store/wardrobe';
+import UploadReviewPage from './UploadReviewPage';
 
 const navigateMock = vi.fn();
 
@@ -62,19 +62,29 @@ const mockPendingAI = {
 const baseState = useWardrobeStore.getState();
 
 describe('UploadReviewPage', () => {
-  afterEach(() => {
-    useWardrobeStore.setState(baseState, true);
+  beforeEach(() => {
     navigateMock.mockReset();
   });
 
-  const renderPage = () =>
-    render(
-      <MemoryRouter initialEntries={[`/upload/review/${mockItem.id}`]}>
-        <Routes>
-          <Route path="/upload/review/:id" element={<UploadReviewPage />} />
-        </Routes>
-      </MemoryRouter>
-    );
+  afterEach(() => {
+    cleanup();
+    useWardrobeStore.setState(baseState, true);
+  });
+
+  const renderPage = async () => {
+    await act(async () => {
+      render(
+        <MemoryRouter
+          initialEntries={[`/upload/review/${mockItem.id}`]}
+          future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+        >
+          <Routes>
+            <Route path="/upload/review/:id" element={<UploadReviewPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+    });
+  };
 
   it('accepts AI predictions and saves item', async () => {
     const saveItemMock = vi.fn().mockResolvedValue(mockItem);
@@ -99,10 +109,12 @@ describe('UploadReviewPage', () => {
       showFlashMessage: showFlashMessageMock
     }));
 
-    renderPage();
+    await renderPage();
 
     const acceptButton = await screen.findByRole('button', { name: /accept predictions/i });
-    fireEvent.click(acceptButton);
+    await act(async () => {
+      fireEvent.click(acceptButton);
+    });
 
     await waitFor(() => expect(saveItemMock).toHaveBeenCalledTimes(1));
     expect(saveItemMock).toHaveBeenCalledWith(
@@ -147,23 +159,24 @@ describe('UploadReviewPage', () => {
       showFlashMessage: showFlashMessageMock
     }));
 
-    renderPage();
+    await renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /edit & confirm/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /edit & confirm/i }));
+    });
 
     const primaryColorInput = screen.getByLabelText(/primary color/i) as HTMLInputElement;
-    fireEvent.change(primaryColorInput, { target: { value: 'Midnight Blue' } });
-
     const subcategorySelect = screen.getByLabelText(/subcategory/i) as HTMLSelectElement;
-    fireEvent.change(subcategorySelect, { target: { value: 'boots' } });
-
     const brandInput = screen.getByPlaceholderText(/e\.g\./i);
-    fireEvent.change(brandInput, { target: { value: 'Edited Brand' } });
-
     const tagsInput = screen.getByLabelText(/tags/i);
-    fireEvent.change(tagsInput, { target: { value: 'edited, custom' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /confirm changes/i }));
+    await act(async () => {
+      fireEvent.change(primaryColorInput, { target: { value: 'Midnight Blue' } });
+      fireEvent.change(subcategorySelect, { target: { value: 'boots' } });
+      fireEvent.change(brandInput, { target: { value: 'Edited Brand' } });
+      fireEvent.change(tagsInput, { target: { value: 'edited, custom' } });
+      fireEvent.click(screen.getByRole('button', { name: /confirm changes/i }));
+    });
 
     await waitFor(() => expect(saveItemMock).toHaveBeenCalledTimes(1));
     expect(saveItemMock).toHaveBeenCalledWith(
@@ -199,7 +212,7 @@ describe('UploadReviewPage', () => {
       showFlashMessage: vi.fn()
     }));
 
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText(/Analyzing your item/i)).toBeInTheDocument();
@@ -225,7 +238,7 @@ describe('UploadReviewPage', () => {
       showFlashMessage: vi.fn()
     }));
 
-    renderPage();
+    await renderPage();
 
     expect(screen.getByText(/Analyzing your item/i)).toBeInTheDocument();
     expect(
@@ -267,7 +280,7 @@ describe('UploadReviewPage', () => {
       showFlashMessage: vi.fn()
     }));
 
-    renderPage();
+    await renderPage();
 
     expect(screen.getByText(/Still running the AI pipeline/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeDisabled();

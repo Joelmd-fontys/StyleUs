@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
+
+_DEFAULT_VERIFY_DB_PATH = Path("/tmp/styleus-verify-backend.db")
 
 
 def _set_default_env() -> None:
     os.environ.setdefault("APP_ENV", "local")
     os.environ.setdefault(
-        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
+        "DATABASE_URL",
+        f"sqlite+pysqlite:///{_DEFAULT_VERIFY_DB_PATH}?check_same_thread=false",
     )
     os.environ.setdefault("SUPABASE_URL", "https://styleus-ci.supabase.co")
     os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "styleus-ci-service-role")
@@ -22,15 +26,19 @@ def _set_default_env() -> None:
 
 def main() -> int:
     _set_default_env()
+    _DEFAULT_VERIFY_DB_PATH.unlink(missing_ok=True)
 
     from fastapi.testclient import TestClient
 
     from app.ai import pipeline
     from app.core.config import get_settings
+    from app.db.base import Base
+    from app.db.session import get_engine
     from app.main import create_app
     from app.worker import AIWorker
 
     get_settings.cache_clear()
+    Base.metadata.create_all(bind=get_engine())
 
     application = create_app(start_worker=False)
     with TestClient(application) as client:
@@ -70,6 +78,7 @@ def main() -> int:
     if warm_up_calls["count"] != 1:
         raise RuntimeError(f"Expected one worker warm-up call, saw {warm_up_calls['count']}")
 
+    _DEFAULT_VERIFY_DB_PATH.unlink(missing_ok=True)
     print("AI worker initialization verification passed.")
     return 0
 

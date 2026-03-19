@@ -14,10 +14,11 @@ permissions:
   contents: read
 
 env:
-  DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL != '' && vars.DEPLOY_HEALTHCHECK_URL || 'https://styleus-api.onrender.com/health' }}
-  DEPLOY_INITIAL_WAIT_SECONDS: ${{ vars.DEPLOY_INITIAL_WAIT_SECONDS != '' && vars.DEPLOY_INITIAL_WAIT_SECONDS || '90' }}
-  DEPLOY_TIMEOUT_SECONDS: ${{ vars.DEPLOY_TIMEOUT_SECONDS != '' && vars.DEPLOY_TIMEOUT_SECONDS || '900' }}
-  DEPLOY_POLL_INTERVAL_SECONDS: ${{ vars.DEPLOY_POLL_INTERVAL_SECONDS != '' && vars.DEPLOY_POLL_INTERVAL_SECONDS || '15' }}
+  DEPLOY_HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL }}
+  DEPLOY_FRONTEND_URL: ${{ vars.DEPLOY_FRONTEND_URL }}
+  DEPLOY_INITIAL_WAIT_SECONDS: ${{ vars.DEPLOY_INITIAL_WAIT_SECONDS }}
+  DEPLOY_TIMEOUT_SECONDS: ${{ vars.DEPLOY_TIMEOUT_SECONDS }}
+  DEPLOY_POLL_INTERVAL_SECONDS: ${{ vars.DEPLOY_POLL_INTERVAL_SECONDS }}
 
 jobs:
   verify:
@@ -25,11 +26,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Resolve deployment settings
+        run: |
+          {
+            echo "DEPLOY_HEALTHCHECK_URL=${DEPLOY_HEALTHCHECK_URL:-https://styleus-api.onrender.com/health}"
+            echo "DEPLOY_FRONTEND_URL=${DEPLOY_FRONTEND_URL:-}"
+            echo "DEPLOY_INITIAL_WAIT_SECONDS=${DEPLOY_INITIAL_WAIT_SECONDS:-90}"
+            echo "DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-900}"
+            echo "DEPLOY_POLL_INTERVAL_SECONDS=${DEPLOY_POLL_INTERVAL_SECONDS:-15}"
+          } >> "$GITHUB_ENV"
+
       - name: Announce deployment flow
         run: |
           echo "Frontend deployment is handled by Vercel Git integration."
           echo "Backend deployment is handled by Render auto deploy."
           echo "Verifying API health at $DEPLOY_HEALTHCHECK_URL"
+          if [ -n "$DEPLOY_FRONTEND_URL" ]; then
+            echo "Verifying frontend availability at $DEPLOY_FRONTEND_URL"
+          else
+            echo "Frontend availability check skipped."
+            echo "Set DEPLOY_FRONTEND_URL to enable frontend verification."
+          fi
 
       - name: Wait for Git-triggered deploys to start
         run: sleep "$DEPLOY_INITIAL_WAIT_SECONDS"
@@ -54,3 +71,31 @@ jobs:
 
           echo "Deployment verification failed: /health did not return status=ok and database=ok before timeout."
           exit 1
+
+      - name: Poll frontend URL
+        if: env.DEPLOY_FRONTEND_URL != ''
+        run: |
+          deadline=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status_code="$(curl -sS -o /tmp/frontend.html -w '%{http_code}' "$DEPLOY_FRONTEND_URL" || true)"
+            echo "HTTP $status_code from $DEPLOY_FRONTEND_URL"
+            head -n 5 /tmp/frontend.html || true
+            echo
+
+            if [ "$status_code" = "200" ] && grep -qi '<!doctype html' /tmp/frontend.html; then
+              echo "Frontend verification passed."
+              exit 0
+            fi
+
+            echo "Frontend deployment is not ready yet. Retrying in $DEPLOY_POLL_INTERVAL_SECONDS seconds."
+            sleep "$DEPLOY_POLL_INTERVAL_SECONDS"
+          done
+
+          echo "Frontend deployment verification failed: the frontend URL did not return HTML before timeout."
+          exit 1
+
+      - name: Frontend verification not configured
+        if: env.DEPLOY_FRONTEND_URL == ''
+        run: |
+          echo "Frontend verification skipped."
+          echo "Set repository variable DEPLOY_FRONTEND_URL to enable it."

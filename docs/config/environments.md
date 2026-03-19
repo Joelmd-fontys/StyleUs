@@ -74,9 +74,10 @@ Notes:
 - `LOCAL_AUTH_BYPASS` is valid only when `APP_ENV=local`.
 - `RUN_MIGRATIONS_ON_START` and `RUN_SEED_ON_START` default to `true` only in `local`.
 - `SEED_ON_START` remains accepted as a legacy alias for `RUN_SEED_ON_START`.
+- The hosted Render blueprint overrides `RUN_MIGRATIONS_ON_START=true` so schema migrations run before API and worker startup.
 - `SUPABASE_ANON_KEY` remains accepted only for legacy shared-secret JWT verification; it is not part of the standard hosted backend contract.
 - `services/api/Dockerfile` is the API image and installs the base runtime dependencies, including `numpy` and `scikit-learn`.
-- `services/api/Dockerfile.worker` is the worker image and installs the same base runtime plus the `.[ai]` extra for CLIP inference.
+- `services/api/Dockerfile.worker` is the worker image and installs the same base runtime plus the `.[ai]` extra for CLIP inference and startup migrations.
 
 ## Platform mapping
 
@@ -117,8 +118,9 @@ Supabase:
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- CI uses a GitHub Actions PostgreSQL service plus local-safe values for `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`, `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
+- CI uses local-safe values for `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`, `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
 - Pull request validation does not require hosted platform secrets for normal backend or frontend checks.
 - Deploy verification reads `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`); set the repository variable when the production API URL changes.
+- Optional repository variable `DEPLOY_FRONTEND_URL` enables frontend deployment verification after backend health passes.
 - Optional repository secret `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub secret-scanning alert review in CI when GitHub Advanced Security is available.
 <!-- ci-cd:end -->

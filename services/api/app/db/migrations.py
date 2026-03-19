@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from threading import Lock
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from alembic import command
 from alembic.config import Config
@@ -17,6 +17,7 @@ from app.db.session import get_engine
 
 _migration_lock = Lock()
 _schema_ready = False
+_POSTGRES_MIGRATION_LOCK_ID = 8_245_713_204_113
 
 
 class SchemaCompatibilityError(RuntimeError):
@@ -26,7 +27,7 @@ class SchemaCompatibilityError(RuntimeError):
         self,
         *,
         missing_tables: Iterable[str] = (),
-        missing_columns: dict[str, Iterable[str]] | None = None,
+        missing_columns: Mapping[str, Iterable[str]] | None = None,
     ) -> None:
         self.missing_tables = tuple(sorted({table for table in missing_tables if table}))
         self.missing_columns = {
@@ -68,9 +69,13 @@ def ensure_schema() -> None:
         try:
             config = _build_alembic_config(database_url)
             with engine.begin() as connection:
+                _acquire_migration_lock(connection)
                 config.attributes["connection"] = connection
                 logger.info("migrations.upgrade.start")
-                command.upgrade(config, "head")
+                try:
+                    command.upgrade(config, "head")
+                finally:
+                    _release_migration_lock(connection)
                 logger.info("migrations.upgrade.complete")
         except Exception:
             logger.exception("migrations.error")
@@ -113,3 +118,23 @@ def _build_alembic_config(database_url: str) -> Config:
     config.set_main_option("sqlalchemy.url", database_url)
     config.attributes["configure_logger"] = False
     return config
+
+
+def _acquire_migration_lock(connection) -> None:  # type: ignore[no-untyped-def]
+    if connection.dialect.name != "postgresql":
+        return
+    logger.info("migrations.lock_acquire.start")
+    connection.execute(
+        text("SELECT pg_advisory_lock(:lock_id)"),
+        {"lock_id": _POSTGRES_MIGRATION_LOCK_ID},
+    )
+    logger.info("migrations.lock_acquire.complete")
+
+
+def _release_migration_lock(connection) -> None:  # type: ignore[no-untyped-def]
+    if connection.dialect.name != "postgresql":
+        return
+    connection.execute(
+        text("SELECT pg_advisory_unlock(:lock_id)"),
+        {"lock_id": _POSTGRES_MIGRATION_LOCK_ID},
+    )
