@@ -135,6 +135,7 @@ class AIWorker:
                 "memory_rss_mb": _current_memory_rss_mb(),
             },
         )
+        self._ensure_pipeline_ready()
 
         try:
             while not self.stop_event.is_set():

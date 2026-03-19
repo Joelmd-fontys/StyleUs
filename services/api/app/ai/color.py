@@ -121,16 +121,6 @@ class ColorResult:
     secondary_color: str | None
     confidence: float
     secondary_confidence: float | None
-
-
-def _center_crop(image: Image.Image) -> Image.Image:
-    width, height = image.size
-    side = min(width, height)
-    left = (width - side) // 2
-    top = (height - side) // 2
-    return image.crop((left, top, left + side, top + side))
-
-
 def _prepare_pixels(
     image: Image.Image, *, mask: np.ndarray | None
 ) -> tuple[np.ndarray, int | None]:
@@ -177,6 +167,16 @@ def _map_to_palette(lab_vector: np.ndarray) -> str:
     return _PALETTE_RGB[index][0]
 
 
+def _rank_palette_colors(centers: np.ndarray, shares: np.ndarray) -> list[tuple[str, float]]:
+    aggregated: dict[str, float] = {}
+    for idx, share in enumerate(shares):
+        if share <= 0:
+            continue
+        color_name = _map_to_palette(centers[idx])
+        aggregated[color_name] = aggregated.get(color_name, 0.0) + float(share)
+    return sorted(aggregated.items(), key=lambda item: item[1], reverse=True)
+
+
 def get_colors(image_path: str) -> ColorResult:
     """Return primary/secondary colors (human readable) from an image."""
 
@@ -194,10 +194,15 @@ def get_colors(image_path: str) -> ColorResult:
     return get_colors_from_image(image)
 
 
-def get_colors_from_image(image: Image.Image) -> ColorResult:
+def get_colors_from_image(
+    image: Image.Image,
+    *,
+    mask: np.ndarray | None = None,
+    use_mask: bool | None = None,
+) -> ColorResult:
     """Return primary/secondary colors from a preloaded image."""
 
-    image = _center_crop(image.convert("RGB"))
+    image = image.convert("RGB")
 
     mask_method: MaskMethod = (
         settings.ai_color_mask_method
@@ -208,8 +213,10 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
         LOGGER.info("ai.color.opencv_missing_fallback", extra={"fallback": "heuristic"})
         mask_method = "heuristic"
 
-    mask: np.ndarray | None = None
-    if settings.ai_color_use_mask:
+    if use_mask is None:
+        use_mask = settings.ai_color_use_mask
+
+    if mask is None and use_mask:
         try:
             mask = build_foreground_mask(image, method=mask_method)
         except Exception as exc:
@@ -248,8 +255,9 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
             secondary_confidence=None,
         )
 
+    cluster_count = min(max(settings.ai_color_topk + 2, 3), len(lab_pixels))
     kmeans = _get_kmeans_class()(
-        n_clusters=min(5, len(lab_pixels)),
+        n_clusters=cluster_count,
         n_init=6,
         random_state=0,
     )
@@ -272,12 +280,9 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
         valid_indices = [int(np.argmax(shares))]
 
     ranked = sorted(valid_indices, key=lambda idx: shares[idx], reverse=True)
-    topk = min(settings.ai_color_topk, len(ranked))
-
-    chosen = []
-    for idx in ranked[:topk]:
-        color_name = _map_to_palette(centers[idx])
-        chosen.append((color_name, shares[idx]))
+    aggregated = _rank_palette_colors(centers[ranked], shares[ranked])
+    topk = min(settings.ai_color_topk, len(aggregated))
+    chosen = aggregated[:topk]
 
     if not chosen:
         return ColorResult(
@@ -290,7 +295,7 @@ def get_colors_from_image(image: Image.Image) -> ColorResult:
     primary_name, primary_share = chosen[0]
     secondary_name = None
     secondary_share = None
-    if len(chosen) > 1:
+    if len(chosen) > 1 and chosen[1][1] >= 0.08:
         secondary_name = chosen[1][0]
         secondary_share = chosen[1][1]
 

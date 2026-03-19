@@ -107,6 +107,9 @@ def update_item(
     secondary_color: str | None = None,
     ai_materials: list[str] | None = None,
     ai_style_tags: list[str] | None = None,
+    ai_attribute_tags: list[str] | None = None,
+    ai_embedding: list[float] | None = None,
+    ai_embedding_model: str | None = None,
     ai_confidence: float | None = None,
     commit: bool = True,
 ) -> WardrobeItem:
@@ -127,6 +130,12 @@ def update_item(
         item.ai_materials = ai_materials
     if ai_style_tags is not None:
         item.ai_style_tags = ai_style_tags
+    if ai_attribute_tags is not None:
+        item.ai_attribute_tags = ai_attribute_tags
+    if ai_embedding is not None:
+        item.ai_embedding = ai_embedding
+    if ai_embedding_model is not None:
+        item.ai_embedding_model = ai_embedding_model
     if ai_confidence is not None:
         item.ai_confidence = ai_confidence
 
@@ -336,6 +345,7 @@ def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
             item.ai_confidence,
             item.ai_materials,
             item.ai_style_tags,
+            item.ai_attribute_tags,
             item.subcategory,
         )
     ):
@@ -347,6 +357,7 @@ def _build_item_ai_attributes(item: WardrobeItem) -> ItemAIAttributes | None:
             "subcategory": item.subcategory,
             "materials": item.ai_materials or [],
             "style_tags": (item.ai_style_tags or [])[:3],
+            "attributes": (item.ai_attribute_tags or [])[:3],
             "confidence": item.ai_confidence,
         }
     )
@@ -367,8 +378,12 @@ def _build_base_ai_preview(item: WardrobeItem) -> ItemAIPreview:
             "secondary_color_confidence": payload.get("secondary_color_confidence"),
             "materials": payload.get("materials", list(item.ai_materials or [])),
             "style_tags": payload.get("style_tags", list(item.ai_style_tags or [])[:3]),
+            "attributes": payload.get("attributes", list(item.ai_attribute_tags or [])[:3]),
             "tags": payload.get("tags", [tag.tag for tag in item.tags]),
+            "tag_confidences": payload.get("tag_confidences", {}),
             "confidence": payload.get("confidence", item.ai_confidence),
+            "uncertain": payload.get("uncertain", False),
+            "uncertain_fields": payload.get("uncertain_fields", []),
             "pending": bool(job_state and job_state.pending),
             "job": job_state.model_dump(by_alias=True) if job_state else None,
         }

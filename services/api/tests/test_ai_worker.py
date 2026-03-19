@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -51,6 +52,7 @@ def _prepare_worker_settings(
     ai_tasks.settings = settings
     monkeypatch.setattr(storage_utils, "get_storage_adapter", lambda settings: storage)
     monkeypatch.setattr(worker_module, "SessionLocal", lambda: nullcontext(session))
+    monkeypatch.setattr(worker_module.AIWorker, "_ensure_pipeline_ready", lambda self: None)
     if session.get(User, DEFAULT_USER_ID) is None:
         session.add(User(id=DEFAULT_USER_ID, email="worker@example.com"))
         session.commit()
@@ -76,17 +78,26 @@ def _mock_pipeline_result() -> PipelineResult:
             "category_confidence": 0.91,
             "materials": [("wool", 0.83)],
             "style_tags": [("heritage", 0.79)],
+            "attribute_tags": [("tailored", 0.71)],
             "subcategory": "coat",
             "subcategory_confidence": 0.8,
             "scores": {
                 "category": {"outerwear": 0.91},
                 "materials": {"wool": 0.83},
                 "style_tags": {"heritage": 0.79},
+                "attribute_tags": {"tailored": 0.71},
                 "subcategory": {"coat": 0.8},
             },
+            "model_name": "stub-fashionclip",
         },
         cached=False,
+        embedding=np.array([0.12, -0.34, 0.56], dtype=np.float32),
+        embedding_model="stub-fashionclip",
     )
+
+
+def _as_utc(value: dt.datetime) -> dt.datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=dt.UTC)
 
 
 def test_worker_processes_pending_job_and_marks_completed(db_session, tmp_path, monkeypatch):
@@ -129,7 +140,9 @@ def test_worker_processes_pending_job_and_marks_completed(db_session, tmp_path, 
     assert refreshed.secondary_color == "Tan"
     assert refreshed.ai_materials == ["wool"]
     assert refreshed.ai_style_tags == ["heritage"]
-    assert sorted(tag.tag for tag in refreshed.tags) == ["heritage", "wool"]
+    assert refreshed.ai_attribute_tags == ["tailored"]
+    assert refreshed.ai_embedding_model == "stub-fashionclip"
+    assert sorted(tag.tag for tag in refreshed.tags) == ["heritage", "tailored", "wool"]
     assert job is not None
     assert job.status == AIJobStatus.COMPLETED.value
     assert job.attempts == 1
@@ -139,7 +152,8 @@ def test_worker_processes_pending_job_and_marks_completed(db_session, tmp_path, 
     assert job.result_payload["subcategory"] == "coat"
     assert job.result_payload["primary_color"] == "Camel"
     assert job.result_payload["secondary_color"] == "Tan"
-    assert job.result_payload["tags"] == ["wool", "heritage"]
+    assert job.result_payload["tags"] == ["wool", "heritage", "tailored"]
+    assert job.result_payload["attributes"] == ["tailored"]
 
 
 def test_worker_retries_job_until_failure_limit(db_session, tmp_path, monkeypatch):
@@ -230,6 +244,36 @@ def test_worker_prefers_medium_variant_for_inference(db_session, tmp_path, monke
     worker = worker_module.AIWorker(get_settings())
     assert worker.run_once() is True
     assert storage.downloaded_paths == [medium_path]
+
+
+def test_worker_warms_pipeline_on_startup(monkeypatch):
+    warm_up_calls = {"count": 0}
+
+    monkeypatch.setattr(
+        worker_module,
+        "_get_ai_imports",
+        lambda: SimpleNamespace(
+            pipeline=SimpleNamespace(
+                warm_up=lambda: warm_up_calls.__setitem__("count", warm_up_calls["count"] + 1)
+                or True
+            ),
+            ai_enrichment_error=RuntimeError,
+            build_ai_preview_payload=lambda result: result,
+            run_item_enrichment=lambda session, item_id, commit=False: None,
+        ),
+    )
+
+    def run_once_and_stop(self: worker_module.AIWorker) -> bool:
+        self.request_shutdown(reason="test_complete")
+        return False
+
+    monkeypatch.setattr(worker_module.AIWorker, "run_once", run_once_and_stop)
+
+    worker = worker_module.AIWorker(get_settings())
+    worker.run_forever()
+
+    assert warm_up_calls["count"] == 1
+    assert worker.snapshot().warmup_completed_at is not None
 
 
 def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
@@ -478,7 +522,7 @@ def test_claim_next_job_reclaims_stale_running_job(db_session):
     assert refreshed.status == AIJobStatus.RUNNING.value
     assert refreshed.attempts == 2
     assert refreshed.started_at is not None
-    assert refreshed.started_at > started_at
+    assert _as_utc(refreshed.started_at) > _as_utc(started_at)
 
 
 def test_claim_next_job_marks_deleted_pending_jobs_failed(db_session):

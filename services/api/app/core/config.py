@@ -74,12 +74,16 @@ class Settings(BaseSettings):
     seed_key: str = Field(default="local-seed-v1", alias="SEED_KEY")
     ai_enable_classifier: bool = Field(default=True, alias="AI_ENABLE_CLASSIFIER")
     ai_device: str = Field(default="cpu", alias="AI_DEVICE")
+    ai_model_name: str = Field(default="hf-hub:Marqo/marqo-fashionCLIP", alias="AI_MODEL_NAME")
+    ai_model_pretrained: str | None = Field(default=None, alias="AI_MODEL_PRETRAINED")
+    ai_model_cache_dir: str = Field(default="./media/.model_cache", alias="AI_MODEL_CACHE_DIR")
     ai_onnx: bool = Field(default=False, alias="AI_ONNX")
     ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
     ai_subcategory_confidence_threshold: float = Field(
         default=0.5,
         alias="AI_SUBCATEGORY_CONFIDENCE_THRESHOLD",
     )
+    ai_tag_confidence_threshold: float = Field(default=0.28, alias="AI_TAG_CONFIDENCE_THRESHOLD")
     ai_color_use_mask: bool = Field(default=True, alias="AI_COLOR_USE_MASK")
     ai_color_mask_method: Literal["grabcut", "heuristic"] = Field(
         default="grabcut", alias="AI_COLOR_MASK_METHOD"
@@ -138,6 +142,20 @@ class Settings(BaseSettings):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator("ai_model_name", "ai_model_cache_dir")
+    @classmethod
+    def normalize_ai_string(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized
+
+    @field_validator("ai_model_pretrained")
+    @classmethod
+    def normalize_ai_optional_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
     @model_validator(mode="after")
     def finalize_settings(self) -> Settings:
         if self.run_migrations_on_start is None:
@@ -174,6 +192,12 @@ class Settings(BaseSettings):
             or self.ai_subcategory_confidence_threshold > 1
         ):
             self.ai_subcategory_confidence_threshold = 0.5
+        if self.ai_tag_confidence_threshold <= 0 or self.ai_tag_confidence_threshold > 1:
+            self.ai_tag_confidence_threshold = 0.28
+        if not self.ai_model_name:
+            self.ai_model_name = "hf-hub:Marqo/marqo-fashionCLIP"
+        if not self.ai_model_cache_dir:
+            self.ai_model_cache_dir = "./media/.model_cache"
         if self.ai_color_mask_method not in {"grabcut", "heuristic"}:
             self.ai_color_mask_method = "grabcut"
         if self.ai_color_min_foreground_pixels <= 0:
@@ -242,6 +266,10 @@ class Settings(BaseSettings):
     @property
     def media_root_path(self) -> Path:
         return Path(self.media_root).expanduser().resolve()
+
+    @property
+    def ai_model_cache_dir_path(self) -> Path:
+        return Path(self.ai_model_cache_dir).expanduser().resolve()
 
     @property
     def seed_on_start(self) -> bool:

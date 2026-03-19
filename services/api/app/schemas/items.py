@@ -53,6 +53,7 @@ class ItemAIAttributes(CamelModel):
     subcategory: str | None = None
     materials: list[str] = Field(default_factory=list)
     style_tags: list[str] = Field(default_factory=list, alias="styleTags")
+    attributes: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, alias="confidence")
 
 
@@ -103,7 +104,11 @@ class ItemAIPreview(CamelModel):
     secondary_color_confidence: float | None = Field(default=None, alias="secondaryColorConfidence")
     materials: list[str] = Field(default_factory=list)
     style_tags: list[str] = Field(default_factory=list, alias="styleTags")
+    attributes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    tag_confidences: dict[str, float] = Field(default_factory=dict, alias="tagConfidences")
     confidence: float | None = Field(default=None, alias="confidence")
+    uncertain: bool = False
+    uncertain_fields: list[str] = Field(default_factory=list, alias="uncertainFields")
     pending: bool = False
     job: AIJobState | None = None

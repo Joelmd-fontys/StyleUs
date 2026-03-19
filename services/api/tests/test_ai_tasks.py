@@ -6,6 +6,7 @@ import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -68,12 +69,14 @@ def _mock_pipeline_result(
     category_conf: float,
     materials: list[tuple[str, float]],
     style_tags: list[tuple[str, float]],
+    attribute_tags: list[tuple[str, float]] | None = None,
     subcategory: str | None = None,
     subcategory_conf: float | None = None,
 ) -> PipelineResult:
     scores_category = {category: category_conf}
     score_materials = dict(materials)
     score_style_tags = dict(style_tags)
+    score_attribute_tags = dict(attribute_tags or [])
     return PipelineResult(
         colors=color.ColorResult(
             primary_color=primary,
@@ -86,16 +89,21 @@ def _mock_pipeline_result(
             "category_confidence": category_conf,
             "materials": materials,
             "style_tags": style_tags,
+            "attribute_tags": attribute_tags or [],
             "subcategory": subcategory,
             "subcategory_confidence": subcategory_conf,
             "scores": {
                 "category": scores_category,
                 "materials": score_materials,
                 "style_tags": score_style_tags,
+                "attribute_tags": score_attribute_tags,
                 "subcategory": {subcategory: subcategory_conf} if subcategory else {},
             },
+            "model_name": "stub-fashionclip",
         },
         cached=False,
+        embedding=np.array([0.11, -0.22, 0.33], dtype=np.float32),
+        embedding_model="stub-fashionclip",
     )
 
 
@@ -131,6 +139,7 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
         category_conf=0.92,
         materials=[("leather", 0.88)],
         style_tags=[("heritage", 0.81)],
+        attribute_tags=[("tailored", 0.74)],
         subcategory="coat",
         subcategory_conf=0.91,
     )
@@ -147,9 +156,12 @@ def test_classify_and_update_item_populates_empty_fields(db_session, tmp_path, m
     assert refreshed.color == "Camel"
     assert refreshed.ai_confidence == pytest.approx(0.92)
     refreshed_tags = sorted(tag.tag for tag in refreshed.tags)
-    assert refreshed_tags == ["heritage", "leather"]
+    assert refreshed_tags == ["heritage", "leather", "tailored"]
     assert refreshed.ai_materials == ["leather"]
     assert refreshed.ai_style_tags == ["heritage"]
+    assert refreshed.ai_attribute_tags == ["tailored"]
+    assert refreshed.ai_embedding_model == "stub-fashionclip"
+    assert refreshed.ai_embedding == [0.11, -0.22, 0.33]
 
 
 def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
@@ -163,6 +175,7 @@ def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
             category_conf=0.92,
             materials=[("leather", 0.88), ("wool", 0.81)],
             style_tags=[("heritage", 0.84), ("minimal", 0.77)],
+            attribute_tags=[("tailored", 0.73)],
             subcategory="coat",
             subcategory_conf=0.91,
         )
@@ -176,8 +189,16 @@ def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
     assert payload["secondary_color_confidence"] == pytest.approx(0.74)
     assert payload["materials"] == ["leather", "wool"]
     assert payload["style_tags"] == ["heritage", "minimal"]
+    assert payload["attributes"] == ["tailored"]
     assert payload["tags"] == ["leather", "heritage", "wool"]
+    assert payload["tag_confidences"] == {
+        "leather": pytest.approx(0.88),
+        "heritage": pytest.approx(0.84),
+        "wool": pytest.approx(0.81),
+    }
     assert payload["confidence"] == pytest.approx(0.92)
+    assert payload["uncertain"] is False
+    assert payload["uncertain_fields"] == []
 
 
 def test_classification_limits_tags_to_top_three(db_session, tmp_path, monkeypatch):

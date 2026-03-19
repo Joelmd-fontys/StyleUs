@@ -51,6 +51,9 @@ class WardrobeItem(Base):
     subcategory: Mapped[str | None] = mapped_column(String(length=100), nullable=True)
     ai_materials: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     ai_style_tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    ai_attribute_tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    ai_embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    ai_embedding_model: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
