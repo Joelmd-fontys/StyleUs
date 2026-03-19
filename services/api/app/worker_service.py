@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.core.logging import logger
+from app.db.migrations import SchemaCompatibilityError, ensure_schema, ensure_schema_compatible
 from app.db.session import SessionLocal
 from app.services import ai_jobs as ai_jobs_service
 
@@ -27,11 +28,60 @@ def _get_ai_worker_class() -> type[AIWorker]:
     return AIWorker
 
 
+def _maybe_run_migrations() -> None:
+    settings = get_settings()
+    if not settings.run_migrations_on_start:
+        logger.info(
+            "startup.migrations_skipped",
+            extra={"app_env": settings.app_env, "service": "ai-worker"},
+        )
+        return
+
+    logger.info(
+        "startup.migrations_started",
+        extra={"app_env": settings.app_env, "service": "ai-worker"},
+    )
+    ensure_schema()
+
+
+def _maybe_validate_schema() -> None:
+    settings = get_settings()
+    if not settings.is_secure_env:
+        logger.info(
+            "startup.schema_validation_skipped",
+            extra={
+                "app_env": settings.app_env,
+                "service": "ai-worker",
+                "reason": "non_secure_env",
+            },
+        )
+        return
+
+    logger.info(
+        "startup.schema_validation_started",
+        extra={"app_env": settings.app_env, "service": "ai-worker"},
+    )
+    try:
+        ensure_schema_compatible()
+    except SchemaCompatibilityError as exc:
+        logger.exception(
+            "startup.schema_incompatible",
+            extra={"app_env": settings.app_env, "service": "ai-worker", "error": str(exc)},
+        )
+        raise
+    logger.info(
+        "startup.schema_validation_complete",
+        extra={"app_env": settings.app_env, "service": "ai-worker"},
+    )
+
+
 def create_worker_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        await anyio.to_thread.run_sync(_maybe_run_migrations)
+        await anyio.to_thread.run_sync(_maybe_validate_schema)
         worker = _get_ai_worker_class()(settings)
         app.state.ai_worker = worker
         worker.start_in_background(thread_name="styleus-ai-worker-service")

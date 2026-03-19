@@ -18,7 +18,7 @@ from app.api import get_api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
-from app.db.migrations import ensure_schema
+from app.db.migrations import SchemaCompatibilityError, ensure_schema, ensure_schema_compatible
 
 if TYPE_CHECKING:
     from app.ai.worker import AIWorker
@@ -78,6 +78,26 @@ def _maybe_run_migrations(settings: Settings) -> None:
     ensure_schema()
 
 
+def _maybe_validate_schema(settings: Settings) -> None:
+    if not settings.is_secure_env:
+        logger.info(
+            "startup.schema_validation_skipped",
+            extra={"app_env": settings.app_env, "reason": "non_secure_env"},
+        )
+        return
+
+    logger.info("startup.schema_validation_started", extra={"app_env": settings.app_env})
+    try:
+        ensure_schema_compatible()
+    except SchemaCompatibilityError as exc:
+        logger.exception(
+            "startup.schema_incompatible",
+            extra={"app_env": settings.app_env, "error": str(exc)},
+        )
+        raise
+    logger.info("startup.schema_validation_complete", extra={"app_env": settings.app_env})
+
+
 def _maybe_run_seed(settings: Settings) -> None:
     if not settings.run_seed_on_start:
         logger.info("startup.seed_skipped", extra={"app_env": settings.app_env})
@@ -104,6 +124,7 @@ def create_app(*, start_worker: bool = False) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         worker: AIWorker | None = None
         await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
+        await anyio.to_thread.run_sync(_maybe_validate_schema, settings)
         await anyio.to_thread.run_sync(_maybe_run_seed, settings)
         if start_worker:
             worker = _get_ai_worker_class()(settings)

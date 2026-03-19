@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.config import settings
+from app.core.config import get_settings
+from app.db.migrations import SchemaCompatibilityError, ensure_schema_compatible
 from app.db.session import get_engine
 from app.schemas.common import HealthResponse
 
@@ -15,6 +16,7 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponse, response_model_by_alias=True)
 def health_check() -> HealthResponse:
+    settings = get_settings()
     try:
         with get_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -23,5 +25,14 @@ def health_check() -> HealthResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database unavailable",
         ) from exc
+
+    if settings.is_secure_env:
+        try:
+            ensure_schema_compatible()
+        except SchemaCompatibilityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database schema out of date",
+            ) from exc
 
     return HealthResponse(status="ok", version=settings.app_version, database="ok")
