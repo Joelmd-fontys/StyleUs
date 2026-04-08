@@ -19,7 +19,7 @@ vi.mock('./supabase', () => ({
   getSupabaseClient: getSupabaseClientMock
 }));
 
-import { getItems, uploadFile } from './api';
+import { getItems, patchItem, uploadFile } from './api';
 
 describe('api bearer propagation', () => {
   const fetchMock = vi.fn();
@@ -84,6 +84,47 @@ describe('api bearer propagation', () => {
       contentType: 'image/png',
       upsert: false
     });
+  });
+
+  it('includes review feedback in patch payloads', async () => {
+    getAccessTokenMock.mockResolvedValue('token-456');
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ id: 'item-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await patchItem('item-1', {
+      category: 'top',
+      color: 'Black',
+      reviewFeedback: {
+        predictedCategory: 'top',
+        predictionConfidence: 0.84,
+        acceptedDirectly: true
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/items/item-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          Authorization: 'Bearer token-456',
+          'Content-Type': 'application/json'
+        }),
+        body: JSON.stringify({
+          category: 'top',
+          color: 'Black',
+          reviewFeedback: {
+            predictedCategory: 'top',
+            predictionConfidence: 0.84,
+            acceptedDirectly: true
+          }
+        })
+      })
+    );
   });
 
   it('falls back to fetch for mock upload endpoints', async () => {

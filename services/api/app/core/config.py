@@ -79,9 +79,17 @@ class Settings(BaseSettings):
         default="laion2b_s34b_b79k",
         alias="AI_MODEL_PRETRAINED",
     )
+    ai_classification_input: Literal["full", "focus", "masked"] = Field(
+        default="full",
+        alias="AI_CLASSIFICATION_INPUT",
+    )
     ai_model_cache_dir: str = Field(default="./media/.model_cache", alias="AI_MODEL_CACHE_DIR")
     ai_onnx: bool = Field(default=False, alias="AI_ONNX")
-    ai_confidence_threshold: float = Field(default=0.6, alias="AI_CONFIDENCE_THRESHOLD")
+    ai_confidence_threshold: float = Field(default=0.55, alias="AI_CONFIDENCE_THRESHOLD")
+    ai_accessory_confidence_threshold: float = Field(
+        default=0.62,
+        alias="AI_ACCESSORY_CONFIDENCE_THRESHOLD",
+    )
     ai_subcategory_confidence_threshold: float = Field(
         default=0.45,
         alias="AI_SUBCATEGORY_CONFIDENCE_THRESHOLD",
@@ -189,7 +197,12 @@ class Settings(BaseSettings):
         if self.ai_color_topk <= 0:
             self.ai_color_topk = 2
         if self.ai_confidence_threshold <= 0 or self.ai_confidence_threshold > 1:
-            self.ai_confidence_threshold = 0.6
+            self.ai_confidence_threshold = 0.55
+        if (
+            self.ai_accessory_confidence_threshold <= 0
+            or self.ai_accessory_confidence_threshold > 1
+        ):
+            self.ai_accessory_confidence_threshold = 0.62
         if (
             self.ai_subcategory_confidence_threshold <= 0
             or self.ai_subcategory_confidence_threshold > 1
@@ -201,6 +214,8 @@ class Settings(BaseSettings):
             self.ai_model_name = "ViT-B-32"
         if self.ai_model_name == "ViT-B-32" and not self.ai_model_pretrained:
             self.ai_model_pretrained = "laion2b_s34b_b79k"
+        if self.ai_classification_input not in {"full", "focus", "masked"}:
+            self.ai_classification_input = "full"
         if not self.ai_model_cache_dir:
             self.ai_model_cache_dir = "./media/.model_cache"
         if self.ai_color_mask_method not in {"grabcut", "heuristic"}:

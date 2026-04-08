@@ -29,7 +29,7 @@ const mockItem: WardrobeItem = {
   createdAt: new Date().toISOString(),
   tags: ['streetwear', 'leather'],
   imageMetadata: undefined,
-  aiConfidence: 0.84
+  aiConfidence: 0.12
 };
 
 const mockAI = {
@@ -130,7 +130,12 @@ describe('UploadReviewPage', () => {
         subcategory: 'sneakers',
         primaryColor: 'black',
         secondaryColor: 'gray',
-        brand: 'Mock'
+        brand: 'Mock',
+        reviewFeedback: {
+          predictedCategory: 'shoes',
+          predictionConfidence: 0.84,
+          acceptedDirectly: true
+        }
       })
     );
     expect(loadItemsMock).toHaveBeenCalled();
@@ -191,7 +196,12 @@ describe('UploadReviewPage', () => {
         subcategory: 'boots',
         primaryColor: 'Midnight Blue',
         tags: ['edited', 'custom'],
-        brand: 'Edited Brand'
+        brand: 'Edited Brand',
+        reviewFeedback: {
+          predictedCategory: 'shoes',
+          predictionConfidence: 0.84,
+          acceptedDirectly: false
+        }
       })
     );
     expect(loadItemsMock).toHaveBeenCalled();

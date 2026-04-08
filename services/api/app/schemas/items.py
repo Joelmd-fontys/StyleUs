@@ -74,6 +74,12 @@ class ItemDetail(ItemBase):
     ai_job: AIJobState | None = Field(default=None, alias="aiJob")
 
 
+class ItemReviewFeedback(CamelModel):
+    predicted_category: str | None = Field(default=None, alias="predictedCategory")
+    prediction_confidence: float | None = Field(default=None, alias="predictionConfidence")
+    accepted_directly: bool = Field(alias="acceptedDirectly")
+
+
 class ItemUpdate(CamelModel):
     category: str | None = None
     subcategory: str | None = None
@@ -82,6 +88,7 @@ class ItemUpdate(CamelModel):
     tags: list[str] | None = None
     primary_color: str | None = Field(default=None, alias="primaryColor")
     secondary_color: str | None = Field(default=None, alias="secondaryColor")
+    review_feedback: ItemReviewFeedback | None = Field(default=None, alias="reviewFeedback")
 
 
 class CompleteUploadRequest(CamelModel):

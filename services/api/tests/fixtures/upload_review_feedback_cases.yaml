@@ -1,0 +1,65 @@
+cases:
+  - id: nike-review-correction
+    image: ../../app/seed/sample_images/nike.png
+    historical_predicted_category: accessory
+    expected_category: top
+    historical_prediction_confidence: 0.6
+    accepted_directly: false
+    source: upload_review
+    notes: Replay of a heuristic-style accessory miss on a t-shirt upload.
+  - id: adidas-review-correction
+    image: ../../app/seed/sample_images/adidas.png
+    historical_predicted_category: accessory
+    expected_category: top
+    historical_prediction_confidence: 0.61
+    accepted_directly: false
+    source: upload_review
+    notes: Replay of a heuristic-style accessory miss on a bright tee upload.
+  - id: levis-review-correction
+    image: ../../app/seed/sample_images/levis.png
+    historical_predicted_category: accessory
+    expected_category: bottom
+    historical_prediction_confidence: 0.58
+    accepted_directly: false
+    source: upload_review
+    notes: Replay of a heuristic-style accessory miss on jeans.
+  - id: uniqlo-review-correction
+    image: ../../app/seed/sample_images/uniqlo.png
+    historical_predicted_category: accessory
+    expected_category: bottom
+    historical_prediction_confidence: 0.59
+    accepted_directly: false
+    source: upload_review
+    notes: Replay of a heuristic-style accessory miss on chinos.
+  - id: hm-review-accept
+    image: ../../app/seed/sample_images/hm.png
+    historical_predicted_category: accessory
+    expected_category: accessory
+    historical_prediction_confidence: 0.76
+    accepted_directly: true
+    source: upload_review
+    notes: Accessory prediction accepted directly.
+  - id: zara-review-accept
+    image: ../../app/seed/sample_images/zara.png
+    historical_predicted_category: accessory
+    expected_category: accessory
+    historical_prediction_confidence: 0.67
+    accepted_directly: true
+    source: upload_review
+    notes: Belt prediction accepted directly at a moderate confidence.
+  - id: thenorthface-review-accept
+    image: ../../app/seed/sample_images/thenorthface.png
+    historical_predicted_category: outerwear
+    expected_category: outerwear
+    historical_prediction_confidence: 0.98
+    accepted_directly: true
+    source: upload_review
+    notes: High-confidence outerwear accept from upload review.
+  - id: converse-review-accept
+    image: ../../app/seed/sample_images/converse.png
+    historical_predicted_category: shoes
+    expected_category: shoes
+    historical_prediction_confidence: 0.99
+    accepted_directly: true
+    source: upload_review
+    notes: High-confidence footwear accept from upload review.

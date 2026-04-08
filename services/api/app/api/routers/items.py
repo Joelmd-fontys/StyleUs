@@ -111,7 +111,12 @@ def update_wardrobe_item(
         tags=payload.tags,
         primary_color=payload.primary_color,
         secondary_color=payload.secondary_color,
+        commit=False,
     )
+    if payload.review_feedback is not None:
+        items_service.record_review_feedback(db, updated, review_feedback=payload.review_feedback)
+    db.commit()
+    db.refresh(updated)
     return items_service.to_item_detail(updated)
 
 

@@ -146,14 +146,15 @@ export const useWardrobeStore: WardrobeStore = create<WardrobeState>((set, get) 
         if (!existing) {
           throw new Error('Item not found');
         }
+        const { reviewFeedback: _reviewFeedback, ...itemPayload } = payload;
         updated = mockSaveWardrobeItem({
           ...existing,
-          ...payload,
-          tags: payload.tags ?? existing.tags,
-          brand: payload.brand ?? existing.brand,
-          color: payload.color ?? existing.color,
-          category: payload.category ?? existing.category,
-          subcategory: payload.subcategory ?? existing.subcategory
+          ...itemPayload,
+          tags: itemPayload.tags ?? existing.tags,
+          brand: itemPayload.brand ?? existing.brand,
+          color: itemPayload.color ?? existing.color,
+          category: itemPayload.category ?? existing.category,
+          subcategory: itemPayload.subcategory ?? existing.subcategory
         });
       }
       get().replaceItem(id, updated);

@@ -23,6 +23,8 @@ os.environ.setdefault("APP_VERSION", "0.1.0")
 os.environ.setdefault("RUN_MIGRATIONS_ON_START", "false")
 os.environ.setdefault("RUN_SEED_ON_START", "false")
 os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
+os.environ["AI_CONFIDENCE_THRESHOLD"] = "0.55"
+os.environ["AI_CLASSIFICATION_INPUT"] = "full"
 
 from app.api.deps import get_db  # noqa: E402
 from app.core.auth import clear_auth_cache  # noqa: E402

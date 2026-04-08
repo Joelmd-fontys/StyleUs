@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.db.types import GUID
 
 if TYPE_CHECKING:
+    from app.models.ai_feedback import AIReviewFeedbackEvent
     from app.models.ai_job import AIJob
     from app.models.user import User
 
@@ -73,6 +74,12 @@ class WardrobeItem(Base):
     )
     tags: Mapped[list[ItemTag]] = relationship(
         "ItemTag",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    review_feedback_events: Mapped[list[AIReviewFeedbackEvent]] = relationship(
+        "AIReviewFeedbackEvent",
         back_populates="item",
         cascade="all, delete-orphan",
         lazy="selectin",

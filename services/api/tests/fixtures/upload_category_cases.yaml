@@ -1,0 +1,51 @@
+cases:
+  - id: nike-tee
+    image: ../../app/seed/sample_images/nike.png
+    expected_category: top
+    expected_subcategory: t-shirt
+    notes: Flat-lay branded t-shirt on a dark background.
+  - id: adidas-tee
+    image: ../../app/seed/sample_images/adidas.png
+    expected_category: top
+    expected_subcategory: t-shirt
+    notes: Product-style t-shirt image with bright background.
+  - id: levis-jeans
+    image: ../../app/seed/sample_images/levis.png
+    expected_category: bottom
+    expected_subcategory: jeans
+    notes: Hanging denim jeans with minimal foreground mask.
+  - id: uniqlo-chinos
+    image: ../../app/seed/sample_images/uniqlo.png
+    expected_category: bottom
+    expected_subcategory: chinos
+    notes: Product image of slim chino pants.
+  - id: northface-puffer
+    image: ../../app/seed/sample_images/thenorthface.png
+    expected_category: outerwear
+    expected_subcategory: puffer
+    notes: Puffer jacket product image with dark fill.
+  - id: patagonia-fleece
+    image: ../../app/seed/sample_images/patagonia.png
+    expected_category: outerwear
+    expected_subcategory: fleece
+    notes: Fleece jacket product image with textured body.
+  - id: converse-sneaker
+    image: ../../app/seed/sample_images/converse.png
+    expected_category: shoes
+    expected_subcategory: sneakers
+    notes: Single shoe studio shot with large white background.
+  - id: drmartens-boot
+    image: ../../app/seed/sample_images/drmartens.png
+    expected_category: shoes
+    expected_subcategory: boots
+    notes: Boot product image with strong dark silhouette.
+  - id: hm-cap
+    image: ../../app/seed/sample_images/hm.png
+    expected_category: accessory
+    expected_subcategory: cap
+    notes: Cap product image where accessory classification matters.
+  - id: zara-belt
+    image: ../../app/seed/sample_images/zara.png
+    expected_category: accessory
+    expected_subcategory: belt
+    notes: Long belt image with wide background and thin foreground.

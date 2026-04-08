@@ -22,7 +22,7 @@ LOGGER = logging.getLogger("app.ai.pipeline")
 _EMB_CACHE_DIR = settings.media_root_path / ".emb_cache"
 _EMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-_PIPELINE_CACHE_VERSION = "fashion-v3-full-image"
+_PIPELINE_CACHE_VERSION = "fashion-v4-classification-input"
 _SUBCATEGORY_FALLBACK_CONFIDENCE = 0.55
 _PRECOMPUTED_CACHE_KEY_PATTERN = re.compile(r"^(?P<cache_key>[0-9a-f]{64})(?:[_-].+)?$")
 
@@ -116,6 +116,7 @@ class PipelineResult:
     inference_duration_ms: float = 0.0
     foreground_ratio: float = 0.0
     preprocessing_method: str | None = None
+    classification_input: str = "full"
 
 
 def _get_color_module() -> Any:
@@ -253,6 +254,18 @@ def _prepare_focus_image(source_image: Image.Image) -> GarmentFocus:
         },
     )
     return focus
+
+
+def _classification_image(
+    source_image: Image.Image,
+    focus: GarmentFocus,
+) -> tuple[Image.Image, str]:
+    strategy = settings.ai_classification_input
+    if strategy == "focus":
+        return focus.image, "focus"
+    if strategy == "masked":
+        return focus.masked_image, "masked"
+    return source_image, "full"
 
 
 def _normalize_token(value: str | None) -> str:
@@ -438,11 +451,12 @@ def run(image_path: Path) -> PipelineResult:
     else:
         try:
             predictor = _get_predictor()
+            classification_image, classification_input = _classification_image(source_image, focus)
             embedding_started = time.perf_counter()
             embedding, cached = _load_embedding(
                 image_path,
                 predictor,
-                image=source_image,
+                image=classification_image,
             )
             embedding_duration_ms = round((time.perf_counter() - embedding_started) * 1000, 2)
             embedding_model = getattr(predictor, "model_name", None)
@@ -465,16 +479,21 @@ def run(image_path: Path) -> PipelineResult:
                     "style_tags": clip_result.get("style_tags", [])[:3],
                     "attribute_tags": clip_result.get("attribute_tags", [])[:3],
                     "model_name": clip_result.get("model_name"),
+                    "classification_input": classification_input,
                 },
             )
         except RuntimeError as exc:
             LOGGER.warning("ai.pipeline.predictor_unavailable", extra={"error": str(exc)})
             clip_result = _heuristic_prediction(image_path, color_result)
             cached = False
+            classification_input = "heuristic"
         except Exception as exc:  # pragma: no cover - defensive fallback
             LOGGER.exception("ai.pipeline.clip_failed", extra={"error": str(exc)})
             clip_result = _heuristic_prediction(image_path, color_result)
             cached = False
+            classification_input = "heuristic"
+    if not settings.ai_enable_classifier:
+        classification_input = "heuristic"
 
     inference_duration_ms = round(
         color_duration_ms + embedding_duration_ms + prediction_duration_ms,
@@ -492,6 +511,7 @@ def run(image_path: Path) -> PipelineResult:
             "inference_duration_ms": inference_duration_ms,
             "foreground_ratio": round(focus.foreground_ratio, 4),
             "preprocessing_method": focus.method or "none",
+            "classification_input": classification_input,
         },
     )
     return PipelineResult(
@@ -507,4 +527,5 @@ def run(image_path: Path) -> PipelineResult:
         inference_duration_ms=inference_duration_ms,
         foreground_ratio=focus.foreground_ratio,
         preprocessing_method=focus.method,
+        classification_input=classification_input,
     )

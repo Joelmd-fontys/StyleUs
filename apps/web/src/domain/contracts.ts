@@ -14,6 +14,12 @@ export type GetItemResponse = WardrobeItem;
 
 export type PatchItemResponse = WardrobeItem;
 
+export interface ReviewFeedback {
+  predictedCategory: string | null;
+  predictionConfidence: number | null;
+  acceptedDirectly: boolean;
+}
+
 export interface AIJobState {
   id: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | string;
@@ -33,6 +39,7 @@ export interface PatchItemRequest {
   tags?: WardrobeItem['tags'];
   primaryColor?: string | null;
   secondaryColor?: string | null;
+  reviewFeedback?: ReviewFeedback;
 }
 
 export interface CompleteUploadRequest {

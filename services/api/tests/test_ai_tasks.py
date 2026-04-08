@@ -201,24 +201,24 @@ def test_build_ai_preview_payload_preserves_full_prediction_set() -> None:
     assert payload["uncertain_fields"] == []
 
 
-def test_build_ai_preview_payload_blanks_weak_fields_and_only_flags_category_review() -> None:
+def test_build_ai_preview_payload_only_flags_subcategory_when_category_meets_floor() -> None:
     payload = ai_tasks.build_ai_preview_payload(
         _mock_pipeline_result(
             primary="Black",
             secondary="Gray",
             color_conf=0.48,
             secondary_conf=0.52,
-            category="accessory",
+            category="top",
             category_conf=0.55,
             materials=[("canvas", 0.4)],
             style_tags=[("minimal", 0.43)],
             attribute_tags=[("relaxed", 0.44)],
-            subcategory="cap",
+            subcategory="polo",
             subcategory_conf=0.32,
         )
     )
 
-    assert payload["category"] == "accessory"
+    assert payload["category"] == "top"
     assert payload["category_confidence"] == pytest.approx(0.55)
     assert payload["subcategory"] is None
     assert payload["subcategory_confidence"] is None
@@ -231,6 +231,54 @@ def test_build_ai_preview_payload_blanks_weak_fields_and_only_flags_category_rev
     assert payload["attributes"] == []
     assert payload["tags"] == []
     assert payload["tag_confidences"] == {}
+    assert payload["uncertain"] is True
+    assert payload["uncertain_fields"] == ["subcategory"]
+
+
+def test_build_ai_preview_payload_flags_mid_confidence_accessory_for_review() -> None:
+    payload = ai_tasks.build_ai_preview_payload(
+        _mock_pipeline_result(
+            primary="Black",
+            secondary=None,
+            color_conf=0.82,
+            secondary_conf=None,
+            category="accessory",
+            category_conf=0.59,
+            materials=[("leather", 0.67)],
+            style_tags=[("minimal", 0.63)],
+            attribute_tags=[("tailored", 0.58)],
+            subcategory="belt",
+            subcategory_conf=0.89,
+        )
+    )
+
+    assert payload["category"] == "accessory"
+    assert payload["category_confidence"] == pytest.approx(0.59)
+    assert payload["uncertain"] is True
+    assert payload["uncertain_fields"] == ["category"]
+
+
+def test_build_ai_preview_payload_flags_low_confidence_category_review() -> None:
+    payload = ai_tasks.build_ai_preview_payload(
+        _mock_pipeline_result(
+            primary="Camel",
+            secondary=None,
+            color_conf=0.82,
+            secondary_conf=None,
+            category="accessory",
+            category_conf=0.42,
+            materials=[("leather", 0.67)],
+            style_tags=[("minimal", 0.63)],
+            attribute_tags=[("tailored", 0.58)],
+            subcategory="belt",
+            subcategory_conf=0.89,
+        )
+    )
+
+    assert payload["category"] is None
+    assert payload["category_confidence"] is None
+    assert payload["subcategory"] is None
+    assert payload["subcategory_confidence"] is None
     assert payload["uncertain"] is True
     assert payload["uncertain_fields"] == ["category"]
 
