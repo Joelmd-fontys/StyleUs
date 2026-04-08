@@ -54,7 +54,9 @@ These values belong in Render on the API and worker services.
 | `SUPABASE_HTTP_TIMEOUT_SECONDS` | optional | Timeout for Supabase HTTP calls |
 | `AI_ENABLE_CLASSIFIER` | optional | `false` runs lightweight heuristic enrichment inline in the API; `true` enables queued CLIP inference |
 | `AI_DEVICE` | optional | Defaults to `cpu` |
+| `AI_CLASSIFICATION_INPUT` | optional | `full`, `focus`, or `masked`; production should use `full` |
 | `AI_CONFIDENCE_THRESHOLD` | optional | Category threshold |
+| `AI_ACCESSORY_CONFIDENCE_THRESHOLD` | optional | Higher review threshold for accessory predictions |
 | `AI_SUBCATEGORY_CONFIDENCE_THRESHOLD` | optional | Subcategory threshold |
 
 Local-only backend settings:
@@ -93,7 +95,7 @@ Render API:
 
 - all backend required values
 - `CORS_ORIGINS` must include the active Vercel origin
-- `AI_ENABLE_CLASSIFIER=false` is the free-tier default
+- `AI_ENABLE_CLASSIFIER=true` is the intended production default
 - build from `services/api/Dockerfile`
 
 Render AI worker:
@@ -107,8 +109,8 @@ Render AI worker:
 - `AI_JOB_MAX_ATTEMPTS`
 - `AI_JOB_STALE_AFTER_SECONDS`
 - build from `services/api/Dockerfile.worker`
-- keep `AI_ENABLE_CLASSIFIER=false` on free tier so the worker stays disabled and healthy
-- the current PyTorch/OpenCLIP worker warmup reaches about `1489 MB` RSS locally, so only turn classifier mode back on with a higher-memory instance
+- keep `AI_CLASSIFICATION_INPUT=full` in production so benchmarked behavior matches the live review flow
+- the current PyTorch/OpenCLIP worker warmup reaches about `1600 MB` RSS locally, so production should use a higher-memory worker instance
 
 Supabase:
 

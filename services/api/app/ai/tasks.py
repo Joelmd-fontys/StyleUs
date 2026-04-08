@@ -99,14 +99,33 @@ def _build_tag_confidences(
 
 def _build_uncertain_fields(result: PipelineResult) -> list[str]:
     clip = result.clip
+    uncertain_fields: list[str] = []
+
     category_confidence = float(clip.get("category_confidence") or 0.0)
-    if not clip.get("category") or category_confidence < settings.ai_confidence_threshold:
-        return ["category"]
-    return []
+    category = _normalize_optional_label(cast(str | None, clip.get("category")))
+    if not category or category_confidence < _category_review_threshold(category):
+        uncertain_fields.append("category")
+        return uncertain_fields
+
+    subcategory_confidence = float(clip.get("subcategory_confidence") or 0.0)
+    subcategory = _normalize_optional_label(cast(str | None, clip.get("subcategory")))
+    if not subcategory or subcategory_confidence < _effective_subcategory_threshold():
+        uncertain_fields.append("subcategory")
+
+    return uncertain_fields
 
 
 def _effective_subcategory_threshold() -> float:
     return max(settings.ai_subcategory_confidence_threshold, _SUBCATEGORY_PREVIEW_MIN_CONFIDENCE)
+
+
+def _category_review_threshold(category: str | None) -> float:
+    if category == "accessory":
+        return max(
+            settings.ai_confidence_threshold,
+            settings.ai_accessory_confidence_threshold,
+        )
+    return settings.ai_confidence_threshold
 
 
 def _effective_tag_threshold() -> float:

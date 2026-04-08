@@ -178,3 +178,19 @@ def test_supabase_http_timeout_defaults_to_positive_value(monkeypatch):
     )
 
     assert settings.supabase_http_timeout_seconds == 15.0
+
+
+def test_ai_classification_input_defaults_to_full(monkeypatch):
+    _clear_startup_env(monkeypatch)
+    settings = Settings(
+        APP_ENV="local",
+        DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/postgres",
+        SUPABASE_URL="https://project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role-key",
+        SUPABASE_STORAGE_BUCKET="wardrobe-images",
+        _env_file=None,
+    )
+
+    assert settings.ai_classification_input == "full"
+    assert settings.ai_confidence_threshold == 0.55
+    assert settings.ai_accessory_confidence_threshold == 0.62

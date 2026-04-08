@@ -5,7 +5,7 @@ import { useWardrobeStore } from '../store/wardrobe';
 import { cn } from '../lib/utils';
 import { WardrobeCategory, WardrobeSubcategory } from '../domain/types';
 import { getSubcategories, toDisplayLabel, UPLOAD_REVIEW_CATEGORY_OPTIONS } from '../domain/labels';
-import { type AIPreviewResponse } from '../domain/contracts';
+import { type AIPreviewResponse, type ReviewFeedback } from '../domain/contracts';
 import { resolveMediaUrl } from '../lib/media';
 
 interface UploadReviewForm {
@@ -102,26 +102,6 @@ const UploadReviewPage = (): ReactElement | null => {
       setForm((prev) => ({ ...prev, subcategory: '' }));
     }
   }, [availableSubcategories, form.subcategory]);
-  const confidenceMetrics = useMemo(() => {
-    const format = (value?: number | null) =>
-      typeof value === 'number' && !Number.isNaN(value) ? Math.round(value * 100) : null;
-    return [
-      {
-        label: 'Category',
-        value: format(ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null)
-      },
-      { label: 'Subcategory', value: format(ai?.subcategoryConfidence ?? null) },
-      { label: 'Primary color', value: format(ai?.primaryColorConfidence) },
-      { label: 'Secondary color', value: format(ai?.secondaryColorConfidence) }
-    ];
-  }, [
-    ai?.categoryConfidence,
-    ai?.confidence,
-    ai?.primaryColorConfidence,
-    ai?.secondaryColorConfidence,
-    ai?.subcategoryConfidence,
-    item?.aiConfidence
-  ]);
   const uncertainFields = useMemo(() => new Set(ai?.uncertainFields ?? []), [ai?.uncertainFields]);
   const uncertaintySummary = useMemo(() => {
     const labels = (ai?.uncertainFields ?? [])
@@ -134,6 +114,12 @@ const UploadReviewPage = (): ReactElement | null => {
       'rounded-xl border border-neutral-200 bg-neutral-50/40 p-4',
       uncertainFields.has(field) && 'border-amber-300 bg-amber-50/70'
     );
+
+  const buildReviewFeedback = (acceptedDirectly: boolean): ReviewFeedback => ({
+    predictedCategory: (ai?.category ?? item?.category ?? null) as string | null,
+    predictionConfidence: ai?.categoryConfidence ?? ai?.confidence ?? item?.aiConfidence ?? null,
+    acceptedDirectly
+  });
 
   useEffect(() => {
     if (!itemId) {
@@ -225,7 +211,8 @@ const UploadReviewPage = (): ReactElement | null => {
       primaryColor: ai.primaryColor ?? null,
       secondaryColor: ai.secondaryColor ?? null,
       brand: normalizedBrand.length ? normalizedBrand : null,
-      tags: aiTagSuggestions.length ? aiTagSuggestions : item.tags
+      tags: aiTagSuggestions.length ? aiTagSuggestions : item.tags,
+      reviewFeedback: buildReviewFeedback(true)
     };
     const updated = await saveItem(itemId, payload);
     if (updated) {
@@ -251,7 +238,8 @@ const UploadReviewPage = (): ReactElement | null => {
       primaryColor: form.primaryColor || null,
       secondaryColor: form.secondaryColor || null,
       brand: normalizedBrand.length ? normalizedBrand : null,
-      tags
+      tags,
+      reviewFeedback: buildReviewFeedback(false)
     };
     const updated = await saveItem(itemId, payload);
     if (updated) {
@@ -614,44 +602,6 @@ const UploadReviewPage = (): ReactElement | null => {
                 Tags
               </p>
               <div className="mt-2">{renderTagList()}</div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs text-neutral-500">
-                <span>AI confidence</span>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-neutral-500 transition hover:text-neutral-900"
-                  onClick={() => itemId && fetchAIPreview(itemId)}
-                >
-                  Refresh
-                </button>
-              </div>
-              <div className="space-y-2">
-                {confidenceMetrics.map(({ label, value }) => (
-                  <div key={label} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-neutral-500">
-                      <span>{label}</span>
-                      <span>{value !== null ? `${value}%` : '—'}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-neutral-200">
-                      <div
-                        className={cn(
-                          'h-full rounded-full transition-all',
-                          value === null
-                            ? 'bg-neutral-300'
-                            : value >= 70
-                              ? 'bg-emerald-500'
-                              : value >= 40
-                                ? 'bg-amber-500'
-                                : 'bg-neutral-400'
-                        )}
-                        style={{ width: value !== null ? `${value}%` : '10%' }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
 

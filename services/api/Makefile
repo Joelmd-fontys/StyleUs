@@ -8,7 +8,7 @@ else
 PYTHON ?= $(VENV)/bin/python
 endif
 
-.PHONY: setup run worker worker-service migrate upgrade lint typecheck test seed reset-seed db-up db-down
+.PHONY: setup run worker worker-service migrate upgrade lint typecheck test benchmark-category review-feedback-report review-feedback-export seed reset-seed db-up db-down
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -37,6 +37,15 @@ typecheck:
 
 test:
 	$(PYTHON) -m pytest -q
+
+benchmark-category:
+	STYLEUS_RUN_CATEGORY_BENCH=1 $(PYTHON) -m app.ai.benchmark --strategies heuristic pipeline full focus
+
+review-feedback-report:
+	$(PYTHON) -m app.ai.feedback_eval --manifest tests/fixtures/upload_review_feedback_cases.yaml
+
+review-feedback-export:
+	$(PYTHON) -m app.ai.feedback_eval --output-dir media/review_feedback_eval
 
 seed:
 	$(PYTHON) -m app.seed.runner

@@ -20,7 +20,7 @@ Render API:
 
 - runs FastAPI from `services/api`
 - builds from `services/api/Dockerfile`, which installs the base runtime dependencies including `numpy` and `scikit-learn`
-- defaults to free-tier-safe heuristic enrichment when `AI_ENABLE_CLASSIFIER=false`
+- queues classifier-backed enrichment in the intended production path
 - measured locally at about `288 MB` RSS and `1.4s` for a sample heuristic enrichment run
 - validates Supabase bearer tokens
 - creates presigned upload intents
@@ -31,9 +31,9 @@ Render API:
 Render AI worker:
 
 - builds from `services/api/Dockerfile.worker`, which installs the base runtime plus the `.[ai]` extra
-- is optional in the default free-tier deployment because uploads no longer depend on it
-- should only be enabled when `AI_ENABLE_CLASSIFIER=true`
-- needs more than a 512 MB instance because the current CLIP warmup reaches about `1489 MB` RSS locally
+- is required in the intended production deployment
+- runs with `AI_ENABLE_CLASSIFIER=true`
+- needs a higher-memory instance because the current `ViT-B-32` warmup reaches about `1600 MB` RSS locally
 - runs `uvicorn app.worker_service:app`
 - starts the reusable `app/ai/worker.py` loop at startup
 - loads and warms the model state lazily on the first claimed job, then reuses it across jobs

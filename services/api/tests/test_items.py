@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from app.api.deps import DEFAULT_USER_ID
+from app.models.ai_feedback import AIReviewFeedbackEvent
 from app.models.ai_job import AIJob
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
@@ -76,6 +77,39 @@ def test_patch_updates_item_and_tags(client, db_session):
     stmt = select(ItemTag).where(ItemTag.item_id == item.id)
     tags = {tag.tag for tag in db_session.execute(stmt).scalars().all()}
     assert tags == {"minimal", "casual"}
+
+
+def test_patch_records_upload_review_feedback_event(client, db_session):
+    item, _ = seed_items(db_session)
+
+    response = client.patch(
+        f"/items/{item.id}",
+        json={
+            "category": "top",
+            "subcategory": "t-shirt",
+            "color": "green",
+            "brand": "Uniqlo",
+            "tags": ["minimal"],
+            "reviewFeedback": {
+                "predictedCategory": "outerwear",
+                "predictionConfidence": 0.58,
+                "acceptedDirectly": False,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+
+    feedback_events = db_session.execute(select(AIReviewFeedbackEvent)).scalars().all()
+    assert len(feedback_events) == 1
+    event = feedback_events[0]
+    assert event.item_id == item.id
+    assert event.user_id == DEFAULT_USER_ID
+    assert event.predicted_category == "outerwear"
+    assert event.corrected_category == "top"
+    assert event.prediction_confidence == 0.58
+    assert event.accepted_directly is False
+    assert event.source == "upload_review"
 
 
 def test_delete_marks_item_and_hides_from_listing(client, db_session):

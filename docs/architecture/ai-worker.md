@@ -2,8 +2,8 @@
 
 The API can run in two modes:
 
-- free-tier default: heuristic enrichment runs inline during upload completion and the worker can stay disabled
-- full classifier mode: a separate lightweight worker web service executes queued CLIP inference jobs
+- fallback mode: heuristic enrichment runs inline only if classifier execution is explicitly disabled or unavailable
+- production mode: a separate worker web service executes queued CLIP inference jobs
 
 ## Flow
 
@@ -23,7 +23,7 @@ The API can run in two modes:
 - failures retry until `AI_JOB_MAX_ATTEMPTS`
 - stale `running` jobs become claimable again after `AI_JOB_STALE_AFTER_SECONDS`
 
-This keeps the free-tier path usable without changing the upload UI while still preserving the queue-based worker path for higher-memory deployments.
+The queue-based worker path is the intended production truth. The heuristic path remains a fallback for local failure handling or constrained environments.
 
 ## Logs to watch
 
@@ -54,7 +54,7 @@ The hosted backend now runs as two Render web services that share the same codeb
 - Runtime: `Docker`
 - API Start Command: Docker default from `services/api/Dockerfile`
 - Worker Start Command: Docker default from `services/api/Dockerfile.worker`
-- Shared env vars: `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `AI_ENABLE_CLASSIFIER`, `AI_JOB_POLL_INTERVAL_SECONDS`, `AI_JOB_MAX_ATTEMPTS`, `AI_JOB_STALE_AFTER_SECONDS`
+- Shared env vars: `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `AI_ENABLE_CLASSIFIER`, `AI_CLASSIFICATION_INPUT`, `AI_JOB_POLL_INTERVAL_SECONDS`, `AI_JOB_MAX_ATTEMPTS`, `AI_JOB_STALE_AFTER_SECONDS`
 - Additional AI tuning vars: `AI_MODEL_NAME`, `AI_MODEL_PRETRAINED`, `AI_MODEL_CACHE_DIR`, `AI_TAG_CONFIDENCE_THRESHOLD`
 
 The repository-level [../../render.yaml](../../render.yaml) file captures this two-service definition.
@@ -62,9 +62,9 @@ The repository-level [../../render.yaml](../../render.yaml) file captures this t
 ## Memory notes
 
 - `app.main` no longer imports the AI runtime at API boot.
-- The free-tier default uses inline heuristics and avoids loading CLIP entirely.
+- The fallback mode uses inline heuristics and avoids loading CLIP entirely.
 - The worker only imports and warms the inference pipeline when it has a job to process.
 - The worker Docker image caps BLAS and Torch thread pools to reduce idle overhead on Render.
 - Measured locally, the heuristic API path is about `288 MB` RSS and `1.4s` on a sample image.
-- Measured locally, worker idle `/health` is about `110 MB` RSS while the current PyTorch/OpenCLIP warmup reaches about `1489 MB` RSS.
-- Result: free-tier deployments should leave `AI_ENABLE_CLASSIFIER=false`.
+- Measured locally, worker idle `/health` is about `110 MB` RSS while the current PyTorch/OpenCLIP warmup reaches about `1600 MB` RSS.
+- Result: production deployments should keep classifier mode enabled and use `AI_CLASSIFICATION_INPUT=full` on a higher-memory worker plan.

@@ -12,10 +12,18 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
 from app.core.config import Settings
+from app.models.ai_feedback import AIReviewFeedbackEvent
 from app.models.ai_job import AIJob, AIJobStatus
 from app.models.user import User
 from app.models.wardrobe import ItemTag, WardrobeItem
-from app.schemas.items import AIJobState, ImageMetadata, ItemAIAttributes, ItemAIPreview, ItemDetail
+from app.schemas.items import (
+    AIJobState,
+    ImageMetadata,
+    ItemAIAttributes,
+    ItemAIPreview,
+    ItemDetail,
+    ItemReviewFeedback,
+)
 from app.services.search import apply_search_filters
 from app.utils import storage as storage_utils
 
@@ -172,6 +180,31 @@ def delete_item(db: Session, item: WardrobeItem) -> None:
             db.add(item.ai_job)
         db.add(item)
         db.commit()
+
+
+def record_review_feedback(
+    db: Session,
+    item: WardrobeItem,
+    *,
+    review_feedback: ItemReviewFeedback,
+) -> AIReviewFeedbackEvent:
+    corrected_category = _normalized_item_category(item) or item.category
+    predicted_category = review_feedback.predicted_category
+    if predicted_category in _EMPTY_CATEGORY_VALUES:
+        predicted_category = None
+
+    event = AIReviewFeedbackEvent(
+        item_id=item.id,
+        user_id=item.user_id,
+        predicted_category=predicted_category,
+        corrected_category=corrected_category,
+        prediction_confidence=review_feedback.prediction_confidence,
+        accepted_directly=review_feedback.accepted_directly,
+        source="upload_review",
+    )
+    db.add(event)
+    db.flush()
+    return event
 
 
 def complete_upload(

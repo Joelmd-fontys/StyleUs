@@ -4,7 +4,17 @@ envVarGroups:
       - key: APP_ENV
         value: production
       - key: AI_ENABLE_CLASSIFIER
-        value: "false"
+        value: "true"
+      - key: AI_CLASSIFICATION_INPUT
+        value: full
+      - key: AI_MODEL_NAME
+        value: ViT-B-32
+      - key: AI_MODEL_PRETRAINED
+        value: laion2b_s34b_b79k
+      - key: AI_CONFIDENCE_THRESHOLD
+        value: "0.55"
+      - key: AI_ACCESSORY_CONFIDENCE_THRESHOLD
+        value: "0.62"
       - key: LOCAL_AUTH_BYPASS
         value: "false"
       - key: RUN_MIGRATIONS_ON_START
@@ -18,7 +28,17 @@ envVarGroups:
       - key: APP_ENV
         value: production
       - key: AI_ENABLE_CLASSIFIER
-        value: "false"
+        value: "true"
+      - key: AI_CLASSIFICATION_INPUT
+        value: full
+      - key: AI_MODEL_NAME
+        value: ViT-B-32
+      - key: AI_MODEL_PRETRAINED
+        value: laion2b_s34b_b79k
+      - key: AI_CONFIDENCE_THRESHOLD
+        value: "0.55"
+      - key: AI_ACCESSORY_CONFIDENCE_THRESHOLD
+        value: "0.62"
       - key: LOCAL_AUTH_BYPASS
         value: "false"
       - key: RUN_MIGRATIONS_ON_START
@@ -38,7 +58,7 @@ services:
   - type: web
     name: styleus-api
     runtime: docker
-    plan: free
+    plan: starter
     rootDir: services/api
     dockerContext: .
     dockerfilePath: ./Dockerfile
@@ -59,7 +79,7 @@ services:
   - type: web
     name: styleus-ai-worker
     runtime: docker
-    plan: free
+    plan: standard
     rootDir: services/api
     dockerContext: .
     dockerfilePath: ./Dockerfile.worker
