@@ -41,3 +41,4 @@ services/api/media/
 .idea/
 .vscode/
 coverage/
+AGENTS.md
