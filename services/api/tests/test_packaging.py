@@ -12,11 +12,15 @@ def test_runtime_dependencies_include_heuristic_ai_stack() -> None:
 
     dependencies = pyproject["project"]["dependencies"]
     ai_extra = pyproject["project"]["optional-dependencies"]["ai"]
+    dev_extra = pyproject["project"]["optional-dependencies"]["dev"]
 
     assert "numpy==1.26.4" in dependencies
     assert "scikit-learn==1.5.0" in dependencies
     assert "open-clip-torch==2.26.1" in ai_extra
     assert "timm==1.0.12" in ai_extra
+    assert "transformers==5.0.0" in ai_extra
+    assert all(not dependency.startswith("transformers==") for dependency in dev_extra)
+    assert "pytest==9.0.3" in dev_extra
 
 
 def test_dockerfiles_install_expected_dependency_sets() -> None:

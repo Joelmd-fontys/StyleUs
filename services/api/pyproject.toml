@@ -20,7 +20,7 @@ dependencies = [
     "pydantic==2.6.4",
     "pydantic-settings==2.2.1",
     "psycopg[binary]==3.1.18",
-    "Pillow==12.1.1",
+    "Pillow==12.2.0",
     "numpy==1.26.4",
     "scikit-learn==1.5.0",
     "PyYAML==6.0.1",
@@ -30,14 +30,13 @@ dependencies = [
 ai = [
     "open-clip-torch==2.26.1",
     "timm==1.0.12",
-    "transformers==4.57.6",
+    "transformers==5.0.0",
 ]
 dev = [
     "open-clip-torch==2.26.1",
     "timm==1.0.12",
-    "transformers==4.57.6",
     "httpx<0.28",
-    "pytest==8.1.1",
+    "pytest==9.0.3",
     "ruff==0.3.5",
     "mypy==1.8.0",
 ]
