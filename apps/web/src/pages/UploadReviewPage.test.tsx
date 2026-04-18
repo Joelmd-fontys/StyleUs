@@ -74,6 +74,7 @@ describe('UploadReviewPage', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     useWardrobeStore.setState(baseState, true);
   });
 
@@ -300,6 +301,46 @@ describe('UploadReviewPage', () => {
 
     expect(screen.getByText(/Still running the AI pipeline/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit & confirm/i })).toBeDisabled();
+  });
+
+  it('polls the AI preview while upload review is still pending', async () => {
+    vi.useFakeTimers();
+    const fetchUploadReviewAIMock = vi.fn().mockResolvedValue(undefined);
+
+    useWardrobeStore.setState((state) => ({
+      ...state,
+      uploadReview: {
+        item: { ...mockItem, aiJob: mockPendingAI.job },
+        ai: mockPendingAI,
+        loading: false,
+        isConfirming: false,
+        error: undefined
+      },
+      fetchUploadReviewAI: fetchUploadReviewAIMock,
+      hydrateUploadReview: vi.fn().mockResolvedValue(undefined),
+      saveItem: vi.fn().mockResolvedValue(mockItem),
+      deleteItem: vi.fn().mockResolvedValue(true),
+      clearUploadReview: vi.fn(),
+      loadItems: vi.fn().mockResolvedValue(undefined),
+      showFlashMessage: vi.fn()
+    }));
+
+    await renderPage();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchUploadReviewAIMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    expect(fetchUploadReviewAIMock).toHaveBeenCalledTimes(2);
+    expect(fetchUploadReviewAIMock).toHaveBeenNthCalledWith(1, mockItem.id);
+    expect(fetchUploadReviewAIMock).toHaveBeenNthCalledWith(2, mockItem.id);
   });
 
   it('uses a single review banner without repeated check badges', async () => {

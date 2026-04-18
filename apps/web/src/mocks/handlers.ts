@@ -31,9 +31,23 @@ const notFound = (id: string) =>
     }
   );
 
+const toMockMediaUrl = (url?: string | null): string | null | undefined => {
+  if (!url || url.startsWith('http')) {
+    return url;
+  }
+  return new URL(url, self.location.origin).toString();
+};
+
+const serializeMockItem = (item: WardrobeItem): WardrobeItem => ({
+  ...item,
+  imageUrl: toMockMediaUrl(item.imageUrl),
+  mediumUrl: toMockMediaUrl(item.mediumUrl),
+  thumbUrl: toMockMediaUrl(item.thumbUrl)
+});
+
 const itemHandlers = !USE_LIVE_API_ITEMS
   ? [
-      http.get('/items', async ({ request }) => {
+      http.get('*/items', async ({ request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Failed to load wardrobe' }, { status: 500 });
         }
@@ -73,9 +87,9 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         // simulate network latency
         await new Promise((resolve) => setTimeout(resolve, 200));
 
-        return HttpResponse.json(filtered.slice(start, end));
+        return HttpResponse.json(filtered.slice(start, end).map((item) => serializeMockItem(item)));
       }),
-      http.get('/items/:id', ({ params, request }) => {
+      http.get('*/items/:id', ({ params, request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Failed to fetch item' }, { status: 500 });
         }
@@ -85,9 +99,9 @@ const itemHandlers = !USE_LIVE_API_ITEMS
         if (!found) {
           return notFound(id);
         }
-        return HttpResponse.json(found);
+        return HttpResponse.json(serializeMockItem(found));
       }),
-      http.patch('/items/:id', async ({ params, request }) => {
+      http.patch('*/items/:id', async ({ params, request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Failed to update item' }, { status: 500 });
         }
@@ -112,9 +126,9 @@ const itemHandlers = !USE_LIVE_API_ITEMS
 
         saveWardrobeItem(updated);
 
-        return HttpResponse.json(updated);
+        return HttpResponse.json(serializeMockItem(updated));
       }),
-      http.delete('/items/:id', ({ params, request }) => {
+      http.delete('*/items/:id', ({ params, request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Failed to delete item' }, { status: 500 });
         }
@@ -133,7 +147,7 @@ const itemHandlers = !USE_LIVE_API_ITEMS
 
 const uploadHandlers = !USE_LIVE_API_UPLOAD
   ? [
-      http.post('/items/presign', async ({ request }) => {
+      http.post('*/items/presign', async ({ request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Upload request failed' }, { status: 500 });
         }
@@ -158,7 +172,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
 
         return HttpResponse.json({ uploadUrl, itemId });
       }),
-      http.put('/_uploads/:itemId', async ({ params, request }) => {
+      http.put('*/_uploads/:itemId', async ({ params, request }) => {
         const itemId = params.itemId as string;
         const pending = pendingUploads.get(itemId);
         if (!pending) {
@@ -170,7 +184,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
 
         return HttpResponse.json({ ok: true }, { status: 200 });
       }),
-      http.post('/items/:itemId/complete-upload', async ({ params, request }) => {
+      http.post('*/items/:itemId/complete-upload', async ({ params, request }) => {
         if (shouldFail(request)) {
           return HttpResponse.json({ message: 'Failed to complete upload' }, { status: 500 });
         }
@@ -206,7 +220,7 @@ const uploadHandlers = !USE_LIVE_API_UPLOAD
         addWardrobeItem(newItem);
         pendingUploads.delete(itemId);
 
-        return HttpResponse.json(newItem, { status: 200 });
+        return HttpResponse.json(serializeMockItem(newItem), { status: 200 });
       })
     ]
   : [];

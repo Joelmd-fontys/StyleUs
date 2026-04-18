@@ -91,9 +91,9 @@ const UploadPanel = (): ReactElement => {
       await uploadFile(uploadUrl, file, {
         isLocal: !isDirectStorageUpload,
         fileName: file.name,
-        objectKey,
-        uploadToken,
-        bucket
+        objectKey: objectKey ?? undefined,
+        uploadToken: uploadToken ?? undefined,
+        bucket: bucket ?? undefined
       });
       setState({ status: 'uploading', message: 'Finalizing upload...' });
       const completePayload: CompleteUploadRequest = { fileName: file.name };

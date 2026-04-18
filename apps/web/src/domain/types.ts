@@ -1,3 +1,10 @@
+import type {
+  AIJobState,
+  ImageMetadata as GeneratedImageMetadata,
+  ItemAIAttributes as GeneratedItemAIAttributes,
+  ItemDetail as GeneratedItemDetail
+} from './generated/item-contracts';
+
 export type WardrobeCategory =
   | 'top'
   | 'bottom'
@@ -40,49 +47,16 @@ export type WardrobeSubcategory =
   | 'watch'
   | 'sunglasses';
 
-export interface ItemAIAttributes {
-  category?: string | null;
+export type ImageMetadata = GeneratedImageMetadata;
+
+export type ItemAIAttributes = Omit<GeneratedItemAIAttributes, 'subcategory'> & {
   subcategory?: WardrobeSubcategory | null;
-  materials: string[];
-  styleTags: string[];
-  attributes: string[];
-  confidence?: number | null;
-}
+};
 
-export interface ItemAIJob {
-  id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | string;
-  attempts: number;
-  createdAt: string;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  errorMessage?: string | null;
-  pending?: boolean;
-}
+export type ItemAIJob = AIJobState;
 
-export interface ImageMetadata {
-  width?: number | null;
-  height?: number | null;
-  bytes?: number | null;
-  mimeType?: string | null;
-  checksum?: string | null;
-}
-
-export interface WardrobeItem {
-  id: string;
-  imageUrl?: string | null;
-  thumbUrl?: string | null;
-  mediumUrl?: string | null;
+export type WardrobeItem = Omit<GeneratedItemDetail, 'category' | 'subcategory' | 'ai'> & {
   category: WardrobeCategory;
   subcategory?: WardrobeSubcategory | null;
-  color: string;
-  primaryColor?: string | null;
-  secondaryColor?: string | null;
-  brand?: string | null;
-  createdAt: string;
-  tags: string[];
-  imageMetadata?: ImageMetadata | null;
-  aiConfidence?: number | null;
   ai?: ItemAIAttributes | null;
-  aiJob?: ItemAIJob | null;
-}
+};

@@ -1,11 +1,11 @@
-name: CI
+name: Pull Request Validation
 
 on:
   pull_request:
-  push:
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: pr-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

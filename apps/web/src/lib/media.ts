@@ -10,7 +10,10 @@ export const resolveMediaUrl = (...candidates: Array<string | null | undefined>)
     if (!url) {
       continue;
     }
-    return url.startsWith('http') ? url : resolveApiUrl(url);
+    if (url.startsWith('http') || url.startsWith('/assets/') || url.startsWith('/mock-uploads/')) {
+      return url;
+    }
+    return resolveApiUrl(url);
   }
   return FALLBACK_IMAGE;
 };

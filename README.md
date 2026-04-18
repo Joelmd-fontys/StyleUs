@@ -94,10 +94,10 @@ Frontend review screen confirms or edits results
 
 <!-- project-structure:start -->
 ```text
-apps/
-  web/         React frontend for wardrobe, upload, and review flows
+        apps/
+          web/         React frontend for wardrobe, upload, and review flows
 
-services/
+        services/
   api/         FastAPI API, AI worker service, database models, and migrations
 
 docs/
@@ -111,10 +111,10 @@ docs/
 scripts/
   ci/           docs sync, security gating, and startup verification helpers
 
-dev.sh         One-command local launcher for web, API, worker, DB, and migrations
-render.yaml    Render service definitions for the API and AI worker
-Makefile       Repo-level convenience commands
-```
+        dev.sh         One-command local launcher for web, API, worker, DB, and migrations
+        render.yaml    Render service definitions for the API and AI worker
+        Makefile       Repo-level convenience commands
+        ```
 <!-- project-structure:end -->
 
 ## Local Development
@@ -176,12 +176,18 @@ Real auth and live uploads require Supabase values in `apps/web/.env.local` and 
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- `.github/workflows/ci.yml` runs on every pull request and branch push, with `actionlint` validating the workflow definitions.
-- Backend validation runs `python -m ruff check .`, `python -m mypy app`, `python -m pytest -q`, and `python scripts/ci/verify_backend.py` against a local sqlite database.
-- Frontend validation runs `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
-- Security checks run `actions/dependency-review-action`, `npm audit --audit-level=high`, `pip-audit`, and `gitleaks`.
-- `python scripts/ci/sync_docs.py --check` fails when the generated documentation sections drift from the current repo shape.
-- After merge to `main`, `.github/workflows/deploy.yml` waits for the platform Git deploy window and polls `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) until `/health` reports `status=ok` and `database=ok`; optional repository variable `DEPLOY_FRONTEND_URL` adds a frontend availability check after the backend passes.
+- Pull requests run `.github/workflows/ci.yml`, which keeps the
+  merge gate local-safe with workflow validation, docs sync,
+  backend checks, frontend checks, and security scanning.
+- Backend validation uses sqlite plus
+  `python scripts/ci/verify_backend.py`, so normal CI does not
+  depend on Render, Vercel, or Supabase availability.
+- Merges to `main` run `.github/workflows/deploy.yml`, which
+  waits for the platform-native Vercel and Render deploys, then
+  verifies the API, worker, and optional frontend endpoints.
+- Detailed CI stages, required repository variables, and local
+  mirror commands live in
+  [docs/process/workflow.md](docs/process/workflow.md).
 <!-- ci-cd:end -->
 
 ## AI Pipeline

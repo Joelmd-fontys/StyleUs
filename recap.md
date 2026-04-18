@@ -4,10 +4,15 @@
 
 <!-- current-shape:start -->
 - `apps/web` contains the only frontend application and is deployed by Vercel.
-- `services/api` contains the API, worker service, migrations, and seed pipeline, and is deployed by Render.
-- `.github/workflows/ci.yml` validates workflow syntax, docs, code quality, tests, builds, and security on every pull request and push.
-- `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`, and can optionally verify the frontend URL too.
-- `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.
+- `services/api` contains the API, worker service, migrations,
+  and seed pipeline, and is deployed by Render.
+- `.github/workflows/ci.yml` validates workflow syntax, docs,
+  code quality, tests, builds, and security for pull requests.
+- `.github/workflows/deploy.yml` verifies the production
+  backend health after merges to `main`, and can optionally
+  verify the frontend URL too.
+- `docs` contains only cross-cutting notes that are still
+  relevant to operation, deployment, or delivery workflow.
 <!-- current-shape:end -->
 
 ## Upload and prediction flow
@@ -40,7 +45,15 @@ Use `./dev.sh` from the repo root for the full stack, or run the web app and API
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- PRs fail on backend or frontend validation errors, documentation drift, dependency review issues, high or critical audit findings, or detected secrets.
-- The docs sync script owns the managed CI/CD sections in `README.md`, `docs/architecture/deployment.md`, `docs/config/environments.md`, `docs/process/workflow.md`, and `recap.md`.
-- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API and worker services, and GitHub Actions verifies `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`) after merge.
+- PRs fail on backend or frontend validation errors,
+  documentation drift, dependency review issues, high or
+  critical audit findings, or detected secrets.
+- The docs sync script owns the short generated CI/CD summaries
+  in `README.md`, `docs/architecture/deployment.md`,
+  `docs/config/environments.md`, `docs/process/workflow.md`,
+  and `recap.md`.
+- Production deploys stay platform-native: Vercel handles the
+  web app, Render rebuilds the API and worker services, and
+  GitHub Actions verifies the hosted health endpoints after
+  merge.
 <!-- ci-cd:end -->

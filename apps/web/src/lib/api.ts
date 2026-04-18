@@ -1,12 +1,11 @@
-import {
-  AIPreviewResponse,
+import type {
   CompleteUploadRequest,
-  GetItemResponse,
-  GetItemsResponse,
-  PatchItemRequest,
-  PatchItemResponse,
-  PresignItemResponse
-} from '../domain/contracts';
+  ItemAIPreview,
+  ItemUpdate,
+  PresignRequest,
+  PresignResponse
+} from '../domain/generated/item-contracts';
+import type { WardrobeItem } from '../domain/types';
 import { resolveApiUrl } from './config';
 import { getAccessToken, getSupabaseClient } from './supabase';
 
@@ -43,7 +42,7 @@ const buildHeaders = async (headers: HeadersInit = {}): Promise<HeadersInit> => 
   };
 };
 
-export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsResponse> => {
+export const getItems = async (filters: ItemFilters = {}): Promise<WardrobeItem[]> => {
   const url = resolveApiUrl('/items');
   const params = new URLSearchParams();
   if (filters.category) {
@@ -67,21 +66,17 @@ export const getItems = async (filters: ItemFilters = {}): Promise<GetItemsRespo
     headers: await buildHeaders({ Accept: 'application/json' })
   });
 
-  return handleResponse<GetItemsResponse>(response);
+  return handleResponse<WardrobeItem[]>(response);
 };
 
-export const getItem = async (id: string): Promise<GetItemResponse> => {
+export const getItem = async (id: string): Promise<WardrobeItem> => {
   const response = await fetch(resolveApiUrl(`/items/${id}`), {
     headers: await buildHeaders({ Accept: 'application/json' })
   });
-  return handleResponse<GetItemResponse>(response);
+  return handleResponse<WardrobeItem>(response);
 };
 
-export const createPresign = async (body: {
-  contentType: string;
-  fileName: string;
-  fileSize: number;
-}): Promise<PresignItemResponse> => {
+export const createPresign = async (body: PresignRequest): Promise<PresignResponse> => {
   const response = await fetch(resolveApiUrl('/items/presign'), {
     method: 'POST',
     headers: await buildHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
@@ -92,7 +87,7 @@ export const createPresign = async (body: {
     })
   });
 
-  return handleResponse<PresignItemResponse>(response);
+  return handleResponse<PresignResponse>(response);
 };
 
 interface UploadOptions {
@@ -148,7 +143,7 @@ export const uploadFile = async (url: string, file: File, options: UploadOptions
   }
 };
 
-export const patchItem = async (id: string, body: PatchItemRequest): Promise<PatchItemResponse> => {
+export const patchItem = async (id: string, body: ItemUpdate): Promise<WardrobeItem> => {
   const response = await fetch(resolveApiUrl(`/items/${id}`), {
     method: 'PATCH',
     headers: await buildHeaders({
@@ -158,7 +153,7 @@ export const patchItem = async (id: string, body: PatchItemRequest): Promise<Pat
     body: JSON.stringify(body)
   });
 
-  return handleResponse<PatchItemResponse>(response);
+  return handleResponse<WardrobeItem>(response);
 };
 
 export const deleteItem = async (id: string): Promise<void> => {
@@ -170,7 +165,7 @@ export const deleteItem = async (id: string): Promise<void> => {
   await handleResponse<void>(response);
 };
 
-export const completeUpload = async (id: string, body: CompleteUploadRequest): Promise<GetItemResponse> => {
+export const completeUpload = async (id: string, body: CompleteUploadRequest): Promise<WardrobeItem> => {
   const response = await fetch(resolveApiUrl(`/items/${id}/complete-upload`), {
     method: 'POST',
     headers: await buildHeaders({
@@ -180,13 +175,13 @@ export const completeUpload = async (id: string, body: CompleteUploadRequest): P
     body: JSON.stringify(body)
   });
 
-  return handleResponse<GetItemResponse>(response);
+  return handleResponse<WardrobeItem>(response);
 };
 
-export const getItemAIPreview = async (id: string): Promise<AIPreviewResponse> => {
+export const getItemAIPreview = async (id: string): Promise<ItemAIPreview> => {
   const response = await fetch(resolveApiUrl(`/items/${id}/ai-preview`), {
     headers: await buildHeaders({ Accept: 'application/json' })
   });
 
-  return handleResponse<AIPreviewResponse>(response);
+  return handleResponse<ItemAIPreview>(response);
 };

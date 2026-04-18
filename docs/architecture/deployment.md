@@ -109,9 +109,11 @@ Both backend services own:
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- Pull requests and branch pushes run `.github/workflows/ci.yml`.
-- GitHub Actions validates workflow syntax, backend linting, type checking, tests, startup verification, frontend checks, documentation sync, dependency review, `npm audit`, `pip-audit`, and `gitleaks`.
-- Merges to `main` let Vercel and Render deploy through Git integration; `.github/workflows/deploy.yml` verifies the backend result by polling `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`).
-- When `DEPLOY_FRONTEND_URL` is configured, the same workflow also verifies the frontend responds with HTML after the backend is healthy.
-- The production readiness gate is `GET /health`, which must confirm both API liveness and database connectivity.
+- Pull requests run local-safe validation only; deployment
+  happens through Vercel and Render after merge.
+- `.github/workflows/deploy.yml` verifies the hosted API at
+  `/health`, the worker `/health` endpoint, and the
+  optional frontend URL after the platform deploy window.
+- The canonical delivery workflow and CI/CD operating notes
+  live in `docs/process/workflow.md`.
 <!-- ci-cd:end -->

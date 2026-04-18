@@ -121,9 +121,21 @@ Supabase:
 <!-- ci-cd:start -->
 ## CI/CD Pipeline
 
-- CI uses local-safe values for `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`, `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
-- Pull request validation does not require hosted platform secrets for normal backend or frontend checks.
-- Deploy verification reads `DEPLOY_HEALTHCHECK_URL` (defaults to `https://styleus-api.onrender.com/health`); set the repository variable when the production API URL changes.
-- Optional repository variable `DEPLOY_FRONTEND_URL` enables frontend deployment verification after backend health passes.
-- Optional repository secret `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub secret-scanning alert review in CI when GitHub Advanced Security is available.
+- CI uses local-safe values for `APP_ENV`, `DATABASE_URL`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`,
+  `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
+- Pull request validation does not require hosted platform
+  secrets for normal backend or frontend checks.
+- Repository variables `DEPLOY_HEALTHCHECK_URL` and
+  `DEPLOY_WORKER_HEALTHCHECK_URL` should be set when the hosted
+  API or worker URL differs from the workflow defaults.
+- Optional repository variables `DEPLOY_FRONTEND_URL`,
+  `DEPLOY_INITIAL_WAIT_SECONDS`, `DEPLOY_TIMEOUT_SECONDS`, and
+  `DEPLOY_POLL_INTERVAL_SECONDS` tune post-merge deploy
+  verification.
+- Optional repository secret
+  `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub
+  secret-scanning alert review in CI when GitHub Advanced
+  Security is available.
 <!-- ci-cd:end -->

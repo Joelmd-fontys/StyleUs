@@ -19,7 +19,7 @@ vi.mock('./supabase', () => ({
   getSupabaseClient: getSupabaseClientMock
 }));
 
-import { getItems, patchItem, uploadFile } from './api';
+import { completeUpload, createPresign, getItemAIPreview, getItems, patchItem, uploadFile } from './api';
 
 describe('api bearer propagation', () => {
   const fetchMock = vi.fn();
@@ -57,6 +57,39 @@ describe('api bearer propagation', () => {
         headers: expect.objectContaining({
           Accept: 'application/json',
           Authorization: 'Bearer token-123'
+        })
+      })
+    );
+  });
+
+  it('posts upload initiation payloads to the presign endpoint', async () => {
+    getAccessTokenMock.mockResolvedValue('token-presign');
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ itemId: 'item-1', uploadUrl: '/_uploads/item-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await createPresign({
+      contentType: 'image/png',
+      fileName: 'look.png',
+      fileSize: 1234
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/items/presign',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          Authorization: 'Bearer token-presign',
+          'Content-Type': 'application/json'
+        }),
+        body: JSON.stringify({
+          contentType: 'image/png',
+          fileName: 'look.png',
+          fileSize: 1234
         })
       })
     );
@@ -127,6 +160,37 @@ describe('api bearer propagation', () => {
     );
   });
 
+  it('posts upload finalization payloads to the complete-upload endpoint', async () => {
+    getAccessTokenMock.mockResolvedValue('token-complete');
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ id: 'item-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+
+    await completeUpload('item-1', {
+      objectKey: 'users/item/source/look.png',
+      fileName: 'look.png'
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/items/item-1/complete-upload',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          Authorization: 'Bearer token-complete',
+          'Content-Type': 'application/json'
+        }),
+        body: JSON.stringify({
+          objectKey: 'users/item/source/look.png',
+          fileName: 'look.png'
+        })
+      })
+    );
+  });
+
   it('falls back to fetch for mock upload endpoints', async () => {
     const file = new File(['image-bytes'], 'look.png', { type: 'image/png' });
 
@@ -143,5 +207,49 @@ describe('api bearer propagation', () => {
         body: file
       })
     );
+  });
+
+  it('keeps pending AI preview fields nullable while the job is in flight', async () => {
+    getAccessTokenMock.mockResolvedValue('token-preview');
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          category: null,
+          subcategory: null,
+          pending: true,
+          job: {
+            id: 'job-1',
+            status: 'pending',
+            attempts: 0,
+            createdAt: '2026-04-14T12:00:00Z',
+            startedAt: null,
+            completedAt: null,
+            errorMessage: null,
+            pending: true
+          }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    );
+
+    const preview = await getItemAIPreview('item-preview');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/items/item-preview/ai-preview',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          Authorization: 'Bearer token-preview'
+        })
+      })
+    );
+    expect(preview.category).toBeNull();
+    expect(preview.subcategory).toBeNull();
+    expect(preview.pending).toBe(true);
+    expect(preview.job?.status).toBe('pending');
+    expect(preview.job?.attempts).toBe(0);
   });
 });
