@@ -1,11 +1,11 @@
-name: CI
+name: Pull Request Validation
 
 on:
   pull_request:
-  push:
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: pr-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -189,7 +189,7 @@ jobs:
         working-directory: services/api
         run: |
           python -m pip install --upgrade pip setuptools
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,ai]"
           python -m pip install pip-audit
 
       - name: pip-audit report

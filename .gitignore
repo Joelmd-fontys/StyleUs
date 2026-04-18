@@ -41,3 +41,14 @@ services/api/media/
 .idea/
 .vscode/
 coverage/
+AGENTS.md
+.playwright-mcp/page-2026-04-14T13-01-30-723Z.yml
+.sisyphus/boulder.json
+.sisyphus/evidence/task-1-compatibility-baseline-error.png
+.sisyphus/evidence/task-1-compatibility-baseline.png
+.sisyphus/evidence/task-2-contract-export-edge.txt
+.sisyphus/evidence/task-2-contract-export.txt
+.sisyphus/notepads/repo-structural-optimization/decisions.md
+.sisyphus/notepads/repo-structural-optimization/issues.md
+.sisyphus/notepads/repo-structural-optimization/learnings.md
+.sisyphus/notepads/repo-structural-optimization/problems.md

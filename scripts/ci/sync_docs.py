@@ -4,11 +4,11 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
-import re
-import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import dedent
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -23,11 +23,17 @@ class ManagedSection:
 
 
 def _load_json(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{path} must contain a top-level JSON object")
+    return cast(dict[str, object], payload)
 
 
 def _load_toml(path: Path) -> dict[str, object]:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    payload = tomllib.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit(f"{path} must contain a top-level TOML table")
+    return cast(dict[str, object], payload)
 
 
 def _read_render_health_path() -> str:
@@ -52,17 +58,6 @@ def _read_render_health_path() -> str:
     raise SystemExit("render.yaml is missing styleus-api healthCheckPath")
 
 
-def _read_deploy_default_healthcheck_url() -> str:
-    deploy_text = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
-    match = re.search(
-        r"DEPLOY_HEALTHCHECK_URL=\$\{DEPLOY_HEALTHCHECK_URL:-([^}]+)\}",
-        deploy_text,
-    )
-    if match is None:
-        raise SystemExit("deploy.yml is missing the default DEPLOY_HEALTHCHECK_URL")
-    return match.group(1)
-
-
 def _check_required_paths(paths: list[Path]) -> None:
     missing = [str(path) for path in paths if not (ROOT / path).exists()]
     if missing:
@@ -71,11 +66,13 @@ def _check_required_paths(paths: list[Path]) -> None:
 
 
 def _build_structure_block() -> str:
-    return """```text
-apps/
-  web/         React frontend for wardrobe, upload, and review flows
+    return dedent(
+        """\
+        ```text
+        apps/
+          web/         React frontend for wardrobe, upload, and review flows
 
-services/
+        services/
   api/         FastAPI API, AI worker service, database models, and migrations
 
 docs/
@@ -89,120 +86,207 @@ docs/
 scripts/
   ci/           docs sync, security gating, and startup verification helpers
 
-dev.sh         One-command local launcher for web, API, worker, DB, and migrations
-render.yaml    Render service definitions for the API and AI worker
-Makefile       Repo-level convenience commands
-```"""
+        dev.sh         One-command local launcher for web, API, worker, DB, and migrations
+        render.yaml    Render service definitions for the API and AI worker
+        Makefile       Repo-level convenience commands
+        ```
+        """
+    ).strip()
+
+
+def _managed_block(text: str) -> str:
+    return dedent(text).strip()
 
 
 def _build_sections() -> list[ManagedSection]:
     package_json = _load_json(ROOT / "apps/web/package.json")
     pyproject = _load_toml(ROOT / "services/api/pyproject.toml")
 
-    frontend_scripts = set(((package_json.get("scripts") or {})).keys())
+    scripts = package_json.get("scripts")
+    if not isinstance(scripts, dict):
+        raise SystemExit("apps/web/package.json must contain a scripts object")
+
+    frontend_scripts = set(scripts.keys())
     required_frontend_scripts = {"build", "lint", "test", "typecheck"}
     missing_frontend_scripts = sorted(required_frontend_scripts - frontend_scripts)
     if missing_frontend_scripts:
         joined = ", ".join(missing_frontend_scripts)
         raise SystemExit(f"apps/web/package.json is missing required scripts: {joined}")
 
-    dev_dependencies = set(
-        pyproject["project"]["optional-dependencies"]["dev"]  # type: ignore[index]
-    )
+    project = pyproject.get("project")
+    if not isinstance(project, dict):
+        raise SystemExit("services/api/pyproject.toml must contain a [project] table")
+
+    optional_dependencies = project.get("optional-dependencies")
+    if not isinstance(optional_dependencies, dict):
+        raise SystemExit(
+            "services/api/pyproject.toml must contain project.optional-dependencies"
+        )
+
+    dev_dependencies_raw = optional_dependencies.get("dev")
+    if not isinstance(dev_dependencies_raw, list) or not all(
+        isinstance(dep, str) for dep in dev_dependencies_raw
+    ):
+        raise SystemExit(
+            "services/api/pyproject.toml must contain a string list at "
+            "project.optional-dependencies.dev"
+        )
+
+    dev_dependencies = set(dev_dependencies_raw)
     backend_tools = {
         "ruff": any(dep.startswith("ruff") for dep in dev_dependencies),
         "mypy": any(dep.startswith("mypy") for dep in dev_dependencies),
         "pytest": any(dep.startswith("pytest") for dep in dev_dependencies),
     }
-    missing_backend_tools = sorted(tool for tool, installed in backend_tools.items() if not installed)
+    missing_backend_tools = sorted(
+        tool for tool, installed in backend_tools.items() if not installed
+    )
     if missing_backend_tools:
         joined = ", ".join(missing_backend_tools)
         raise SystemExit(f"services/api/pyproject.toml is missing CI tools: {joined}")
 
     health_path = _read_render_health_path()
-    deploy_default_url = _read_deploy_default_healthcheck_url()
-    deploy_target = f"`DEPLOY_HEALTHCHECK_URL` (defaults to `{deploy_default_url}`)"
-
     return [
         ManagedSection(
             path=Path("README.md"),
             start_marker="<!-- project-structure:start -->",
             end_marker="<!-- project-structure:end -->",
             content=_build_structure_block(),
-            line_limit=220,
+            line_limit=230,
         ),
         ManagedSection(
             path=Path("README.md"),
             start_marker="<!-- ci-cd:start -->",
             end_marker="<!-- ci-cd:end -->",
-            content=f"""## CI/CD Pipeline
+            content=_managed_block(
+                """
+                ## CI/CD Pipeline
 
-- `.github/workflows/ci.yml` runs on every pull request and branch push, with `actionlint` validating the workflow definitions.
-- Backend validation runs `python -m ruff check .`, `python -m mypy app`, `python -m pytest -q`, and `python scripts/ci/verify_backend.py` against a local sqlite database.
-- Frontend validation runs `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
-- Security checks run `actions/dependency-review-action`, `npm audit --audit-level=high`, `pip-audit`, and `gitleaks`.
-- `python scripts/ci/sync_docs.py --check` fails when the generated documentation sections drift from the current repo shape.
-- After merge to `main`, `.github/workflows/deploy.yml` waits for the platform Git deploy window and polls {deploy_target} until `{health_path}` reports `status=ok` and `database=ok`; optional repository variable `DEPLOY_FRONTEND_URL` adds a frontend availability check after the backend passes.""",
-            line_limit=220,
+                - Pull requests run `.github/workflows/ci.yml`, which keeps the
+                  merge gate local-safe with workflow validation, docs sync,
+                  backend checks, frontend checks, and security scanning.
+                - Backend validation uses sqlite plus
+                  `python scripts/ci/verify_backend.py`, so normal CI does not
+                  depend on Render, Vercel, or Supabase availability.
+                - Merges to `main` run `.github/workflows/deploy.yml`, which
+                  waits for the platform-native Vercel and Render deploys, then
+                  verifies the API, worker, and optional frontend endpoints.
+                - Detailed CI stages, required repository variables, and local
+                  mirror commands live in
+                  [docs/process/workflow.md](docs/process/workflow.md).
+                """
+            ),
+            line_limit=230,
         ),
         ManagedSection(
             path=Path("docs/architecture/deployment.md"),
             start_marker="<!-- ci-cd:start -->",
             end_marker="<!-- ci-cd:end -->",
-            content=f"""## CI/CD Pipeline
+            content=_managed_block(
+                f"""
+                ## CI/CD Pipeline
 
-- Pull requests and branch pushes run `.github/workflows/ci.yml`.
-- GitHub Actions validates workflow syntax, backend linting, type checking, tests, startup verification, frontend checks, documentation sync, dependency review, `npm audit`, `pip-audit`, and `gitleaks`.
-- Merges to `main` let Vercel and Render deploy through Git integration; `.github/workflows/deploy.yml` verifies the backend result by polling {deploy_target}.
-- When `DEPLOY_FRONTEND_URL` is configured, the same workflow also verifies the frontend responds with HTML after the backend is healthy.
-- The production readiness gate is `GET {health_path}`, which must confirm both API liveness and database connectivity.""",
+                - Pull requests run local-safe validation only; deployment
+                  happens through Vercel and Render after merge.
+                - `.github/workflows/deploy.yml` verifies the hosted API at
+                  `{health_path}`, the worker `/health` endpoint, and the
+                  optional frontend URL after the platform deploy window.
+                - The canonical delivery workflow and CI/CD operating notes
+                  live in `docs/process/workflow.md`.
+                """
+            ),
             line_limit=200,
         ),
         ManagedSection(
             path=Path("docs/config/environments.md"),
             start_marker="<!-- ci-cd:start -->",
             end_marker="<!-- ci-cd:end -->",
-            content=f"""## CI/CD Pipeline
+            content=_managed_block(
+                """
+                ## CI/CD Pipeline
 
-- CI uses local-safe values for `APP_ENV`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`, `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
-- Pull request validation does not require hosted platform secrets for normal backend or frontend checks.
-- Deploy verification reads {deploy_target}; set the repository variable when the production API URL changes.
-- Optional repository variable `DEPLOY_FRONTEND_URL` enables frontend deployment verification after backend health passes.
-- Optional repository secret `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub secret-scanning alert review in CI when GitHub Advanced Security is available.""",
+                - CI uses local-safe values for `APP_ENV`, `DATABASE_URL`,
+                  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+                  `SUPABASE_STORAGE_BUCKET`, `LOCAL_AUTH_BYPASS`,
+                  `RUN_MIGRATIONS_ON_START`, and `RUN_SEED_ON_START`.
+                - Pull request validation does not require hosted platform
+                  secrets for normal backend or frontend checks.
+                - Repository variables `DEPLOY_HEALTHCHECK_URL` and
+                  `DEPLOY_WORKER_HEALTHCHECK_URL` should be set when the hosted
+                  API or worker URL differs from the workflow defaults.
+                - Optional repository variables `DEPLOY_FRONTEND_URL`,
+                  `DEPLOY_INITIAL_WAIT_SECONDS`, `DEPLOY_TIMEOUT_SECONDS`, and
+                  `DEPLOY_POLL_INTERVAL_SECONDS` tune post-merge deploy
+                  verification.
+                - Optional repository secret
+                  `SECRET_SCAN_REVIEW_GITHUB_TOKEN` enables GitHub
+                  secret-scanning alert review in CI when GitHub Advanced
+                  Security is available.
+                """
+            ),
             line_limit=200,
         ),
         ManagedSection(
             path=Path("docs/process/workflow.md"),
             start_marker="<!-- ci-cd:start -->",
             end_marker="<!-- ci-cd:end -->",
-            content="""## Checks
+            content=_managed_block(
+                """
+                ## Checks
 
-- `.github/workflows/ci.yml` runs on every pull request and push.
-- Pull requests stay mergeable only when workflow validation, backend, frontend, security, build, and documentation checks pass.
-- `python scripts/ci/sync_docs.py` keeps the managed docs sections aligned with the repository shape and deployment workflow.
-- `.github/workflows/deploy.yml` runs after merges to `main` and verifies the deployed API health endpoint, plus the frontend URL when configured.""",
+                - `.github/workflows/ci.yml` is the pull request merge gate.
+                - Pull requests stay mergeable only when workflow validation,
+                  docs sync, backend, frontend, and security checks pass.
+                - `.github/workflows/deploy.yml` runs after merges to `main`
+                  and verifies the deployed API, worker, and optional frontend
+                  endpoints.
+                - `python scripts/ci/sync_docs.py` keeps the short generated
+                  CI/CD summaries aligned with the current repo shape.
+                """
+            ),
             line_limit=200,
         ),
         ManagedSection(
             path=Path("recap.md"),
             start_marker="<!-- current-shape:start -->",
             end_marker="<!-- current-shape:end -->",
-            content="""- `apps/web` contains the only frontend application and is deployed by Vercel.
-- `services/api` contains the API, worker service, migrations, and seed pipeline, and is deployed by Render.
-- `.github/workflows/ci.yml` validates workflow syntax, docs, code quality, tests, builds, and security on every pull request and push.
-- `.github/workflows/deploy.yml` verifies the production backend health after merges to `main`, and can optionally verify the frontend URL too.
-- `docs` contains only cross-cutting notes that are still relevant to operation, deployment, or delivery workflow.""",
+            content=_managed_block(
+                """
+                - `apps/web` contains the only frontend application and is deployed by Vercel.
+                - `services/api` contains the API, worker service, migrations,
+                  and seed pipeline, and is deployed by Render.
+                - `.github/workflows/ci.yml` validates workflow syntax, docs,
+                  code quality, tests, builds, and security for pull requests.
+                - `.github/workflows/deploy.yml` verifies the production
+                  backend health after merges to `main`, and can optionally
+                  verify the frontend URL too.
+                - `docs` contains only cross-cutting notes that are still
+                  relevant to operation, deployment, or delivery workflow.
+                """
+            ),
             line_limit=200,
         ),
         ManagedSection(
             path=Path("recap.md"),
             start_marker="<!-- ci-cd:start -->",
             end_marker="<!-- ci-cd:end -->",
-            content=f"""## CI/CD Pipeline
+            content=_managed_block(
+                """
+                ## CI/CD Pipeline
 
-- PRs fail on backend or frontend validation errors, documentation drift, dependency review issues, high or critical audit findings, or detected secrets.
-- The docs sync script owns the managed CI/CD sections in `README.md`, `docs/architecture/deployment.md`, `docs/config/environments.md`, `docs/process/workflow.md`, and `recap.md`.
-- Production deploys stay platform-native: Vercel handles the web app, Render rebuilds the API and worker services, and GitHub Actions verifies {deploy_target} after merge.""",
+                - PRs fail on backend or frontend validation errors,
+                  documentation drift, dependency review issues, high or
+                  critical audit findings, or detected secrets.
+                - The docs sync script owns the short generated CI/CD summaries
+                  in `README.md`, `docs/architecture/deployment.md`,
+                  `docs/config/environments.md`, `docs/process/workflow.md`,
+                  and `recap.md`.
+                - Production deploys stay platform-native: Vercel handles the
+                  web app, Render rebuilds the API and worker services, and
+                  GitHub Actions verifies the hosted health endpoints after
+                  merge.
+                """
+            ),
             line_limit=200,
         ),
     ]
@@ -211,7 +295,8 @@ def _build_sections() -> list[ManagedSection]:
 def _replace_section(text: str, section: ManagedSection) -> str:
     if section.start_marker not in text or section.end_marker not in text:
         raise SystemExit(
-            f"{section.path} is missing managed markers {section.start_marker} / {section.end_marker}"
+            f"{section.path} is missing managed markers "
+            f"{section.start_marker} / {section.end_marker}"
         )
     before, remainder = text.split(section.start_marker, 1)
     _, after = remainder.split(section.end_marker, 1)
@@ -245,7 +330,9 @@ def _write_or_check(section: ManagedSection, *, check: bool) -> bool:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Synchronize managed CI/CD documentation sections.")
+    parser = argparse.ArgumentParser(
+        description="Synchronize managed CI/CD documentation sections."
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -280,7 +367,10 @@ def main() -> int:
 
     if args.check and changed_paths:
         joined = ", ".join(changed_paths)
-        print(f"\nDocumentation is out of date. Run `python scripts/ci/sync_docs.py` to update: {joined}")
+        print(
+            "\nDocumentation is out of date. Run "
+            f"`python scripts/ci/sync_docs.py` to update: {joined}"
+        )
         return 1
 
     if changed_paths:

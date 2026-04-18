@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import uuid
 
 from sqlalchemy import select
@@ -56,6 +57,49 @@ def test_list_items_with_filters(client, db_session):
     assert item["ai"] is not None
     assert item["ai"]["subcategory"] == "t-shirt"
     assert any(tag == "sport" for tag in item["tags"])
+
+
+def test_list_items_recent_dashboard_contract_uses_created_since_and_limit(client, db_session):
+    user = db_session.get(User, DEFAULT_USER_ID)
+    if not user:
+        user = User(id=DEFAULT_USER_ID, email="user@example.com")
+        db_session.add(user)
+
+    base_time = datetime.datetime(2026, 4, 1, 12, 0, tzinfo=datetime.UTC)
+    items: list[WardrobeItem] = []
+    for index in range(5):
+        item = WardrobeItem(
+            user_id=DEFAULT_USER_ID,
+            category="top",
+            subcategory="t-shirt",
+            color=f"color-{index}",
+            brand=f"Brand {index}",
+            created_at=base_time + datetime.timedelta(minutes=index),
+        )
+        db_session.add(item)
+        items.append(item)
+
+    db_session.commit()
+
+    response = client.get(
+        "/items",
+        params={
+            "limit": 4,
+            "createdSince": (base_time + datetime.timedelta(minutes=1, seconds=30)).isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 3
+    assert [entry["id"] for entry in payload] == [
+        str(items[4].id),
+        str(items[3].id),
+        str(items[2].id),
+    ]
+    assert [entry["brand"] for entry in payload] == ["Brand 4", "Brand 3", "Brand 2"]
+    created_since = (base_time + datetime.timedelta(minutes=1, seconds=30)).isoformat()
+    assert all(entry["createdAt"] > created_since for entry in payload)
 
 
 def test_patch_updates_item_and_tags(client, db_session):

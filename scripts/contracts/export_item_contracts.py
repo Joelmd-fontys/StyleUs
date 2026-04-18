@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import difflib
+import importlib.util
+import sys
+import types
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMAS_DIR = ROOT / "services/api/app/schemas"
+OUTPUT_PATH = ROOT / "apps/web/src/domain/generated/item-contracts.ts"
+
+MODEL_EXPORT_ORDER = [
+    "ImageMetadata",
+    "PresignRequest",
+    "PresignResponse",
+    "ItemAIAttributes",
+    "AIJobState",
+    "ItemBase",
+    "ItemDetail",
+    "ItemReviewFeedback",
+    "ItemUpdate",
+    "CompleteUploadRequest",
+    "ItemAIPreview",
+]
+
+
+def _load_module(module_name: str, path: Path) -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"Unable to load module spec for {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_items_module() -> types.ModuleType:
+    app_module = types.ModuleType("app")
+    app_module.__path__ = [str(ROOT / "services/api/app")]
+    sys.modules["app"] = app_module
+
+    schemas_module = types.ModuleType("app.schemas")
+    schemas_module.__path__ = [str(SCHEMAS_DIR)]
+    sys.modules["app.schemas"] = schemas_module
+
+    _load_module("app.schemas.common", SCHEMAS_DIR / "common.py")
+    return _load_module("app.schemas.items", SCHEMAS_DIR / "items.py")
+
+
+def unwrap_null(schema: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    any_of = schema.get("anyOf")
+    if not isinstance(any_of, list):
+        return schema, False
+
+    non_null = [entry for entry in any_of if entry != {"type": "null"}]
+    has_null = len(non_null) != len(any_of)
+    if has_null and len(non_null) == 1 and isinstance(non_null[0], dict):
+        return non_null[0], True
+
+    return schema, False
+
+
+def to_ts_type(schema: dict[str, Any]) -> str:
+    simplified, nullable = unwrap_null(schema)
+
+    if "$ref" in simplified:
+        base_type = simplified["$ref"].rsplit("/", 1)[-1]
+    elif "enum" in simplified:
+        base_type = " | ".join(f"'{value}'" for value in simplified["enum"])
+    elif simplified.get("type") == "array":
+        item_type = to_ts_type(simplified.get("items", {}))
+        if "|" in item_type and not item_type.startswith("("):
+            item_type = f"({item_type})"
+        base_type = f"{item_type}[]"
+    elif simplified.get("type") == "object":
+        additional_properties = simplified.get("additionalProperties")
+        properties = simplified.get("properties")
+        if isinstance(additional_properties, dict):
+            base_type = f"Record<string, {to_ts_type(additional_properties)}>"
+        elif isinstance(properties, dict):
+            members = []
+            required = set(simplified.get("required", []))
+            for name, property_schema in properties.items():
+                optional = "" if name in required else "?"
+                members.append(f"{name}{optional}: {to_ts_type(property_schema)};")
+            base_type = "{ " + " ".join(members) + " }" if members else "Record<string, never>"
+        else:
+            base_type = "Record<string, unknown>"
+    else:
+        schema_type = simplified.get("type")
+        if schema_type == "string":
+            base_type = "string"
+        elif schema_type in {"integer", "number"}:
+            base_type = "number"
+        elif schema_type == "boolean":
+            base_type = "boolean"
+        elif schema_type == "null":
+            base_type = "null"
+        else:
+            base_type = "unknown"
+
+    if nullable:
+        return f"{base_type} | null"
+    return base_type
+
+
+def render_interface(name: str, model: type[BaseModel]) -> str:
+    schema = model.model_json_schema(by_alias=True, ref_template="#/$defs/{model}")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise SystemExit(f"Model {name} did not produce object properties")
+
+    required = set(schema.get("required", []))
+    lines = [f"export interface {name} {{"]
+    for property_name, property_schema in properties.items():
+        optional = "" if property_name in required else "?"
+        lines.append(f"  {property_name}{optional}: {to_ts_type(property_schema)};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def build_output() -> str:
+    items_module = load_items_module()
+    exports: list[str] = []
+
+    for model_name in MODEL_EXPORT_ORDER:
+        model = getattr(items_module, model_name, None)
+        if not isinstance(model, type) or not issubclass(model, BaseModel):
+            raise SystemExit(f"Expected {model_name} to be a Pydantic model")
+        exports.append(render_interface(model_name, model))
+
+    body = "\n\n".join(exports)
+    return (
+        "// Generated by scripts/contracts/export_item_contracts.py.\n"
+        "// Do not edit manually. Update services/api/app/schemas/items.py and regenerate instead.\n\n"
+        f"{body}\n"
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Export item contracts from backend schemas")
+    parser.add_argument("--check", action="store_true", help="Fail if generated output is out of date")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    expected = build_output()
+    current = OUTPUT_PATH.read_text(encoding="utf-8") if OUTPUT_PATH.exists() else ""
+
+    if args.check:
+        if current != expected:
+            diff = difflib.unified_diff(
+                current.splitlines(),
+                expected.splitlines(),
+                fromfile=str(OUTPUT_PATH),
+                tofile="generated",
+                lineterm="",
+            )
+            for line in diff:
+                print(line)
+            print(f"Contract export drift detected in {OUTPUT_PATH.relative_to(ROOT)}")
+            return 1
+        print(f"Contracts are up to date: {OUTPUT_PATH.relative_to(ROOT)}")
+        return 0
+
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.write_text(expected, encoding="utf-8")
+    print(f"Wrote {OUTPUT_PATH.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

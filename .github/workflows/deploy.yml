@@ -27,6 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Resolve deployment settings
         run: |
           {
@@ -55,68 +63,29 @@ jobs:
         run: sleep "$DEPLOY_INITIAL_WAIT_SECONDS"
 
       - name: Poll API health endpoint
-        run: |
-          deadline=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
-          while [ "$(date +%s)" -lt "$deadline" ]; do
-            status_code="$(curl -sS -o /tmp/health.json -w '%{http_code}' "$DEPLOY_HEALTHCHECK_URL" || true)"
-            echo "HTTP $status_code from $DEPLOY_HEALTHCHECK_URL"
-            cat /tmp/health.json || true
-            echo
-
-            if [ "$status_code" = "200" ] && jq -e '.status == "ok" and .database == "ok"' /tmp/health.json >/dev/null; then
-              echo "Deployment verification passed."
-              exit 0
-            fi
-
-            echo "Deployment is not ready yet. Retrying in $DEPLOY_POLL_INTERVAL_SECONDS seconds."
-            sleep "$DEPLOY_POLL_INTERVAL_SECONDS"
-          done
-
-          echo "Deployment verification failed: /health did not return status=ok and database=ok before timeout."
-          exit 1
+        run: >-
+          python scripts/ci/verify_deploy.py
+          --kind api
+          --url "$DEPLOY_HEALTHCHECK_URL"
+          --timeout-seconds "$DEPLOY_TIMEOUT_SECONDS"
+          --poll-interval-seconds "$DEPLOY_POLL_INTERVAL_SECONDS"
 
       - name: Poll worker health endpoint
-        run: |
-          deadline=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
-          while [ "$(date +%s)" -lt "$deadline" ]; do
-            status_code="$(curl -sS -o /tmp/worker-health.json -w '%{http_code}' "$DEPLOY_WORKER_HEALTHCHECK_URL" || true)"
-            echo "HTTP $status_code from $DEPLOY_WORKER_HEALTHCHECK_URL"
-            cat /tmp/worker-health.json || true
-            echo
-
-            if [ "$status_code" = "200" ] && jq -e '.status == "ok" and .mode != "disabled"' /tmp/worker-health.json >/dev/null; then
-              echo "Worker deployment verification passed."
-              exit 0
-            fi
-
-            echo "Worker deployment is not ready yet. Retrying in $DEPLOY_POLL_INTERVAL_SECONDS seconds."
-            sleep "$DEPLOY_POLL_INTERVAL_SECONDS"
-          done
-
-          echo "Worker deployment verification failed: /health did not return status=ok with classifier mode enabled before timeout."
-          exit 1
+        run: >-
+          python scripts/ci/verify_deploy.py
+          --kind worker
+          --url "$DEPLOY_WORKER_HEALTHCHECK_URL"
+          --timeout-seconds "$DEPLOY_TIMEOUT_SECONDS"
+          --poll-interval-seconds "$DEPLOY_POLL_INTERVAL_SECONDS"
 
       - name: Poll frontend URL
         if: env.DEPLOY_FRONTEND_URL != ''
-        run: |
-          deadline=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))
-          while [ "$(date +%s)" -lt "$deadline" ]; do
-            status_code="$(curl -sS -o /tmp/frontend.html -w '%{http_code}' "$DEPLOY_FRONTEND_URL" || true)"
-            echo "HTTP $status_code from $DEPLOY_FRONTEND_URL"
-            head -n 5 /tmp/frontend.html || true
-            echo
-
-            if [ "$status_code" = "200" ] && grep -qi '<!doctype html' /tmp/frontend.html; then
-              echo "Frontend verification passed."
-              exit 0
-            fi
-
-            echo "Frontend deployment is not ready yet. Retrying in $DEPLOY_POLL_INTERVAL_SECONDS seconds."
-            sleep "$DEPLOY_POLL_INTERVAL_SECONDS"
-          done
-
-          echo "Frontend deployment verification failed: the frontend URL did not return HTML before timeout."
-          exit 1
+        run: >-
+          python scripts/ci/verify_deploy.py
+          --kind frontend
+          --url "$DEPLOY_FRONTEND_URL"
+          --timeout-seconds "$DEPLOY_TIMEOUT_SECONDS"
+          --poll-interval-seconds "$DEPLOY_POLL_INTERVAL_SECONDS"
 
       - name: Frontend verification not configured
         if: env.DEPLOY_FRONTEND_URL == ''
