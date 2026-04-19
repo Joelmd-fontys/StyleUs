@@ -24,6 +24,7 @@ from app.db.migrations import SchemaCompatibilityError
 from app.models.ai_job import AIJob, AIJobStatus
 from app.models.user import User
 from app.models.wardrobe import WardrobeItem
+from app.runtime import startup as runtime_startup
 from app.services import ai_jobs as ai_jobs_service
 from app.utils import storage as storage_utils
 
@@ -284,8 +285,8 @@ def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
         def __init__(self, settings) -> None:
             lifecycle.append(("init", settings.ai_job_poll_interval_seconds))
 
-        def start_in_background(self) -> None:
-            lifecycle.append("started")
+        def start_in_background(self, *, thread_name: str = "styleus-ai-worker") -> None:
+            lifecycle.append(("started", thread_name))
 
         def request_shutdown(self, *, reason: str) -> None:
             lifecycle.append(("shutdown", reason))
@@ -299,11 +300,14 @@ def test_fastapi_lifespan_starts_and_stops_embedded_worker(monkeypatch):
     application = main_module.create_app(start_worker=True)
 
     with TestClient(application):
-        assert lifecycle == [("init", get_settings().ai_job_poll_interval_seconds), "started"]
+        assert lifecycle == [
+            ("init", get_settings().ai_job_poll_interval_seconds),
+            ("started", "styleus-ai-worker"),
+        ]
 
     assert lifecycle == [
         ("init", get_settings().ai_job_poll_interval_seconds),
-        "started",
+        ("started", "styleus-ai-worker"),
         ("shutdown", "lifespan_shutdown"),
         ("join", 30.0),
     ]
@@ -328,7 +332,7 @@ def test_fastapi_lifespan_fails_when_schema_is_outdated_in_secure_env(monkeypatc
     settings = get_settings()
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "run_migrations_on_start", False)
-    monkeypatch.setattr(main_module, "ensure_schema_compatible", lambda: (_ for _ in ()).throw(
+    monkeypatch.setattr(runtime_startup, "ensure_schema_compatible", lambda: (_ for _ in ()).throw(
         SchemaCompatibilityError(missing_columns={"wardrobe_items": ["ai_attribute_tags"]})
     ))
 
@@ -399,7 +403,7 @@ def test_worker_service_startup_fails_when_schema_is_outdated_in_secure_env(monk
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setattr(settings, "run_migrations_on_start", False)
     monkeypatch.setattr(
-        worker_service_module,
+        runtime_startup,
         "ensure_schema_compatible",
         lambda: (_ for _ in ()).throw(
             SchemaCompatibilityError(missing_columns={"wardrobe_items": ["ai_attribute_tags"]})

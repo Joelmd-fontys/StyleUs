@@ -45,3 +45,11 @@ def test_worker_service_import_does_not_eagerly_load_model_runtime() -> None:
 
     assert "open_clip" not in output
     assert "torch" not in output
+
+
+def test_worker_cli_import_does_not_eagerly_load_model_runtime() -> None:
+    output = _run_importtime("app.worker")
+
+    assert "app.ai.worker" not in output
+    assert "open_clip" not in output
+    assert "torch" not in output

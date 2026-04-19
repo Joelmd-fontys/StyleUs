@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING
 
 import anyio
@@ -18,12 +19,11 @@ from app.api import get_api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import error_response
 from app.core.logging import logger, request_id_ctx_var
-from app.db.migrations import SchemaCompatibilityError, ensure_schema, ensure_schema_compatible
+from app.runtime.startup import run_startup_tasks
+from app.runtime.worker_host import build_worker_lifespan, get_ai_worker_class
 
 if TYPE_CHECKING:
     from app.ai.worker import AIWorker
-
-_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -70,51 +70,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def _maybe_run_migrations(settings: Settings) -> None:
-    if not settings.run_migrations_on_start:
-        logger.info("startup.migrations_skipped", extra={"app_env": settings.app_env})
-        return
-    logger.info("startup.migrations_started", extra={"app_env": settings.app_env})
-    ensure_schema()
-
-
-def _maybe_validate_schema(settings: Settings) -> None:
-    if not settings.is_secure_env:
-        logger.info(
-            "startup.schema_validation_skipped",
-            extra={"app_env": settings.app_env, "reason": "non_secure_env"},
-        )
-        return
-
-    logger.info("startup.schema_validation_started", extra={"app_env": settings.app_env})
-    try:
-        ensure_schema_compatible()
-    except SchemaCompatibilityError as exc:
-        logger.exception(
-            "startup.schema_incompatible",
-            extra={"app_env": settings.app_env, "error": str(exc)},
-        )
-        raise
-    logger.info("startup.schema_validation_complete", extra={"app_env": settings.app_env})
-
-
-def _maybe_run_seed(settings: Settings) -> None:
-    if not settings.run_seed_on_start:
-        logger.info("startup.seed_skipped", extra={"app_env": settings.app_env})
-        return
-    try:
-        from app.seed.runner import run_seed
-
-        logger.info("startup.seed_started", extra={"app_env": settings.app_env})
-        run_seed(settings=settings)
-    except Exception:  # pragma: no cover - defensive guard
-        logger.exception("seed.failed")
-
-
 def _get_ai_worker_class() -> type[AIWorker]:
-    from app.ai.worker import AIWorker
-
-    return AIWorker
+    return get_ai_worker_class()
 
 
 def create_app(*, start_worker: bool = False) -> FastAPI:
@@ -122,35 +79,17 @@ def create_app(*, start_worker: bool = False) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        worker: AIWorker | None = None
-        await anyio.to_thread.run_sync(_maybe_run_migrations, settings)
-        await anyio.to_thread.run_sync(_maybe_validate_schema, settings)
-        await anyio.to_thread.run_sync(_maybe_run_seed, settings)
-        if start_worker:
-            worker = _get_ai_worker_class()(settings)
-            worker.start_in_background()
-            app.state.ai_worker = worker
-        else:
-            app.state.ai_worker = None
-            logger.info(
-                "worker.startup_skipped",
-                extra={"reason": "disabled_for_app_instance"},
-            )
-        try:
+        await anyio.to_thread.run_sync(
+            partial(run_startup_tasks, settings, include_seed=True),
+        )
+        worker_lifespan = build_worker_lifespan(
+            settings,
+            worker_class_getter=_get_ai_worker_class,
+            start_worker=start_worker,
+            thread_name="styleus-ai-worker",
+        )
+        async with worker_lifespan(app):
             yield
-        finally:
-            if worker is not None:
-                worker.request_shutdown(reason="lifespan_shutdown")
-                stopped = await anyio.to_thread.run_sync(
-                    worker.join,
-                    _WORKER_SHUTDOWN_TIMEOUT_SECONDS,
-                )
-                if not stopped:
-                    logger.warning(
-                        "worker.shutdown_timeout",
-                        extra={"timeout_seconds": _WORKER_SHUTDOWN_TIMEOUT_SECONDS},
-                    )
-            app.state.ai_worker = None
 
     app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)
 

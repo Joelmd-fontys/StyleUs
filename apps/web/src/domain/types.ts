@@ -4,48 +4,11 @@ import type {
   ItemAIAttributes as GeneratedItemAIAttributes,
   ItemDetail as GeneratedItemDetail
 } from './generated/item-contracts';
+import type { BackendCategory, BackendSubcategory } from './generated/taxonomy';
 
-export type WardrobeCategory =
-  | 'top'
-  | 'bottom'
-  | 'outerwear'
-  | 'shoes'
-  | 'accessory'
-  | 'unknown'
-  | 'uncategorized';
+export type WardrobeCategory = BackendCategory | 'unknown' | 'uncategorized';
 
-export type WardrobeSubcategory =
-  | 't-shirt'
-  | 'tank top'
-  | 'long sleeve'
-  | 'shirt'
-  | 'polo'
-  | 'hoodie'
-  | 'sweatshirt'
-  | 'sweater'
-  | 'jacket'
-  | 'coat'
-  | 'jeans'
-  | 'chinos'
-  | 'trousers'
-  | 'shorts'
-  | 'skirt'
-  | 'sneakers'
-  | 'boots'
-  | 'loafers'
-  | 'sandals'
-  | 'heels'
-  | 'puffer'
-  | 'fleece'
-  | 'rain jacket'
-  | 'windbreaker'
-  | 'cap'
-  | 'beanie'
-  | 'belt'
-  | 'bag'
-  | 'scarf'
-  | 'watch'
-  | 'sunglasses';
+export type WardrobeSubcategory = BackendSubcategory;
 
 export type ImageMetadata = GeneratedImageMetadata;
 

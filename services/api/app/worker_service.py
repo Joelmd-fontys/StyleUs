@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING
 
 import anyio
@@ -11,68 +12,17 @@ from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
-from app.core.logging import logger
-from app.db.migrations import SchemaCompatibilityError, ensure_schema, ensure_schema_compatible
 from app.db.session import SessionLocal
+from app.runtime.startup import run_startup_tasks
+from app.runtime.worker_host import build_worker_lifespan, get_ai_worker_class
 from app.services import ai_jobs as ai_jobs_service
 
 if TYPE_CHECKING:
     from app.ai.worker import AIWorker
 
-_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30.0
-
 
 def _get_ai_worker_class() -> type[AIWorker]:
-    from app.ai.worker import AIWorker
-
-    return AIWorker
-
-
-def _maybe_run_migrations() -> None:
-    settings = get_settings()
-    if not settings.run_migrations_on_start:
-        logger.info(
-            "startup.migrations_skipped",
-            extra={"app_env": settings.app_env, "service": "ai-worker"},
-        )
-        return
-
-    logger.info(
-        "startup.migrations_started",
-        extra={"app_env": settings.app_env, "service": "ai-worker"},
-    )
-    ensure_schema()
-
-
-def _maybe_validate_schema() -> None:
-    settings = get_settings()
-    if not settings.is_secure_env:
-        logger.info(
-            "startup.schema_validation_skipped",
-            extra={
-                "app_env": settings.app_env,
-                "service": "ai-worker",
-                "reason": "non_secure_env",
-            },
-        )
-        return
-
-    logger.info(
-        "startup.schema_validation_started",
-        extra={"app_env": settings.app_env, "service": "ai-worker"},
-    )
-    try:
-        ensure_schema_compatible()
-    except SchemaCompatibilityError as exc:
-        logger.exception(
-            "startup.schema_incompatible",
-            extra={"app_env": settings.app_env, "service": "ai-worker", "error": str(exc)},
-        )
-        raise
-    logger.info(
-        "startup.schema_validation_complete",
-        extra={"app_env": settings.app_env, "service": "ai-worker"},
-    )
+    return get_ai_worker_class()
 
 
 def create_worker_app() -> FastAPI:
@@ -80,28 +30,19 @@ def create_worker_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await anyio.to_thread.run_sync(_maybe_run_migrations)
-        await anyio.to_thread.run_sync(_maybe_validate_schema)
-        worker = _get_ai_worker_class()(settings)
-        app.state.ai_worker = worker
-        worker.start_in_background(thread_name="styleus-ai-worker-service")
-        try:
+        await anyio.to_thread.run_sync(
+            partial(run_startup_tasks, settings, include_seed=False, service_name="ai-worker"),
+        )
+        worker_lifespan = build_worker_lifespan(
+            settings,
+            worker_class_getter=_get_ai_worker_class,
+            start_worker=True,
+            thread_name="styleus-ai-worker-service",
+            shutdown_reason="worker_service_shutdown",
+            shutdown_timeout_extra={"service": "ai-worker"},
+        )
+        async with worker_lifespan(app):
             yield
-        finally:
-            worker.request_shutdown(reason="worker_service_shutdown")
-            stopped = await anyio.to_thread.run_sync(
-                worker.join,
-                _WORKER_SHUTDOWN_TIMEOUT_SECONDS,
-            )
-            if not stopped:
-                logger.warning(
-                    "worker.shutdown_timeout",
-                    extra={
-                        "service": "ai-worker",
-                        "timeout_seconds": _WORKER_SHUTDOWN_TIMEOUT_SECONDS,
-                    },
-                )
-            app.state.ai_worker = None
 
     app = FastAPI(
         title="StyleUs AI Worker",
