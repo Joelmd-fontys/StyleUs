@@ -36,7 +36,14 @@ describe('taxonomy adapter', () => {
       'unknown',
       'uncategorized'
     ]);
-    expect(UPLOAD_REVIEW_CATEGORY_OPTIONS).toEqual(['top', 'bottom', 'outerwear', 'shoes', 'accessory', 'uncategorized']);
+    expect(UPLOAD_REVIEW_CATEGORY_OPTIONS).toEqual([
+      'top',
+      'bottom',
+      'outerwear',
+      'shoes',
+      'accessory',
+      'uncategorized'
+    ]);
   });
 
   it('keeps subcategory groupings and display helpers stable', () => {
@@ -53,8 +60,39 @@ describe('taxonomy adapter', () => {
     expect(getSubcategories('uncategorized')).toEqual([]);
     expect(toDisplayLabel('rain jacket')).toBe('Rain Jacket');
     expect(toDisplayLabel('slim-fit')).toBe('Slim-Fit');
-    expect(STYLE_LABELS).toEqual(['casual', 'streetwear', 'formal', 'sporty', 'outdoor', 'minimal', 'vintage', 'retro', 'heritage']);
-    expect(MATERIAL_LABELS).toEqual(['cotton', 'denim', 'wool', 'leather', 'nylon', 'knit', 'fleece', 'suede', 'mesh', 'canvas', 'linen']);
-    expect(ATTRIBUTE_LABELS).toEqual(['oversized', 'slim-fit', 'relaxed', 'tailored', 'cropped', 'quilted', 'chunky', 'boxy']);
+    expect(STYLE_LABELS).toEqual([
+      'casual',
+      'streetwear',
+      'formal',
+      'sporty',
+      'outdoor',
+      'minimal',
+      'vintage',
+      'retro',
+      'heritage'
+    ]);
+    expect(MATERIAL_LABELS).toEqual([
+      'cotton',
+      'denim',
+      'wool',
+      'leather',
+      'nylon',
+      'knit',
+      'fleece',
+      'suede',
+      'mesh',
+      'canvas',
+      'linen'
+    ]);
+    expect(ATTRIBUTE_LABELS).toEqual([
+      'oversized',
+      'slim-fit',
+      'relaxed',
+      'tailored',
+      'cropped',
+      'quilted',
+      'chunky',
+      'boxy'
+    ]);
   });
 });

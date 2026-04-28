@@ -34,7 +34,10 @@ export const ITEM_DETAIL_CATEGORY_OPTIONS: ReadonlyArray<WardrobeCategory> = [
   'uncategorized'
 ];
 
-export const UPLOAD_REVIEW_CATEGORY_OPTIONS: ReadonlyArray<WardrobeCategory> = [...DISPLAY_ORDER, 'uncategorized'];
+export const UPLOAD_REVIEW_CATEGORY_OPTIONS: ReadonlyArray<WardrobeCategory> = [
+  ...DISPLAY_ORDER,
+  'uncategorized'
+];
 
 export const SUBCATEGORY_LABELS: Record<WardrobeCategory, WardrobeSubcategory[]> = {
   top: [...BACKEND_SUBCATEGORY_LABELS.top],
