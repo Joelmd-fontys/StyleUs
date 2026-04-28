@@ -26,6 +26,18 @@ if TYPE_CHECKING:
     from app.ai.worker import AIWorker
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add essential security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Attach request ids and consistent error logging to every request."""
 
@@ -93,6 +105,7 @@ def create_app(*, start_worker: bool = False) -> FastAPI:
 
     app = FastAPI(title="StyleUs API", version=settings.app_version, lifespan=lifespan)
 
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestContextMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
