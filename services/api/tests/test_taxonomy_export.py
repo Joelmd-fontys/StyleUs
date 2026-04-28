@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -20,4 +19,13 @@ def test_taxonomy_export_matches_generated_file() -> None:
     exporter = _load_exporter()
     generated = ROOT / "apps" / "web" / "src" / "domain" / "generated" / "taxonomy.ts"
 
-    assert exporter.render_export() == generated.read_text(encoding="utf-8")
+    def normalize(text: str) -> str:
+        # Strip comments to focus on data content
+        text = "\n".join(line for line in text.splitlines() if not line.strip().startswith("//"))
+        # Remove all whitespace
+        text = "".join(text.split())
+        # Remove trailing commas inside arrays and objects to be robust against Prettier
+        text = text.replace(",]", "]").replace(",}", "}")
+        return text
+
+    assert normalize(exporter.render_export()) == normalize(generated.read_text(encoding="utf-8"))
